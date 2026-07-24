@@ -1,0 +1,57 @@
+[
+  {
+    "account_id": "AD001",
+    "application": "Active Directory",
+    "username": "rshankar",
+    "email": "rudra.shankar@company.com",
+    "first_name": "Rudra",
+    "last_name": "Shankar",
+    "employee_id": "EMP1001",
+    "department": "IT",
+    "manager": "John Smith"
+  },
+  {
+    "account_id": "ENT001",
+    "application": "Entra ID",
+    "username": "rudra.s",
+    "email": "rudra.shankar@company.com",
+    "first_name": "Rudra",
+    "last_name": "Shankar",
+    "employee_id": "EMP1001",
+    "department": "IT",
+    "manager": "John Smith"
+  },
+  {
+    "account_id": "SAP001",
+    "application": "SAP",
+    "username": "RSHANKAR",
+    "email": "rudra.shankar@company.com",
+    "first_name": "Rudra",
+    "last_name": "Shankar",
+    "employee_id": "EMP1001",
+    "department": "IT",
+    "manager": "John Smith"
+  },
+  {
+    "account_id": "SN001",
+    "application": "ServiceNow",
+    "username": "rudra.shankar",
+    "email": "rudra.shankar@company.com",
+    "first_name": "Rudra",
+    "last_name": "Shankar",
+    "employee_id": "EMP1001",
+    "department": "IT",
+    "manager": "John Smith"
+  },
+  {
+    "account_id": "SF001",
+    "application": "Salesforce",
+    "username": "jdoe",
+    "email": "john.doe@company.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "employee_id": "EMP2002",
+    "department": "Finance",
+    "manager": "Alice Brown"
+  }
+]

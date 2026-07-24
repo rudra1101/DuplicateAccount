@@ -9,62 +9,129 @@ import {
   Box,
 } from "@mui/material";
 
-import { NavLink } from "react-router-dom";
-import { navigationItems } from "../../types/navigation";
+import DashboardIcon from "@mui/icons-material/Dashboard";
+import SearchIcon from "@mui/icons-material/ManageSearch";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
+import AssessmentIcon from "@mui/icons-material/Assessment";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
+import SettingsIcon from "@mui/icons-material/Settings";
+
+import { Link, useLocation } from "react-router-dom";
 
 const drawerWidth = 250;
 
+const menuItems = [
+  {
+    text: "Dashboard",
+    icon: <DashboardIcon />,
+    path: "/",
+  },
+  {
+    text: "Duplicate Detection",
+    icon: <SearchIcon />,
+    path: "/duplicates",
+  },
+  {
+    text: "Review Queue",
+    icon: <FactCheckIcon />,
+    path: "/review",
+  },
+  {
+    text: "Reports",
+    icon: <AssessmentIcon />,
+    path: "/reports",
+  },
+  {
+    text: "Admin",
+    icon: <AdminPanelSettingsIcon />,
+    path: "/admin",
+  },
+  {
+    text: "Settings",
+    icon: <SettingsIcon />,
+    path: "/settings",
+  },
+];
+
 const Sidebar = () => {
+  const location = useLocation();
+
   return (
     <Drawer
       variant="permanent"
       sx={{
         width: drawerWidth,
         flexShrink: 0,
+
         "& .MuiDrawer-paper": {
           width: drawerWidth,
           boxSizing: "border-box",
-          borderRight: "1px solid #e5e7eb",
+          backgroundColor: "#0f172a",
+          color: "#fff",
         },
       }}
     >
       <Toolbar>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 700,
-            color: "#1976d2",
-          }}
-        >
-          IdentityAI
-        </Typography>
+        <Box>
+          <Typography
+            variant="h6"
+            sx={{
+              fontWeight: 700,
+              color: "#fff",
+            }}
+          >
+            IdentityAI
+          </Typography>
+
+          <Typography
+            variant="caption"
+            sx={{
+              color: "#94a3b8",
+            }}
+          >
+            Duplicate Detection Platform
+          </Typography>
+        </Box>
       </Toolbar>
 
-      <Box sx={{ px: 1 }}>
-        <List>
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
+      <List sx={{ mt: 2 }}>
+        {menuItems.map((item) => (
+          <ListItemButton
+            key={item.text}
+            component={Link}
+            to={item.path}
+            selected={location.pathname === item.path}
+            sx={{
+              mx: 1,
+              borderRadius: 2,
+              mb: 0.5,
 
-            return (
-              <ListItemButton
-                key={item.id}
-                component={NavLink}
-                to={item.path}
-                sx={{
-                  borderRadius: 2,
-                  mb: 1,
-                }}
-              >
-                <ListItemIcon>
-                  <Icon />
-                </ListItemIcon>
+              "&.Mui-selected": {
+                backgroundColor: "#1976d2",
+              },
 
-                <ListItemText primary={item.title} />
-              </ListItemButton>
-            );
-          })}
-        </List>
-      </Box>
+              "&.Mui-selected:hover": {
+                backgroundColor: "#1565c0",
+              },
+
+              "&:hover": {
+                backgroundColor: "#1e293b",
+              },
+            }}
+          >
+            <ListItemIcon
+              sx={{
+                color: "inherit",
+                minWidth: 40,
+              }}
+            >
+              {item.icon}
+            </ListItemIcon>
+
+            <ListItemText primary={item.text} />
+          </ListItemButton>
+        ))}
+      </List>
     </Drawer>
   );
 };

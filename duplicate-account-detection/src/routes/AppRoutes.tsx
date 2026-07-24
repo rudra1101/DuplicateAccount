@@ -6,6 +6,7 @@ import DuplicateDetection from "../pages/DuplicateDetection/DuplicateDetection";
 import Reports from "../pages/Reports/Reports";
 import Admin from "../pages/Admin/Admin";
 import Settings from "../pages/Settings/Settings";
+import ReviewQueue from "../pages/Review/ReviewQueue";
 
 const AppRoutes = () => {
   return (
@@ -16,6 +17,7 @@ const AppRoutes = () => {
         <Route path="reports" element={<Reports />} />
         <Route path="admin" element={<Admin />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="review" element={<ReviewQueue />} />
       </Route>
     </Routes>
   );

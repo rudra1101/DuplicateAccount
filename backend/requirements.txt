@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy
+python-dotenv
+python-multipart
+rapidfuzz
+pandas
+numpy

@@ -1,21 +1,36 @@
+import { useState } from "react";
+import {
+  Fab,
+  Tooltip,
+} from "@mui/material";
 import SmartToyIcon from "@mui/icons-material/SmartToy";
-import { Fab, Tooltip } from "@mui/material";
+
+import ChatBot from "./ChatBot";
 
 const FloatingChat = () => {
+  const [open, setOpen] = useState(false);
+
   return (
-    <Tooltip title="AI Assistant">
-      <Fab
-        color="primary"
-        sx={{
-          position: "fixed",
-          bottom: 30,
-          right: 30,
-          zIndex: 9999,
-        }}
-      >
-        <SmartToyIcon />
-      </Fab>
-    </Tooltip>
+    <>
+      <Tooltip title="IdentityAI Copilot">
+        <Fab
+          color="primary"
+          sx={{
+            position: "fixed",
+            bottom: 25,
+            right: 25,
+          }}
+          onClick={() => setOpen(true)}
+        >
+          <SmartToyIcon />
+        </Fab>
+      </Tooltip>
+
+      <ChatBot
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 };
 
