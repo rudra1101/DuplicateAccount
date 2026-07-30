@@ -1,14 +1,23 @@
 from pydantic import BaseModel
-from typing import Optional
 
 
 class Account(BaseModel):
-    account_id: str
+    id: str | None = None
+
     application: str
+
     username: str
+
+    displayName: str
+
     email: str
-    first_name: str
-    last_name: str
-    employee_id: Optional[str] = None
-    department: Optional[str] = None
-    manager: Optional[str] = None
+
+    employeeId: str | None = None
+
+    department: str | None = None
+
+    manager: str | None = None
+
+    status: str | None = "Enabled"
+
+    created: str | None = None

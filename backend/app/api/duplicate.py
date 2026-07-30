@@ -1,11 +1,34 @@
 from fastapi import APIRouter
 
-from app.schemas.account import Account
-from app.ai.duplicate_engine import detect_duplicates
+from app.models.account import Account
+from app.services.duplicate_detector import detect_duplicate_groups
 
-router = APIRouter(prefix="/duplicates", tags=["Duplicate Detection"])
+
+router = APIRouter(
+    prefix="/duplicates",
+    tags=["Duplicate Detection"],
+)
 
 
 @router.post("/scan")
 def scan(accounts: list[Account]):
-    return detect_duplicates(accounts)
+    duplicate_groups, duplicate_details = detect_duplicate_groups(accounts)
+
+    total_groups = sum(
+        len(groups)
+        for groups in duplicate_groups.values()
+    )
+
+    total_duplicate_accounts = sum(
+        group["duplicates"]
+        for groups in duplicate_groups.values()
+        for group in groups
+    )
+
+    return {
+        "accountsScanned": len(accounts),
+        "duplicateGroupsFound": total_groups,
+        "duplicateAccountsFound": total_duplicate_accounts,
+        "groups": dict(duplicate_groups),
+        "details": duplicate_details,
+    }

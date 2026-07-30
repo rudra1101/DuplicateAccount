@@ -1,6 +1,6 @@
 import pandas as pd
 
-from app.schemas.account import Account
+from app.models.account import Account
 
 
 def read_accounts(file) -> list[Account]:
@@ -11,24 +11,36 @@ def read_accounts(file) -> list[Account]:
 
     for _, row in df.iterrows():
 
+        display_name = row.get("displayName")
+
+        if pd.isna(display_name) or display_name == "":
+            first = str(row.get("first_name", "")).strip()
+            last = str(row.get("last_name", "")).strip()
+            display_name = f"{first} {last}".strip()
+
         account = Account(
 
             id=str(row.get("id", "")),
 
-            application=row["application"],
+            application=str(row["application"]),
 
-            username=row["username"],
+            username=str(row["username"]),
 
-            first_name=row["first_name"],
+            displayName=display_name,
 
-            last_name=row["last_name"],
+            email=str(row["email"]),
 
-            email=row["email"],
+            employeeId=str(
+                row.get("employeeId", row.get("employee_id", ""))
+            ),
 
-            employee_id=row.get("employee_id"),
+            department=str(row.get("department", "")),
 
-            department=row.get("department")
+            manager=str(row.get("manager", "")),
 
+            status=str(row.get("status", "Enabled")),
+
+            created=str(row.get("created", "")),
         )
 
         accounts.append(account)

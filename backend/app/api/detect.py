@@ -1,32 +1,36 @@
-import json
-
-from pathlib import Path
-
 from fastapi import APIRouter
 
-from app.services.duplicate_detector import detect_duplicates
+from app.services.account_loader import load_accounts
+from app.services.duplicate_detector import detect_duplicate_groups
+
 
 router = APIRouter(
     prefix="/detect",
-    tags=["Duplicate Detection"]
+    tags=["Duplicate Detection"],
 )
 
 
 @router.get("/")
 def detect():
+    accounts = load_accounts()
 
-    file_path = (
-        Path(__file__).parent.parent
-        / "data"
-        / "sample_accounts.json"
+    duplicate_groups, duplicate_details = detect_duplicate_groups(accounts)
+
+    total_groups = sum(
+        len(groups)
+        for groups in duplicate_groups.values()
     )
 
-    with open(file_path, "r") as file:
-        accounts = json.load(file)
-
-    duplicates = detect_duplicates(accounts)
+    total_duplicate_accounts = sum(
+        group["duplicates"]
+        for groups in duplicate_groups.values()
+        for group in groups
+    )
 
     return {
-        "duplicates_found": len(duplicates),
-        "results": duplicates,
+        "accountsScanned": len(accounts),
+        "duplicateGroupsFound": total_groups,
+        "duplicateAccountsFound": total_duplicate_accounts,
+        "groups": dict(duplicate_groups),
+        "details": duplicate_details,
     }

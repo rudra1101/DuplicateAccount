@@ -1,25 +1,30 @@
 from fastapi import APIRouter
 
-router = APIRouter(
-    prefix="/review",
-    tags=["Review Queue"]
+from app.services.review_service import (
+    get_review_summary,
+    get_duplicate_groups,
+    get_duplicate_group_details,
 )
 
+router = APIRouter(
+    prefix="/review",
+    tags=["Review Queue"],
+)
+
+
 @router.get("/")
-def review_queue():
-    return [
-        {
-            "id": 1,
-            "application": "Active Directory",
-            "account1": "john.smith",
-            "account2": "jsmith",
-            "confidence": 96,
-        },
-        {
-            "id": 2,
-            "application": "Entra ID",
-            "account1": "rudra.shankar",
-            "account2": "rudra.s",
-            "confidence": 91,
-        },
-    ]
+def review_summary():
+
+    return get_review_summary()
+
+
+@router.get("/{application}")
+def application_groups(application: str):
+
+    return get_duplicate_groups(application)
+
+
+@router.get("/details/{group_id}")
+def duplicate_group(group_id: int):
+
+    return get_duplicate_group_details(group_id)

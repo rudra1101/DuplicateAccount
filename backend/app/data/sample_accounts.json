@@ -1,57 +1,57 @@
 [
   {
-    "account_id": "AD001",
     "application": "Active Directory",
-    "username": "rshankar",
-    "email": "rudra.shankar@company.com",
-    "first_name": "Rudra",
-    "last_name": "Shankar",
-    "employee_id": "EMP1001",
-    "department": "IT",
-    "manager": "John Smith"
-  },
-  {
-    "account_id": "ENT001",
-    "application": "Entra ID",
-    "username": "rudra.s",
-    "email": "rudra.shankar@company.com",
-    "first_name": "Rudra",
-    "last_name": "Shankar",
-    "employee_id": "EMP1001",
-    "department": "IT",
-    "manager": "John Smith"
-  },
-  {
-    "account_id": "SAP001",
-    "application": "SAP",
-    "username": "RSHANKAR",
-    "email": "rudra.shankar@company.com",
-    "first_name": "Rudra",
-    "last_name": "Shankar",
-    "employee_id": "EMP1001",
-    "department": "IT",
-    "manager": "John Smith"
-  },
-  {
-    "account_id": "SN001",
-    "application": "ServiceNow",
-    "username": "rudra.shankar",
-    "email": "rudra.shankar@company.com",
-    "first_name": "Rudra",
-    "last_name": "Shankar",
-    "employee_id": "EMP1001",
-    "department": "IT",
-    "manager": "John Smith"
-  },
-  {
-    "account_id": "SF001",
-    "application": "Salesforce",
-    "username": "jdoe",
-    "email": "john.doe@company.com",
-    "first_name": "John",
-    "last_name": "Doe",
-    "employee_id": "EMP2002",
+    "username": "john.smith",
+    "displayName": "John Smith",
+    "email": "john@company.com",
+    "employeeId": "10231",
     "department": "Finance",
-    "manager": "Alice Brown"
+    "manager": "David Lee",
+    "status": "Enabled",
+    "created": "2023-01-12"
+  },
+  {
+    "application": "Active Directory",
+    "username": "jsmith",
+    "displayName": "John Smith",
+    "email": "john@company.com",
+    "employeeId": "10231",
+    "department": "Finance",
+    "manager": "David Lee",
+    "status": "Enabled",
+    "created": "2024-02-14"
+  },
+  {
+    "application": "Active Directory",
+    "username": "john.s",
+    "displayName": "John Smith",
+    "email": "john.smith@company.com",
+    "employeeId": "10231",
+    "department": "Finance",
+    "manager": "David Lee",
+    "status": "Enabled",
+    "created": "2024-01-10"
+  },
+  {
+    "application": "Active Directory",
+    "username": "michael.brown",
+    "displayName": "Michael Brown",
+    "email": "michael@company.com",
+    "employeeId": "20456",
+    "department": "IT",
+    "manager": "Alice Johnson",
+    "status": "Enabled",
+    "created": "2022-06-10"
+  },
+  {
+    "application": "Active Directory",
+    "username": "mbrown",
+    "displayName": "Michael Brown",
+    "email": "michael@company.com",
+    "employeeId": "20456",
+    "department": "IT",
+    "manager": "Alice Johnson",
+    "status": "Enabled",
+    "created": "2024-04-12"
   }
 ]
