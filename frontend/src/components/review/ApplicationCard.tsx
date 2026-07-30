@@ -1,15 +1,10 @@
-import {
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Stack,
-} from "@mui/material";
+import { Card, CardContent, Typography, Button, Stack } from "@mui/material";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 
 export interface ApplicationSummary {
   application: string;
   totalAccounts: number;
+  duplicateGroups: number;
   duplicateAccounts: number;
   highConfidence: number;
   lastScan: string;
@@ -20,10 +15,7 @@ interface Props {
   onView: (application: string) => void;
 }
 
-const ApplicationCard = ({
-  application,
-  onView,
-}: Props) => {
+const ApplicationCard = ({ application, onView }: Props) => {
   return (
     <Card
       elevation={2}
@@ -38,43 +30,27 @@ const ApplicationCard = ({
       }}
     >
       <CardContent>
-        <Typography
-          variant="h6"
-          fontWeight={700}
-          gutterBottom
-        >
+        <Typography variant="h6" fontWeight={700} gutterBottom>
           {application.application}
         </Typography>
 
         <Stack spacing={1} sx={{ mt: 3 }}>
           <Typography>
             Accounts
-            <strong>
-              {" "}
-              {application.totalAccounts.toLocaleString()}
-            </strong>
+            <strong> {application.totalAccounts.toLocaleString()}</strong>
           </Typography>
 
           <Typography color="error.main">
             Duplicates
-            <strong>
-              {" "}
-              {application.duplicateAccounts}
-            </strong>
+            <strong> {application.duplicateAccounts}</strong>
           </Typography>
 
           <Typography color="success.main">
             High Confidence
-            <strong>
-              {" "}
-              {application.highConfidence}
-            </strong>
+            <strong> {application.highConfidence}</strong>
           </Typography>
 
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
+          <Typography variant="caption" color="text.secondary">
             Last Scan: {application.lastScan}
           </Typography>
         </Stack>
@@ -84,9 +60,7 @@ const ApplicationCard = ({
           variant="contained"
           endIcon={<ArrowForwardIcon />}
           fullWidth
-          onClick={() =>
-            onView(application.application)
-          }
+          onClick={() => onView(application.application)}
         >
           View Details
         </Button>

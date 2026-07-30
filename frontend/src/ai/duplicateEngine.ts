@@ -1,66 +1,73 @@
 import { Account } from "../models/Account";
-import { stringSimilarity } from "./similarity";
 
-export interface DuplicateResult {
+const BASE_URL = "http://localhost:8000/api";
 
-    account1: Account;
-
-    account2: Account;
-
-    confidence: number;
-
+export interface DuplicateGroup {
+  groupId: number;
+  primaryAccount: string;
+  duplicates: number;
+  highestConfidence: number;
 }
 
-export function detectDuplicates(
-    accounts: Account[]
-): DuplicateResult[] {
+export interface ReviewSummary {
+  application: string;
+  totalAccounts: number;
+  duplicateGroups: number;
+  duplicateAccounts: number;
+  highConfidence: number;
+  lastScan: string;
+}
 
-    const results: DuplicateResult[] = [];
+export interface AccountDetails extends Account {}
 
-    for (let i = 0; i < accounts.length; i++) {
+export interface DuplicateAccount {
+  id: number;
+  confidence: number;
+  recommendation: string;
+  matchedAttributes: string[];
+  differentAttributes: string[];
+  account: AccountDetails;
+}
 
-        for (let j = i + 1; j < accounts.length; j++) {
+export interface DuplicateGroupDetails {
+  primaryAccount: AccountDetails;
+  duplicates: DuplicateAccount[];
+}
 
-            const a = accounts[i];
-            const b = accounts[j];
+export async function getReviewSummary(): Promise<ReviewSummary[]> {
+  const response = await fetch(`${BASE_URL}/review/`);
 
-            const nameScore =
-                (
-                    stringSimilarity(a.firstName, b.firstName) +
-                    stringSimilarity(a.lastName, b.lastName)
-                ) / 2;
+  if (!response.ok) {
+    throw new Error("Failed to fetch review summary");
+  }
 
-            const emailScore =
-                stringSimilarity(a.email, b.email);
+  return response.json();
+}
 
-            const usernameScore =
-                stringSimilarity(a.username, b.username);
+export async function getDuplicateGroups(
+  application: string
+): Promise<DuplicateGroup[]> {
+  const response = await fetch(
+    `${BASE_URL}/review/${encodeURIComponent(application)}`
+  );
 
-            const score =
-                (
-                    nameScore * 0.5 +
-                    emailScore * 0.3 +
-                    usernameScore * 0.2
-                );
+  if (!response.ok) {
+    throw new Error("Failed to fetch duplicate groups");
+  }
 
-            if (score > 0.70) {
+  return response.json();
+}
 
-                results.push({
+export async function getDuplicateDetails(
+  groupId: number
+): Promise<DuplicateGroupDetails> {
+  const response = await fetch(
+    `${BASE_URL}/review/details/${groupId}`
+  );
 
-                    account1: a,
+  if (!response.ok) {
+    throw new Error("Failed to fetch duplicate details");
+  }
 
-                    account2: b,
-
-                    confidence: Math.round(score * 100)
-
-                });
-
-            }
-
-        }
-
-    }
-
-    return results;
-
+  return response.json();
 }

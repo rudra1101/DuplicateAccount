@@ -18,9 +18,9 @@ const DuplicatePairList = ({
     <Box>
       {pairs.map((pair) => (
         <DuplicatePairCard
-          key={pair.id}
+          key={pair.groupId}
           pair={pair}
-          selected={selectedId === pair.id}
+          selected={selectedId === pair.groupId}
           onClick={() => onSelect(pair)}
         />
       ))}

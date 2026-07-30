@@ -28,13 +28,17 @@ interface Account {
   created: string;
 }
 
-interface Details {
+interface DuplicateAccount {
   confidence: number;
   recommendation: string;
   matchedAttributes: string[];
   differentAttributes: string[];
-  account1: Account;
-  account2: Account;
+  account: Account;
+}
+
+interface Details {
+  primaryAccount: Account;
+  duplicates: DuplicateAccount[];
 }
 
 interface Props {
@@ -64,7 +68,7 @@ const AccountComparison = ({
           </Typography>
 
           <Typography color="text.secondary" mt={2}>
-            Select a duplicate pair from the left panel.
+            Select a duplicate group from the left panel.
           </Typography>
         </Box>
       </Paper>
@@ -85,54 +89,56 @@ const AccountComparison = ({
     );
   }
 
+  if (details.duplicates.length === 0) {
+    return (
+      <Paper sx={{ p: 6, borderRadius: 3 }}>
+        <Typography>No duplicate accounts found.</Typography>
+      </Paper>
+    );
+  }
+
+  const duplicate = details.duplicates[0];
+
   const rows = [
     {
       label: "Username",
-      a: details.account1.username,
-      b: details.account2.username,
-      match: false,
+      a: details.primaryAccount.username,
+      b: duplicate.account.username,
     },
     {
       label: "Display Name",
-      a: details.account1.displayName,
-      b: details.account2.displayName,
-      match: true,
+      a: details.primaryAccount.displayName,
+      b: duplicate.account.displayName,
     },
     {
       label: "Email",
-      a: details.account1.email,
-      b: details.account2.email,
-      match: true,
+      a: details.primaryAccount.email,
+      b: duplicate.account.email,
     },
     {
       label: "Employee ID",
-      a: details.account1.employeeId,
-      b: details.account2.employeeId,
-      match: true,
+      a: details.primaryAccount.employeeId,
+      b: duplicate.account.employeeId,
     },
     {
       label: "Department",
-      a: details.account1.department,
-      b: details.account2.department,
-      match: true,
+      a: details.primaryAccount.department,
+      b: duplicate.account.department,
     },
     {
       label: "Manager",
-      a: details.account1.manager,
-      b: details.account2.manager,
-      match: true,
+      a: details.primaryAccount.manager,
+      b: duplicate.account.manager,
     },
     {
       label: "Status",
-      a: details.account1.status,
-      b: details.account2.status,
-      match: true,
+      a: details.primaryAccount.status,
+      b: duplicate.account.status,
     },
     {
       label: "Created",
-      a: details.account1.created,
-      b: details.account2.created,
-      match: false,
+      a: details.primaryAccount.created,
+      b: duplicate.account.created,
     },
   ];
 
@@ -154,18 +160,9 @@ const AccountComparison = ({
       <Table>
         <TableHead>
           <TableRow>
-            <TableCell>
-              <strong>Attribute</strong>
-            </TableCell>
-
-            <TableCell>
-              <strong>Account A</strong>
-            </TableCell>
-
-            <TableCell>
-              <strong>Account B</strong>
-            </TableCell>
-
+            <TableCell><strong>Attribute</strong></TableCell>
+            <TableCell><strong>Primary Account</strong></TableCell>
+            <TableCell><strong>Duplicate Account</strong></TableCell>
             <TableCell align="center">
               <strong>Match</strong>
             </TableCell>
@@ -173,31 +170,28 @@ const AccountComparison = ({
         </TableHead>
 
         <TableBody>
-          {rows.map((row) => (
-            <TableRow key={row.label}>
-              <TableCell>{row.label}</TableCell>
+          {rows.map((row) => {
+            const match =
+              duplicate.matchedAttributes.includes(row.label);
 
-              <TableCell>{row.a}</TableCell>
+            return (
+              <TableRow key={row.label}>
+                <TableCell>{row.label}</TableCell>
 
-              <TableCell>{row.b}</TableCell>
+                <TableCell>{row.a}</TableCell>
 
-              <TableCell align="center">
-                {row.match ? (
+                <TableCell>{row.b}</TableCell>
+
+                <TableCell align="center">
                   <Chip
-                    label="Match"
-                    color="success"
+                    label={match ? "Match" : "Different"}
+                    color={match ? "success" : "warning"}
                     size="small"
                   />
-                ) : (
-                  <Chip
-                    label="Different"
-                    color="warning"
-                    size="small"
-                  />
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
 
@@ -211,19 +205,30 @@ const AccountComparison = ({
         AI Recommendation
       </Typography>
 
-      <Alert severity="success" sx={{ mb: 3 }}>
-        AI recommends <strong>{details.recommendation}</strong> with{" "}
-        <strong>{details.confidence}% confidence</strong>.
+      <Alert
+        severity={
+          duplicate.recommendation === "MERGE"
+            ? "success"
+            : "warning"
+        }
+        sx={{ mb: 3 }}
+      >
+        AI recommends{" "}
+        <strong>{duplicate.recommendation}</strong> with{" "}
+        <strong>{duplicate.confidence}% confidence</strong>.
       </Alert>
 
       <Grid container spacing={4}>
         <Grid size={{ xs: 12, md: 6 }}>
-          <Typography fontWeight={700} mb={2}>
+          <Typography
+            fontWeight={700}
+            mb={2}
+          >
             Matched Attributes
           </Typography>
 
           <Stack spacing={1}>
-            {details.matchedAttributes.map((attr) => (
+            {duplicate.matchedAttributes.map((attr) => (
               <Chip
                 key={attr}
                 label={attr}
@@ -234,12 +239,15 @@ const AccountComparison = ({
         </Grid>
 
         <Grid size={{ xs: 12, md: 6 }}>
-          <Typography fontWeight={700} mb={2}>
+          <Typography
+            fontWeight={700}
+            mb={2}
+          >
             Different Attributes
           </Typography>
 
           <Stack spacing={1}>
-            {details.differentAttributes.map((attr) => (
+            {duplicate.differentAttributes.map((attr) => (
               <Chip
                 key={attr}
                 label={attr}
@@ -275,9 +283,7 @@ const AccountComparison = ({
           Reject
         </Button>
 
-        <Button
-          variant="outlined"
-        >
+        <Button variant="outlined">
           Ignore
         </Button>
       </Stack>

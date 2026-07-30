@@ -58,7 +58,7 @@ const ApplicationDetails = () => {
 
     setLoadingDetails(true);
 
-    getDuplicateDetails(selectedPair.id)
+    getDuplicateDetails(selectedPair.groupId)
       .then((data) => {
         setDetails(data);
       })
@@ -96,7 +96,7 @@ const ApplicationDetails = () => {
           ) : (
             <DuplicatePairList
               pairs={pairs}
-              selectedId={selectedPair?.id ?? null}
+              selectedId={selectedPair?.groupId ?? null}
               onSelect={setSelectedPair}
             />
           )}
