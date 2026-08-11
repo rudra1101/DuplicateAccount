@@ -1,3 +1,4 @@
 .env
 *.joblib
 __pycache__/
+accounts.faiss
