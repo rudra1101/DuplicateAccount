@@ -1,8 +1,29 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+)
 
-from app.services.upload_service import read_accounts
-from app.services.duplicate_detector import detect_duplicate_groups
-from app.store.memory_store import save_scan
+from sqlalchemy.orm import Session
+
+from app.database.session import get_db
+
+from app.services.account_loader import (
+    load_uploaded_accounts,
+)
+
+from app.services.duplicate_detector import (
+    detect_duplicate_groups,
+)
+
+from app.services.scan_repository import (
+    save_completed_scan,
+)
+
+from app.store import memory_store
+from app.services.account_loader import load_uploaded_accounts
 
 router = APIRouter(
     prefix="/upload",
@@ -11,50 +32,88 @@ router = APIRouter(
 
 
 @router.post("/")
-async def upload(file: UploadFile = File(...)):
-    try:
-        # Read uploaded accounts
-        accounts = read_accounts(file.file)
+async def upload_accounts(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
 
-        if not accounts:
-            raise HTTPException(
-                status_code=400,
-                detail="No accounts found in uploaded file."
-            )
-
-        # Run AI duplicate detection
-        duplicate_groups, duplicate_details = detect_duplicate_groups(accounts)
-
-        # Save results in memory
-        save_scan(
-            uploaded_accounts=accounts,
-            groups=duplicate_groups,
-            details=duplicate_details,
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are supported.",
         )
 
-        # Calculate statistics
+    try:
+
+        ##########################################
+        # Read uploaded accounts
+        ##########################################
+
+        accounts = load_uploaded_accounts(file.file)
+
+        ##########################################
+        # Detect duplicates
+        ##########################################
+
+        (
+            duplicate_groups,
+            duplicate_details,
+        ) = detect_duplicate_groups(accounts)
+
+        ##########################################
+        # Save in memory
+        ##########################################
+
+        memory_store.accounts = accounts
+
+        memory_store.duplicate_groups = duplicate_groups
+
+        memory_store.duplicate_details = duplicate_details
+
+        from datetime import datetime
+
+        memory_store.last_scan = datetime.now()
+
+        ##########################################
+        # Save in SQLite
+        ##########################################
+
+        save_completed_scan(
+            db=db,
+            filename=file.filename,
+            accounts=accounts,
+            duplicate_groups=duplicate_groups,
+            duplicate_details=duplicate_details,
+        )
+
+        ##########################################
+        # Return response
+        ##########################################
+
         total_groups = sum(
             len(groups)
             for groups in duplicate_groups.values()
         )
 
-        total_duplicates = sum(
+        total_duplicate_accounts = sum(
             group["duplicates"]
             for groups in duplicate_groups.values()
             for group in groups
         )
 
         return {
-            "status": "SUCCESS",
-            "accountsUploaded": len(accounts),
-            "applications": len(duplicate_groups),
+            "message": "Upload successful",
+            "accounts": len(accounts),
+            "applications": len(
+                duplicate_groups
+            ),
             "duplicateGroups": total_groups,
-            "duplicateAccounts": total_duplicates,
-            "message": "Duplicate detection completed successfully."
+            "duplicateAccounts": total_duplicate_accounts,
         }
 
     except Exception as ex:
+
         raise HTTPException(
             status_code=500,
-            detail=str(ex)
+            detail=str(ex),
         )

@@ -1,10 +1,28 @@
+export type ChatRole =
+  | "user"
+  | "assistant";
+
 export interface ChatMessage {
-    id: number;
-    role: "user" | "assistant";
-    content: string;
-    timestamp: Date;
+  id: string;
+  role: ChatRole;
+  content: string;
+  timestamp: Date;
+}
+
+export interface ChatHistoryMessage {
+  role: ChatRole;
+  content: string;
+}
+
+export interface ToolInvocation {
+  name: string;
+  arguments: Record<string, unknown>;
+  result: unknown;
 }
 
 export interface AIResponse {
-    message: string;
+  conversationId: string;
+  message: string;
+  model: string;
+  toolsUsed: ToolInvocation[];
 }

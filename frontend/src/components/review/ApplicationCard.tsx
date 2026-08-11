@@ -1,5 +1,14 @@
-import { Card, CardContent, Typography, Button, Stack } from "@mui/material";
+import {
+  Button,
+  Card,
+  CardContent,
+  Stack,
+  Typography,
+} from "@mui/material";
+
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+
+import { formatDateTime } from "../../utils/dateTime";
 
 export interface ApplicationSummary {
   application: string;
@@ -7,7 +16,7 @@ export interface ApplicationSummary {
   duplicateGroups: number;
   duplicateAccounts: number;
   highConfidence: number;
-  lastScan: string;
+  lastScan: string | null;
 }
 
 interface Props {
@@ -15,7 +24,10 @@ interface Props {
   onView: (application: string) => void;
 }
 
-const ApplicationCard = ({ application, onView }: Props) => {
+const ApplicationCard = ({
+  application,
+  onView,
+}: Props) => {
   return (
     <Card
       elevation={2}
@@ -30,28 +42,58 @@ const ApplicationCard = ({ application, onView }: Props) => {
       }}
     >
       <CardContent>
-        <Typography variant="h6" fontWeight={700} gutterBottom>
+        <Typography
+          variant="h6"
+          fontWeight={700}
+          gutterBottom
+        >
           {application.application}
         </Typography>
 
         <Stack spacing={1} sx={{ mt: 3 }}>
           <Typography>
             Accounts
-            <strong> {application.totalAccounts.toLocaleString()}</strong>
+            <strong>
+              {" "}
+              {application.totalAccounts.toLocaleString()}
+            </strong>
+          </Typography>
+
+          <Typography>
+            Duplicate Groups
+            <strong>
+              {" "}
+              {application.duplicateGroups.toLocaleString()}
+            </strong>
           </Typography>
 
           <Typography color="error.main">
-            Duplicates
-            <strong> {application.duplicateAccounts}</strong>
+            Duplicate Accounts
+            <strong>
+              {" "}
+              {application.duplicateAccounts.toLocaleString()}
+            </strong>
           </Typography>
 
           <Typography color="success.main">
             High Confidence
-            <strong> {application.highConfidence}</strong>
+            <strong>
+              {" "}
+              {application.highConfidence.toLocaleString()}
+            </strong>
           </Typography>
 
-          <Typography variant="caption" color="text.secondary">
-            Last Scan: {application.lastScan}
+          <Typography
+            variant="caption"
+            color="text.secondary"
+          >
+            Last Scan:{" "}
+            {application.lastScan
+              ? formatDateTime(
+                  application.lastScan,
+                  "Asia/Kolkata"
+                )
+              : "Not available"}
           </Typography>
         </Stack>
 
@@ -60,7 +102,9 @@ const ApplicationCard = ({ application, onView }: Props) => {
           variant="contained"
           endIcon={<ArrowForwardIcon />}
           fullWidth
-          onClick={() => onView(application.application)}
+          onClick={() =>
+            onView(application.application)
+          }
         >
           View Details
         </Button>

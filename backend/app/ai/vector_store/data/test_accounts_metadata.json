@@ -1,0 +1,38 @@
+{
+  "1": {
+    "vector_id": 1,
+    "scan_id": 1,
+    "source_account_id": "HR-100",
+    "application": "Workday",
+    "username": "william.thompson",
+    "display_name": "William Thompson",
+    "email": "william.thompson@company.com",
+    "employee_id": "EMP9001",
+    "embedding_model": "nomic-embed-text",
+    "extra": {}
+  },
+  "2": {
+    "vector_id": 2,
+    "scan_id": 1,
+    "source_account_id": "AD-900",
+    "application": "Active Directory",
+    "username": "bill.thompson",
+    "display_name": "Bill Thompson",
+    "email": "bill.thompson@company.com",
+    "employee_id": "EMP9001",
+    "embedding_model": "nomic-embed-text",
+    "extra": {}
+  },
+  "3": {
+    "vector_id": 3,
+    "scan_id": 1,
+    "source_account_id": "SAP-200",
+    "application": "SAP",
+    "username": "rachel.green",
+    "display_name": "Rachel Green",
+    "email": "rachel.green@company.com",
+    "employee_id": "EMP2000",
+    "embedding_model": "nomic-embed-text",
+    "extra": {}
+  }
+}

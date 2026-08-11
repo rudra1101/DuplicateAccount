@@ -16,6 +16,9 @@ import AssessmentIcon from "@mui/icons-material/Assessment";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import SettingsIcon from "@mui/icons-material/Settings";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import CableIcon from "@mui/icons-material/Cable";
+import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
+import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
 
 import { Link, useLocation } from "react-router-dom";
 
@@ -53,11 +56,25 @@ const menuItems = [
     path: "/upload",
   },
   {
+    text: "Operations",
+    path: "/operations",
+    icon: <MonitorHeartOutlinedIcon />,
+  },
+  {
     text: "Settings",
     icon: <SettingsIcon />,
     path: "/settings",
   },
-  
+  {
+    text: "Integrations",
+    path: "/integrations",
+    icon: <CableIcon />,
+  },
+  {
+    text: "ML Training",
+    path: "/ml-training",
+    icon: <ModelTrainingIcon />,
+  },
 ];
 
 const Sidebar = () => {

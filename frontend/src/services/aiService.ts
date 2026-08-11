@@ -1,78 +1,85 @@
-import { AIResponse } from "../models/chat";
+import type {
+  AIResponse,
+  ChatHistoryMessage,
+} from "../models/chat";
 
-export async function askAI(
-    prompt: string
-): Promise<AIResponse> {
+const API_URL =
+  "http://127.0.0.1:8000/api";
 
-    await new Promise((resolve) =>
-        setTimeout(resolve, 1200)
-    );
-
-    const response =
-        getMockResponse(prompt);
-
-    return {
-        message: response,
-    };
+interface ChatRequestPayload {
+  message: string;
+  conversationId: string | null;
+  history: ChatHistoryMessage[];
+  useReasoningModel: boolean;
 }
 
-function getMockResponse(prompt: string): string {
+interface ApiErrorResponse {
+  detail?: string;
+}
 
-    const question = prompt.toLowerCase();
+async function parseResponse(
+  response: Response,
+): Promise<AIResponse> {
+  if (response.ok) {
+    return response.json() as Promise<AIResponse>;
+  }
 
-    if (question.includes("duplicate")) {
-        return `
-I found multiple duplicate account groups.
+  const responseText =
+    await response.text();
 
-• Active Directory : 78
+  let errorMessage =
+    "Unable to contact the AI assistant.";
 
-• Entra ID : 42
+  if (responseText) {
+    try {
+      const parsed = JSON.parse(
+        responseText,
+      ) as ApiErrorResponse;
 
-• SAP : 18
-
-Recommendation:
-
-Start reviewing the Active Directory duplicates since they represent the highest risk.
-`;
+      if (parsed.detail) {
+        errorMessage = parsed.detail;
+      }
+    } catch {
+      errorMessage = responseText;
     }
+  }
 
-    if (question.includes("confidence")) {
-        return `
-The AI confidence score is calculated using:
+  throw new Error(errorMessage);
+}
 
-✔ Employee ID
+export async function askAI(
+  message: string,
+  history: ChatHistoryMessage[],
+  conversationId: string | null,
+  useReasoningModel = false,
+): Promise<AIResponse> {
+  const normalizedMessage =
+    message.trim();
 
-✔ Email Address
+  if (!normalizedMessage) {
+    throw new Error(
+      "Chat message cannot be empty.",
+    );
+  }
 
-✔ Username Similarity
+  const payload: ChatRequestPayload = {
+    message: normalizedMessage,
+    conversationId,
+    history: history.slice(-30),
+    useReasoningModel,
+  };
 
-✔ Department
+  const response = await fetch(
+    `${API_URL}/chat/`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
 
-✔ Manager
-
-✔ Account Attributes
-
-The current model confidence is 98.2%.
-`;
-    }
-
-    if (question.includes("report")) {
-        return `
-Generated Summary
-
-Accounts Scanned : 184,265
-
-Duplicates Found : 2,861
-
-Pending Reviews : 464
-
-High Risk : 32
-`;
-    }
-
-    return `
-I'm IdentityAI Copilot.
-
-I can help you with duplicate account analysis, AI explanations, reports and IAM governance.
-`;
+  return parseResponse(response);
 }

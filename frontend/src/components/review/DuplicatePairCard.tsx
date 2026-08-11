@@ -1,23 +1,36 @@
 import {
   Card,
   CardContent,
-  Typography,
   Chip,
   Stack,
+  Typography,
 } from "@mui/material";
 
-export interface DuplicatePair {
-  groupId: number;
-  primaryAccount: string;
-  duplicates: number;
-  highestConfidence: number;
-}
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
+
+import type { DuplicateGroup } from "../../services/reviewService";
+
+export type DuplicatePair = DuplicateGroup;
 
 interface Props {
   pair: DuplicatePair;
   selected: boolean;
   onClick: () => void;
 }
+
+const getConfidenceColor = (
+  confidence: number
+): "success" | "warning" | "error" => {
+  if (confidence >= 95) {
+    return "success";
+  }
+
+  if (confidence >= 80) {
+    return "warning";
+  }
+
+  return "error";
+};
 
 const DuplicatePairCard = ({
   pair,
@@ -30,12 +43,19 @@ const DuplicatePairCard = ({
       sx={{
         mb: 2,
         cursor: "pointer",
-        borderRadius: 2,
+        borderRadius: 3,
         border: selected
-          ? "2px solid #1976d2"
-          : "1px solid #e0e0e0",
-        transition: "0.2s",
+          ? "2px solid"
+          : "1px solid",
+        borderColor: selected
+          ? "primary.main"
+          : "divider",
+        backgroundColor: selected
+          ? "action.selected"
+          : "background.paper",
+        transition: "transform 0.2s, box-shadow 0.2s",
         "&:hover": {
+          transform: "translateY(-2px)",
           boxShadow: 4,
         },
       }}
@@ -44,32 +64,44 @@ const DuplicatePairCard = ({
         <Stack
           direction="row"
           justifyContent="space-between"
-          alignItems="center"
+          alignItems="flex-start"
+          spacing={2}
         >
-          <Typography fontWeight={600}>
+          <Typography
+            fontWeight={700}
+            sx={{ wordBreak: "break-word" }}
+          >
             {pair.primaryAccount}
           </Typography>
 
           <Chip
             label={`${pair.highestConfidence}%`}
-            color={
-              pair.highestConfidence >= 95
-                ? "success"
-                : pair.highestConfidence >= 80
-                ? "warning"
-                : "default"
-            }
+            color={getConfidenceColor(
+              pair.highestConfidence
+            )}
             size="small"
           />
         </Stack>
 
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          mt={1}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1}
+          mt={2}
         >
-          {pair.duplicates} duplicate account{pair.duplicates > 1 ? "s" : ""} detected
-        </Typography>
+          <GroupsOutlinedIcon
+            fontSize="small"
+            color="action"
+          />
+
+          <Typography
+            variant="body2"
+            color="text.secondary"
+          >
+            {pair.duplicates} duplicate account
+            {pair.duplicates === 1 ? "" : "s"}
+          </Typography>
+        </Stack>
       </CardContent>
     </Card>
   );

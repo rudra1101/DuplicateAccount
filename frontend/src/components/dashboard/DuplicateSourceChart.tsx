@@ -1,56 +1,96 @@
 import {
-  PieChart,
-  Pie,
   Cell,
-  Tooltip,
-  ResponsiveContainer,
   Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
 } from "recharts";
 
-const data = [
-  { name: "Active Directory", value: 78 },
-  { name: "Entra ID", value: 42 },
-  { name: "ServiceNow", value: 26 },
-  { name: "SAP", value: 18 },
-  { name: "Salesforce", value: 12 },
-];
+interface SourceData {
+  name: string;
+  value: number;
+}
+
+interface Props {
+  data: SourceData[];
+}
 
 const COLORS = [
   "#1976d2",
   "#2e7d32",
   "#ed6c02",
+  "#9c27b0",
   "#d32f2f",
-  "#7b1fa2",
+  "#0288d1",
 ];
 
-const DuplicateSourceChart = () => {
+const DuplicateSourceChart = ({
+  data,
+}: Props) => {
+  if (!data || data.length === 0) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          textAlign: "center",
+          color: "#777",
+        }}
+      >
+        No source distribution data
+        available.
+      </div>
+    );
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={340}>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+    >
       <PieChart>
         <Pie
           data={data}
           dataKey="value"
           nameKey="name"
           cx="50%"
-          cy="42%"
-          innerRadius={55}
-          outerRadius={85}
-          paddingAngle={2}
+          cy="43%"
+          outerRadius={95}
+          innerRadius={50}
+          paddingAngle={3}
+          label={({ percent }) =>
+            `${(
+              (percent ?? 0) * 100
+            ).toFixed(0)}%`
+          }
         >
-          {data.map((entry, index) => (
-            <Cell
-              key={index}
-              fill={COLORS[index % COLORS.length]}
-            />
-          ))}
+          {data.map(
+            (entry, index) => (
+              <Cell
+                key={`${entry.name}-${index}`}
+                fill={
+                  COLORS[
+                    index %
+                      COLORS.length
+                  ]
+                }
+              />
+            )
+          )}
         </Pie>
 
-        <Tooltip />
+        <Tooltip
+          formatter={(value) => [
+            Number(
+              value
+            ).toLocaleString(),
+            "Duplicate Accounts",
+          ]}
+        />
 
         <Legend
           verticalAlign="bottom"
-          align="center"
-          iconType="circle"
+          height={48}
         />
       </PieChart>
     </ResponsiveContainer>

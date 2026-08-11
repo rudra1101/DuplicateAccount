@@ -1,50 +1,102 @@
-import { useState } from "react";
+import {
+  useState,
+} from "react";
+
 import {
   Box,
-  TextField,
   IconButton,
+  TextField,
 } from "@mui/material";
+
 import SendIcon from "@mui/icons-material/Send";
 
 interface Props {
-  onSend: (message: string) => void;
+  onSend: (
+    message: string,
+  ) => void | Promise<void>;
+
+  disabled?: boolean;
 }
 
-const ChatInput = ({ onSend }: Props) => {
-  const [message, setMessage] = useState("");
+const ChatInput = ({
+  onSend,
+  disabled = false,
+}: Props) => {
+  const [
+    message,
+    setMessage,
+  ] = useState("");
 
-  const handleSend = () => {
-    if (!message.trim()) return;
+  const handleSend = async () => {
+    const normalizedMessage =
+      message.trim();
 
-    onSend(message);
+    if (
+      !normalizedMessage
+      || disabled
+    ) {
+      return;
+    }
+
     setMessage("");
+
+    await onSend(
+      normalizedMessage,
+    );
   };
 
   return (
     <Box
       sx={{
         display: "flex",
+        alignItems: "flex-end",
         gap: 1,
         p: 2,
-        borderTop: "1px solid #e0e0e0",
+        borderTop: 1,
+        borderColor: "divider",
+        backgroundColor:
+          "background.paper",
       }}
     >
       <TextField
         fullWidth
+        multiline
+        maxRows={5}
         size="small"
-        placeholder="Ask IdentityAI..."
+        placeholder={
+          disabled
+            ? "IdentityAI is responding..."
+            : "Ask IdentityAI..."
+        }
         value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            handleSend();
+        disabled={disabled}
+        onChange={(event) =>
+          setMessage(
+            event.target.value,
+          )
+        }
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter"
+            && !event.shiftKey
+          ) {
+            event.preventDefault();
+
+            void handleSend();
           }
         }}
       />
 
       <IconButton
         color="primary"
-        onClick={handleSend}
+        disabled={
+          disabled
+          || !message.trim()
+        }
+        onClick={() => {
+          void handleSend();
+        }}
+        aria-label="Send message"
       >
         <SendIcon />
       </IconButton>

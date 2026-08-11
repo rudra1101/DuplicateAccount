@@ -1,28 +1,25 @@
 import { AppBar, Toolbar, Typography } from "@mui/material";
 
 const Header = () => {
-    return (
-        <AppBar
-            position="static"
-            elevation={0}
-            sx={{
-                backgroundColor: "#ffffff",
-                color: "#333",
-                borderBottom: "1px solid #e0e0e0",
-            }}
-        >
-            <Toolbar>
-                <Typography
-                    variant="h6"
-                    sx={{
-                        fontWeight: 600,
-                    }}
-                >
-                    Duplicate Account Detection
-                </Typography>
-            </Toolbar>
-        </AppBar>
-    );
+  return (
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        zIndex: (theme) => theme.zIndex.drawer + 1,
+        backgroundColor: "background.paper",
+        color: "text.primary",
+        borderBottom: 1,
+        borderColor: "divider",
+      }}
+    >
+      <Toolbar>
+        <Typography variant="h6" fontWeight={700}>
+          Duplicate Account Detection
+        </Typography>
+      </Toolbar>
+    </AppBar>
+  );
 };
 
 export default Header;

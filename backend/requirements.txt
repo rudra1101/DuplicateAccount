@@ -7,3 +7,9 @@ python-multipart
 rapidfuzz
 pandas
 numpy
+openai
+python-dotenv
+ollama
+scikit-learn
+joblib
+faiss-cpu

@@ -1,51 +1,88 @@
 import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
   CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
 } from "recharts";
 
-interface TrendData {
+interface TrendItem {
   name: string;
   duplicates: number;
 }
 
-interface DuplicateTrendChartProps {
-  data: TrendData[];
+interface Props {
+  data: TrendItem[];
 }
 
 const DuplicateTrendChart = ({
   data,
-}: DuplicateTrendChartProps) => {
+}: Props) => {
+  if (!data || data.length === 0) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          color: "#777",
+        }}
+      >
+        No scan data is available for this period.
+      </div>
+    );
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={320}>
+    <ResponsiveContainer
+      width="100%"
+      height="100%"
+    >
       <LineChart
         data={data}
         margin={{
           top: 10,
           right: 20,
           left: 0,
-          bottom: 0,
+          bottom: 10,
         }}
       >
-        <CartesianGrid strokeDasharray="4 4" />
+        <CartesianGrid
+          strokeDasharray="3 3"
+        />
 
-        <XAxis dataKey="name" />
+        <XAxis
+          dataKey="name"
+          tick={{
+            fontSize: 12,
+          }}
+        />
 
-        <YAxis allowDecimals={false} />
+        <YAxis
+          allowDecimals={false}
+          tick={{
+            fontSize: 12,
+          }}
+        />
 
         <Tooltip />
 
         <Line
           type="monotone"
           dataKey="duplicates"
+          name="Duplicate Groups"
           stroke="#1976d2"
           strokeWidth={3}
-          dot={{ r: 5 }}
-          activeDot={{ r: 8 }}
+          dot={{
+            r: 4,
+          }}
+          activeDot={{
+            r: 6,
+          }}
         />
       </LineChart>
     </ResponsiveContainer>

@@ -8,7 +8,7 @@ class Account(BaseModel):
 
     username: str
 
-    displayName: str
+    displayName: str = ""
 
     email: str
 
@@ -18,6 +18,6 @@ class Account(BaseModel):
 
     manager: str | None = None
 
-    status: str | None = "Enabled"
+    status: str | None = None
 
     created: str | None = None
