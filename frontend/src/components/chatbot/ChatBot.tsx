@@ -2,12 +2,14 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import {
   Alert,
   Box,
+  Button,
   CircularProgress,
   Drawer,
 } from "@mui/material";
@@ -23,6 +25,9 @@ import ChatMessages
 import SuggestedPrompts
   from "./SuggestedPrompts";
 
+import StopCircleOutlinedIcon
+  from "@mui/icons-material/StopCircleOutlined";
+
 import type {
   ChatHistoryMessage,
   ChatMessage,
@@ -33,12 +38,18 @@ import {
   clearChatConversations,
   deleteChatConversation,
   getChatConversation,
+  generateChatConversationTitle,
   getChatConversations,
+  getConversationFeedback,
+  regenerateChatResponse,
+  submitChatFeedback,
   renameChatConversation,
 } from "../../services/aiService";
 
 import type {
   ChatConversationSummary,
+  ChatFeedback,
+  ChatFeedbackRating,
   ChatSource,
   StoredChatMessage,
 } from "../../services/aiService";
@@ -152,6 +163,28 @@ const ChatBot = ({
     >
   >({});
 
+
+  const [
+    serverMessageIdByLocalId,
+    setServerMessageIdByLocalId,
+  ] = useState<
+    Record<string, number>
+  >({});
+
+  const [
+    feedbackByMessageId,
+    setFeedbackByMessageId,
+  ] = useState<
+    Record<number, ChatFeedback>
+  >({});
+
+  const [
+    feedbackSavingMessageId,
+    setFeedbackSavingMessageId,
+  ] = useState<
+    number | null
+  >(null);
+
   const [
     conversationId,
     setConversationId,
@@ -199,6 +232,17 @@ const ChatBot = ({
     loading,
     setLoading,
   ] = useState(false);
+
+
+  const [
+    regenerating,
+    setRegenerating,
+  ] = useState(false);
+
+  const activeRequestControllerRef =
+    useRef<
+      AbortController | null
+    >(null);
 
   const [
     error,
@@ -287,6 +331,18 @@ const ChatBot = ({
         {},
       );
 
+      setServerMessageIdByLocalId(
+        {},
+      );
+
+      setFeedbackByMessageId(
+        {},
+      );
+
+      setFeedbackSavingMessageId(
+        null,
+      );
+
       setError(
         "",
       );
@@ -357,6 +413,13 @@ const ChatBot = ({
               ChatSource[]
             > = {};
 
+
+          const restoredServerIds:
+            Record<
+              string,
+              number
+            > = {};
+
           for (
             const storedMessage
             of conversation.messages
@@ -369,6 +432,11 @@ const ChatBot = ({
             restoredMessages.push(
               restored,
             );
+
+            restoredServerIds[
+              restored.id
+            ] =
+              storedMessage.id;
 
             if (
               storedMessage.role
@@ -386,6 +454,26 @@ const ChatBot = ({
             }
           }
 
+          const storedFeedback =
+            await getConversationFeedback(
+              conversation.id,
+            );
+
+          const restoredFeedback:
+            Record<
+              number,
+              ChatFeedback
+            > = {};
+
+          for (
+            const feedback
+            of storedFeedback
+          ) {
+            restoredFeedback[
+              feedback.messageId
+            ] = feedback;
+          }
+
           setConversationId(
             conversation.id,
           );
@@ -396,6 +484,14 @@ const ChatBot = ({
 
           setSourcesByMessageId(
             restoredSources,
+          );
+
+          setServerMessageIdByLocalId(
+            restoredServerIds,
+          );
+
+          setFeedbackByMessageId(
+            restoredFeedback,
           );
 
           setHistoryOpen(
@@ -689,6 +785,372 @@ const ChatBot = ({
     ]);
 
 
+  const isAbortError =
+    (
+      value: unknown,
+    ): boolean => {
+      return (
+        value
+        instanceof DOMException
+        && value.name
+          === "AbortError"
+      );
+    };
+
+
+  const stopGeneration =
+    useCallback(() => {
+      activeRequestControllerRef
+        .current
+        ?.abort();
+    }, []);
+
+
+  const saveFeedback =
+    useCallback(
+      async (
+        messageId: number,
+        rating: ChatFeedbackRating,
+        comment: string | null,
+      ): Promise<void> => {
+        if (
+          !conversationId
+          || feedbackSavingMessageId
+            !== null
+        ) {
+          return;
+        }
+
+        setFeedbackSavingMessageId(
+          messageId,
+        );
+
+        setError(
+          "",
+        );
+
+        try {
+          const saved =
+            await submitChatFeedback(
+              conversationId,
+              messageId,
+              rating,
+              comment,
+            );
+
+          setFeedbackByMessageId(
+            (
+              previous,
+            ) => ({
+              ...previous,
+
+              [saved.messageId]:
+                saved,
+            }),
+          );
+        } catch (
+          requestError
+        ) {
+          console.error(
+            "Unable to save chat feedback:",
+            requestError,
+          );
+
+          setError(
+            requestError
+              instanceof Error
+              ? requestError.message
+              : "Unable to save feedback.",
+          );
+
+          throw requestError;
+        } finally {
+          setFeedbackSavingMessageId(
+            null,
+          );
+        }
+      },
+      [
+        conversationId,
+        feedbackSavingMessageId,
+      ],
+    );
+
+
+  const regenerateLastResponse =
+    useCallback(
+      async (): Promise<void> => {
+        if (
+          !conversationId
+          || loading
+          || regenerating
+          || clearingHistory
+        ) {
+          return;
+        }
+
+        const lastUserIndex = (
+          messages
+            .map(
+              (
+                message,
+                index,
+              ) => ({
+                message,
+                index,
+              }),
+            )
+            .filter(
+              (
+                item,
+              ) =>
+                item.message.role
+                === "user",
+            )
+            .at(-1)
+            ?.index
+          ?? -1
+        );
+
+        if (
+          lastUserIndex < 0
+        ) {
+          return;
+        }
+
+        let assistantIndex = -1;
+
+        for (
+          let index =
+            messages.length - 1;
+          index > lastUserIndex;
+          index -= 1
+        ) {
+          if (
+            messages[index].role
+            === "assistant"
+          ) {
+            assistantIndex =
+              index;
+            break;
+          }
+        }
+
+        if (
+          assistantIndex < 0
+        ) {
+          return;
+        }
+
+        const assistantMessageId =
+          messages[
+            assistantIndex
+          ].id;
+
+        const controller =
+          new AbortController();
+
+        activeRequestControllerRef
+          .current =
+            controller;
+
+        setRegenerating(
+          true,
+        );
+
+        setLoading(
+          true,
+        );
+
+        setError(
+          "",
+        );
+
+        try {
+          const response =
+            await regenerateChatResponse(
+              conversationId,
+              useReasoningModel,
+              controller.signal,
+            );
+
+          const responseSources =
+            Array.isArray(
+              response.sources,
+            )
+              ? response.sources
+              : [];
+
+          setMessages(
+            (previous) =>
+              previous.map(
+                (
+                  message,
+                ) =>
+                  message.id
+                  === assistantMessageId
+                    ? {
+                        ...message,
+
+                        content:
+                          stripStructuredSourceFooter(
+                            response.message
+                            || "No response was generated.",
+                            responseSources,
+                          ),
+
+                        timestamp:
+                          new Date(),
+                      }
+                    : message,
+              ),
+          );
+
+          setSourcesByMessageId(
+            (previous) => {
+              const next = {
+                ...previous,
+              };
+
+              if (
+                responseSources
+                  .length > 0
+              ) {
+                next[
+                  assistantMessageId
+                ] =
+                  responseSources;
+              } else {
+                delete next[
+                  assistantMessageId
+                ];
+              }
+
+              return next;
+            },
+          );
+
+          try {
+            const persistedConversation =
+              await getChatConversation(
+                conversationId,
+              );
+
+            const persistedAssistant =
+              [...persistedConversation.messages]
+                .reverse()
+                .find(
+                  (
+                    storedMessage,
+                  ) =>
+                    storedMessage.role
+                    === "assistant",
+                );
+
+            if (
+              persistedAssistant
+            ) {
+              const oldServerMessageId =
+                serverMessageIdByLocalId[
+                  assistantMessageId
+                ];
+
+              setServerMessageIdByLocalId(
+                (
+                  previous,
+                ) => ({
+                  ...previous,
+
+                  [assistantMessageId]:
+                    persistedAssistant.id,
+                }),
+              );
+
+              if (
+                oldServerMessageId
+              ) {
+                setFeedbackByMessageId(
+                  (
+                    previous,
+                  ) => {
+                    const next = {
+                      ...previous,
+                    };
+
+                    delete next[
+                      oldServerMessageId
+                    ];
+
+                    return next;
+                  },
+                );
+              }
+            }
+          } catch (
+            syncError
+          ) {
+            console.warn(
+              "Unable to sync regenerated message ID:",
+              syncError,
+            );
+          }
+
+          await refreshConversations();
+        } catch (
+          requestError
+        ) {
+          if (
+            isAbortError(
+              requestError,
+            )
+          ) {
+            return;
+          }
+
+          console.error(
+            "Unable to regenerate response:",
+            requestError,
+          );
+
+          setError(
+            requestError
+              instanceof Error
+              ? requestError.message
+              : "Unable to regenerate the response.",
+          );
+        } finally {
+          if (
+            activeRequestControllerRef
+              .current
+            === controller
+          ) {
+            activeRequestControllerRef
+              .current =
+                null;
+          }
+
+          setRegenerating(
+            false,
+          );
+
+          setLoading(
+            false,
+          );
+        }
+      },
+      [
+        clearingHistory,
+        conversationId,
+        loading,
+        messages,
+        regenerating,
+        refreshConversations,
+        serverMessageIdByLocalId,
+        useReasoningModel,
+      ],
+    );
+
+
   const sendMessage =
     useCallback(
       async (
@@ -707,6 +1169,16 @@ const ChatBot = ({
 
         const historyBeforeMessage =
           conversationHistory;
+
+        const isFirstTurn =
+          conversationId === null;
+
+        const controller =
+          new AbortController();
+
+        activeRequestControllerRef
+          .current =
+            controller;
 
         const userMessage:
           ChatMessage = {
@@ -745,6 +1217,7 @@ const ChatBot = ({
               historyBeforeMessage,
               conversationId,
               useReasoningModel,
+              controller.signal,
             );
 
           setConversationId(
@@ -801,10 +1274,77 @@ const ChatBot = ({
             );
           }
 
+          try {
+            const persistedConversation =
+              await getChatConversation(
+                response.conversationId,
+              );
+
+            const persistedAssistant =
+              [...persistedConversation.messages]
+                .reverse()
+                .find(
+                  (
+                    storedMessage,
+                  ) =>
+                    storedMessage.role
+                    === "assistant",
+                );
+
+            if (
+              persistedAssistant
+            ) {
+              setServerMessageIdByLocalId(
+                (
+                  previous,
+                ) => ({
+                  ...previous,
+
+                  [assistantMessageId]:
+                    persistedAssistant.id,
+                }),
+              );
+            }
+          } catch (
+            syncError
+          ) {
+            console.warn(
+              "Unable to sync persisted chat message ID:",
+              syncError,
+            );
+          }
+
           await refreshConversations();
+
+          if (isFirstTurn) {
+            void generateChatConversationTitle(
+              response.conversationId,
+            )
+              .then(() =>
+                refreshConversations()
+              )
+              .catch(
+                (
+                  titleError,
+                ) => {
+                  console.warn(
+                    "Unable to generate AI chat title:",
+                    titleError,
+                  );
+                },
+              );
+          }
         } catch (
           requestError
         ) {
+          if (
+            isAbortError(
+              requestError,
+            )
+          ) {
+            return;
+          }
+
           console.error(
             "AI assistant request failed:",
             requestError,
@@ -843,6 +1383,16 @@ const ChatBot = ({
             ],
           );
         } finally {
+          if (
+            activeRequestControllerRef
+              .current
+            === controller
+          ) {
+            activeRequestControllerRef
+              .current =
+                null;
+          }
+
           setLoading(
             false,
           );
@@ -1040,6 +1590,30 @@ const ChatBot = ({
             sourcesByMessageId={
               sourcesByMessageId
             }
+
+            serverMessageIdByLocalId={
+              serverMessageIdByLocalId
+            }
+
+            feedbackByMessageId={
+              feedbackByMessageId
+            }
+
+            feedbackSavingMessageId={
+              feedbackSavingMessageId
+            }
+
+            regenerating={
+              regenerating
+            }
+
+            onRegenerate={
+              regenerateLastResponse
+            }
+
+            onFeedback={
+              saveFeedback
+            }
           />
 
 
@@ -1055,6 +1629,9 @@ const ChatBot = ({
                 alignItems:
                   "center",
 
+                justifyContent:
+                  "space-between",
+
                 gap: 1,
 
                 borderTop: 1,
@@ -1067,20 +1644,55 @@ const ChatBot = ({
                 flexShrink: 0,
               }}
             >
-              <CircularProgress
-                size={18}
-              />
-
               <Box
-                component="span"
                 sx={{
-                  fontSize: 13,
-                  color:
-                    "text.secondary",
+                  display:
+                    "flex",
+
+                  alignItems:
+                    "center",
+
+                  gap: 1,
                 }}
               >
-                Rudrix is thinking...
+                <CircularProgress
+                  size={18}
+                />
+
+                <Box
+                  component="span"
+                  sx={{
+                    fontSize: 13,
+                    color:
+                      "text.secondary",
+                  }}
+                >
+                  {regenerating
+                    ? "Rudrix is regenerating..."
+                    : "Rudrix is thinking..."}
+                </Box>
               </Box>
+
+              <Button
+                size="small"
+                color="error"
+                variant="outlined"
+                startIcon={
+                  <StopCircleOutlinedIcon
+                    fontSize="small"
+                  />
+                }
+                onClick={
+                  stopGeneration
+                }
+                sx={{
+                  minWidth: 0,
+                  textTransform:
+                    "none",
+                }}
+              >
+                Stop
+              </Button>
             </Box>
           )}
 

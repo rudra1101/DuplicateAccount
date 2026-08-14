@@ -45,6 +45,10 @@ from app.api.knowledge import (
 from app.api.chat_history import (
     router as chat_history_router,
 )
+
+from app.api.chat_feedback import (
+    router as chat_feedback_router,
+)
 # Imports required for ORM and connector registration.
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
@@ -160,5 +164,10 @@ app.include_router(
 
 app.include_router(
     chat_history_router,
+    prefix="/api",
+)
+
+app.include_router(
+    chat_feedback_router,
     prefix="/api",
 )

@@ -37,6 +37,11 @@ from app.db_models.chat_message import (
     ChatMessageRecord,
 )
 
+from app.db_models.chat_feedback import (
+    ChatFeedbackRecord,
+)
+
+
 
 __all__ = [
     "AccountRecord",
@@ -51,4 +56,5 @@ __all__ = [
     "KnowledgeDocumentRecord",
     "ChatConversationRecord",
     "ChatMessageRecord",
+    "ChatFeedbackRecord",
 ]

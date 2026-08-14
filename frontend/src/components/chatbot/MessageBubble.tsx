@@ -5,6 +5,7 @@ import {
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Dialog,
@@ -15,8 +16,8 @@ import {
   IconButton,
   Paper,
   Stack,
+  Tooltip,
   Typography,
-  Button,
 } from "@mui/material";
 
 import DescriptionOutlinedIcon
@@ -25,7 +26,30 @@ import DescriptionOutlinedIcon
 import CloseIcon
   from "@mui/icons-material/Close";
 
+import ContentCopyOutlinedIcon
+  from "@mui/icons-material/ContentCopyOutlined";
+
+import CheckIcon
+  from "@mui/icons-material/Check";
+
+import ThumbUpAltOutlinedIcon
+  from "@mui/icons-material/ThumbUpAltOutlined";
+
+import ThumbDownAltOutlinedIcon
+  from "@mui/icons-material/ThumbDownAltOutlined";
+
+import ThumbUpAltIcon
+  from "@mui/icons-material/ThumbUpAlt";
+
+import ThumbDownAltIcon
+  from "@mui/icons-material/ThumbDownAlt";
+
+import ReplayOutlinedIcon
+  from "@mui/icons-material/ReplayOutlined";
+
 import type {
+  ChatFeedback,
+  ChatFeedbackRating,
   ChatSource,
   KnowledgeDocumentDetails,
 } from "../../services/aiService";
@@ -39,6 +63,73 @@ interface Props {
   message: string;
   role: "user" | "assistant";
   sources?: ChatSource[];
+
+  serverMessageId?: number;
+
+  feedback?: ChatFeedback;
+
+  feedbackSaving?: boolean;
+
+  canRegenerate?: boolean;
+
+  regenerating?: boolean;
+
+  onRegenerate?: () => void;
+
+  onFeedback?: (
+    messageId: number,
+    rating: ChatFeedbackRating,
+    comment: string | null,
+  ) => Promise<void>;
+}
+
+
+async function copyText(
+  value: string,
+): Promise<void> {
+  if (
+    navigator.clipboard
+    && window.isSecureContext
+  ) {
+    await navigator.clipboard.writeText(
+      value,
+    );
+
+    return;
+  }
+
+  const textArea =
+    document.createElement(
+      "textarea",
+    );
+
+  textArea.value = value;
+  textArea.style.position =
+    "fixed";
+  textArea.style.opacity =
+    "0";
+
+  document.body.appendChild(
+    textArea,
+  );
+
+  textArea.focus();
+  textArea.select();
+
+  const successful =
+    document.execCommand(
+      "copy",
+    );
+
+  document.body.removeChild(
+    textArea,
+  );
+
+  if (!successful) {
+    throw new Error(
+      "Unable to copy the response.",
+    );
+  }
 }
 
 
@@ -46,6 +137,13 @@ const MessageBubble = ({
   message,
   role,
   sources = [],
+  serverMessageId,
+  feedback,
+  feedbackSaving = false,
+  canRegenerate = false,
+  regenerating = false,
+  onRegenerate,
+  onFeedback,
 }: Props) => {
   const isUser =
     role === "user";
@@ -53,6 +151,27 @@ const MessageBubble = ({
   const hasSources =
     !isUser
     && sources.length > 0;
+
+  const [
+    copied,
+    setCopied,
+  ] = useState(false);
+
+  const [
+    copyError,
+    setCopyError,
+  ] = useState("");
+
+
+  const [
+    feedbackDialogOpen,
+    setFeedbackDialogOpen,
+  ] = useState(false);
+
+  const [
+    feedbackComment,
+    setFeedbackComment,
+  ] = useState("");
 
   const [
     selectedSource,
@@ -79,66 +198,155 @@ const MessageBubble = ({
   ] = useState("");
 
 
-  const handleSourceClick =
-  async (
-    source: ChatSource,
-  ) => {
-    setSelectedSource(
-      source,
-    );
+  const handleCopy =
+    async () => {
+      setCopyError("");
 
-    setDocument(
-      null,
-    );
-
-    setDocumentError(
-      "",
-    );
-
-    if (
-      source.documentId
-      == null
-    ) {
-      setDocumentError(
-        "This source does not have a valid document ID.",
-      );
-
-      return;
-    }
-
-    setLoadingDocument(
-      true,
-    );
-
-    try {
-      const result =
-        await getKnowledgeDocument(
-          source.documentId,
+      try {
+        await copyText(
+          message,
         );
 
-      setDocument(
-        result,
-      );
-    } catch (
-      error
-    ) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : (
-            "Unable to load the "
-            + "knowledge document."
-          );
+        setCopied(
+          true,
+        );
 
-      setDocumentError(
-        message,
+        window.setTimeout(
+          () => {
+            setCopied(
+              false,
+            );
+          },
+          1600,
+        );
+      } catch (
+        error
+      ) {
+        setCopyError(
+          error instanceof Error
+            ? error.message
+            : "Unable to copy the response.",
+        );
+      }
+    };
+
+
+  const submitPositiveFeedback =
+    async () => {
+      if (
+        !serverMessageId
+        || !onFeedback
+      ) {
+        return;
+      }
+
+      await onFeedback(
+        serverMessageId,
+        "UP",
+        null,
       );
-    } finally {
-      setLoadingDocument(
+    };
+
+
+  const openNegativeFeedback =
+    () => {
+      setFeedbackComment(
+        feedback?.rating
+        === "DOWN"
+          ? feedback.comment
+            ?? ""
+          : "",
+      );
+
+      setFeedbackDialogOpen(
+        true,
+      );
+    };
+
+
+  const submitNegativeFeedback =
+    async () => {
+      if (
+        !serverMessageId
+        || !onFeedback
+      ) {
+        return;
+      }
+
+      await onFeedback(
+        serverMessageId,
+        "DOWN",
+        feedbackComment
+          .trim()
+          || null,
+      );
+
+      setFeedbackDialogOpen(
         false,
       );
-    }
-  };
+    };
+
+
+  const handleSourceClick =
+    async (
+      source: ChatSource,
+    ) => {
+      setSelectedSource(
+        source,
+      );
+
+      setDocument(
+        null,
+      );
+
+      setDocumentError(
+        "",
+      );
+
+      if (
+        source.documentId
+        == null
+      ) {
+        setDocumentError(
+          "This source does not have a valid document ID.",
+        );
+
+        return;
+      }
+
+      setLoadingDocument(
+        true,
+      );
+
+      try {
+        const result =
+          await getKnowledgeDocument(
+            source.documentId,
+          );
+
+        setDocument(
+          result,
+        );
+      } catch (
+        error
+      ) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : (
+              "Unable to load the "
+              + "knowledge document."
+            );
+
+        setDocumentError(
+          errorMessage,
+        );
+      } finally {
+        setLoadingDocument(
+          false,
+        );
+      }
+    };
 
 
   const handleClose =
@@ -160,7 +368,7 @@ const MessageBubble = ({
   const visibleChunks =
     document?.chunks.filter(
       (
-        chunk
+        chunk,
       ) => {
         if (
           selectedSource?.pageNumber
@@ -188,128 +396,477 @@ const MessageBubble = ({
         }
         mb={2}
       >
-        <Paper
+        <Box
           sx={{
-            p: 2,
-            maxWidth: "80%",
-            bgcolor: isUser
-              ? "#1976d2"
-              : "#f5f5f5",
-            color: isUser
-              ? "white"
-              : "black",
-            borderRadius: 3,
+            maxWidth:
+              "80%",
           }}
         >
-          <Typography
-            variant="body2"
-            whiteSpace="pre-line"
+          <Paper
+            sx={{
+              p: 2,
+
+              bgcolor:
+                isUser
+                  ? "primary.main"
+                  : "action.hover",
+
+              color:
+                isUser
+                  ? "primary.contrastText"
+                  : "text.primary",
+
+              borderRadius: 3,
+            }}
           >
-            {message}
-          </Typography>
-
-          {hasSources && (
-            <Box
-              sx={{
-                mt: 1.5,
-                pt: 1.25,
-                borderTop: 1,
-                borderColor:
-                  "divider",
-              }}
+            <Typography
+              variant="body2"
+              whiteSpace="pre-line"
             >
-              <Typography
-                variant="caption"
+              {message}
+            </Typography>
+
+            {hasSources && (
+              <Box
                 sx={{
-                  display:
-                    "block",
+                  mt: 1.5,
+                  pt: 1.25,
 
-                  mb:
-                    0.75,
+                  borderTop: 1,
 
-                  color:
-                    "text.secondary",
-
-                  fontWeight:
-                    600,
+                  borderColor:
+                    "divider",
                 }}
               >
-                Sources
-              </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display:
+                      "block",
 
-              <Stack
-                direction="row"
-                spacing={
-                  0.75
-                }
-                useFlexGap
-                flexWrap="wrap"
-              >
-                {sources.map(
-                  (
-                    source,
-                    index,
-                  ) => {
-                    const label =
-                      source.pageNumber
-                        ? (
-                          `${source.documentName}`
-                          + ` · Page ${source.pageNumber}`
-                        )
-                        : source.documentName;
+                    mb:
+                      0.75,
 
-                    return (
-                      <Chip
-                        key={
-                          `${source.documentId}`
-                          + `-${source.pageNumber ?? "document"}`
-                          + `-${index}`
-                        }
-                        icon={
-                          <DescriptionOutlinedIcon />
-                        }
-                        label={
-                          label
-                        }
-                        size="small"
-                        variant="outlined"
-                        clickable
-                        onClick={() =>
-                          handleSourceClick(
-                            source,
+                    color:
+                      "text.secondary",
+
+                    fontWeight:
+                      600,
+                  }}
+                >
+                  Sources
+                </Typography>
+
+                <Stack
+                  direction="row"
+                  spacing={
+                    0.75
+                  }
+                  useFlexGap
+                  flexWrap="wrap"
+                >
+                  {sources.map(
+                    (
+                      source,
+                      index,
+                    ) => {
+                      const label =
+                        source.pageNumber
+                          ? (
+                            `${source.documentName}`
+                            + ` · Page ${source.pageNumber}`
                           )
-                        }
+                          : source.documentName;
+
+                      return (
+                        <Chip
+                          key={
+                            `${source.documentId}`
+                            + `-${source.pageNumber ?? "document"}`
+                            + `-${index}`
+                          }
+                          icon={
+                            <DescriptionOutlinedIcon />
+                          }
+                          label={
+                            label
+                          }
+                          size="small"
+                          variant="outlined"
+                          clickable
+                          onClick={() =>
+                            handleSourceClick(
+                              source,
+                            )
+                          }
+                          sx={{
+                            maxWidth:
+                              "100%",
+
+                            bgcolor:
+                              "background.paper",
+
+                            cursor:
+                              "pointer",
+
+                            "& .MuiChip-label":
+                              {
+                                overflow:
+                                  "hidden",
+
+                                textOverflow:
+                                  "ellipsis",
+
+                                whiteSpace:
+                                  "nowrap",
+                              },
+                          }}
+                        />
+                      );
+                    },
+                  )}
+                </Stack>
+              </Box>
+            )}
+          </Paper>
+
+
+          {!isUser && (
+            <Box
+              sx={{
+                display:
+                  "flex",
+
+                alignItems:
+                  "center",
+
+                gap:
+                  0.5,
+
+                mt:
+                  0.35,
+
+                px:
+                  0.5,
+              }}
+            >
+              <Tooltip
+                title={
+                  copied
+                    ? "Copied"
+                    : "Copy response"
+                }
+              >
+                <IconButton
+                  size="small"
+                  onClick={() =>
+                    void handleCopy()
+                  }
+                  aria-label="Copy Rudrix response"
+                  sx={{
+                    width: 28,
+                    height: 28,
+                  }}
+                >
+                  {copied
+                    ? (
+                      <CheckIcon
                         sx={{
-                          maxWidth:
-                            "100%",
-
-                          bgcolor:
-                            "background.paper",
-
-                          cursor:
-                            "pointer",
-
-                          "& .MuiChip-label":
-                            {
-                              overflow:
-                                "hidden",
-
-                              textOverflow:
-                                "ellipsis",
-
-                              whiteSpace:
-                                "nowrap",
-                            },
+                          fontSize:
+                            16,
                         }}
                       />
-                    );
-                  },
+                    )
+                    : (
+                      <ContentCopyOutlinedIcon
+                        sx={{
+                          fontSize:
+                            16,
+                        }}
+                      />
+                    )}
+                </IconButton>
+              </Tooltip>
+
+              {copied && (
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                >
+                  Copied
+                </Typography>
+              )}
+
+              {serverMessageId
+                && onFeedback
+                && (
+                  <>
+                    <Tooltip
+                      title="Helpful"
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          disabled={
+                            feedbackSaving
+                          }
+                          onClick={() =>
+                            void submitPositiveFeedback()
+                          }
+                          aria-label="Mark Rudrix response helpful"
+                          color={
+                            feedback?.rating
+                            === "UP"
+                              ? "primary"
+                              : "default"
+                          }
+                          sx={{
+                            width: 28,
+                            height: 28,
+                          }}
+                        >
+                          {feedback?.rating
+                          === "UP"
+                            ? (
+                              <ThumbUpAltIcon
+                                sx={{
+                                  fontSize:
+                                    17,
+                                }}
+                              />
+                            )
+                            : (
+                              <ThumbUpAltOutlinedIcon
+                                sx={{
+                                  fontSize:
+                                    17,
+                                }}
+                              />
+                            )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+
+                    <Tooltip
+                      title="Not helpful"
+                    >
+                      <span>
+                        <IconButton
+                          size="small"
+                          disabled={
+                            feedbackSaving
+                          }
+                          onClick={
+                            openNegativeFeedback
+                          }
+                          aria-label="Mark Rudrix response not helpful"
+                          color={
+                            feedback?.rating
+                            === "DOWN"
+                              ? "error"
+                              : "default"
+                          }
+                          sx={{
+                            width: 28,
+                            height: 28,
+                          }}
+                        >
+                          {feedback?.rating
+                          === "DOWN"
+                            ? (
+                              <ThumbDownAltIcon
+                                sx={{
+                                  fontSize:
+                                    17,
+                                }}
+                              />
+                            )
+                            : (
+                              <ThumbDownAltOutlinedIcon
+                                sx={{
+                                  fontSize:
+                                    17,
+                                }}
+                              />
+                            )}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+
+                    {feedbackSaving && (
+                      <CircularProgress
+                        size={14}
+                        sx={{
+                          mx: 0.5,
+                        }}
+                      />
+                    )}
+                  </>
                 )}
-              </Stack>
+
+              {canRegenerate && (
+                <Tooltip
+                  title="Regenerate response"
+                >
+                  <span>
+                    <IconButton
+                      size="small"
+                      disabled={
+                        regenerating
+                      }
+                      onClick={
+                        onRegenerate
+                      }
+                      aria-label="Regenerate Rudrix response"
+                      sx={{
+                        width: 28,
+                        height: 28,
+                      }}
+                    >
+                      {regenerating
+                        ? (
+                          <CircularProgress
+                            size={15}
+                          />
+                        )
+                        : (
+                          <ReplayOutlinedIcon
+                            sx={{
+                              fontSize: 17,
+                            }}
+                          />
+                        )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              )}
             </Box>
           )}
-        </Paper>
+
+
+          {copyError && (
+            <Alert
+              severity="error"
+              sx={{
+                mt: 0.5,
+                py: 0,
+              }}
+            >
+              {copyError}
+            </Alert>
+          )}
+        </Box>
       </Box>
+
+
+      <Dialog
+        open={
+          feedbackDialogOpen
+        }
+        onClose={() => {
+          if (
+            !feedbackSaving
+          ) {
+            setFeedbackDialogOpen(
+              false,
+            );
+          }
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>
+          What could Rudrix improve?
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mb: 1.5,
+            }}
+          >
+            Your comment is optional,
+            but it helps improve future
+            responses.
+          </Typography>
+
+          <Box
+            component="textarea"
+            value={
+              feedbackComment
+            }
+            onChange={(
+              event,
+            ) =>
+              setFeedbackComment(
+                event.target.value,
+              )
+            }
+            maxLength={1000}
+            rows={4}
+            sx={{
+              width: "100%",
+              boxSizing:
+                "border-box",
+              resize:
+                "vertical",
+              p: 1.25,
+              font:
+                "inherit",
+              borderRadius: 1,
+              border: 1,
+              borderColor:
+                "divider",
+              outline:
+                "none",
+            }}
+          />
+
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              display: "block",
+              textAlign: "right",
+              mt: 0.5,
+            }}
+          >
+            {feedbackComment.length}/1000
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setFeedbackDialogOpen(
+                false,
+              )
+            }
+            disabled={
+              feedbackSaving
+            }
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() =>
+              void submitNegativeFeedback()
+            }
+            disabled={
+              feedbackSaving
+            }
+          >
+            {feedbackSaving
+              ? "Saving..."
+              : "Submit"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
 
       <Dialog
@@ -520,7 +1077,7 @@ const MessageBubble = ({
                     : (
                       visibleChunks.map(
                         (
-                          chunk
+                          chunk,
                         ) => (
                           <Paper
                             key={

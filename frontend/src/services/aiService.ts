@@ -1,4 +1,5 @@
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL =
+   "http://127.0.0.1:8000/api";
 
 
 export interface ChatSource {
@@ -74,6 +75,23 @@ export interface ChatConversationDetails
 }
 
 
+
+export type ChatFeedbackRating =
+  | "UP"
+  | "DOWN";
+
+
+export interface ChatFeedback {
+  id: number;
+  messageId: number;
+  conversationId: string;
+  rating: ChatFeedbackRating;
+  comment: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+
 async function parseApiResponse<T>(
   response: Response,
   fallbackMessage: string,
@@ -131,6 +149,7 @@ export async function askAI(
   history: ChatHistoryMessage[] = [],
   conversationId: string | null = null,
   useReasoningModel = false,
+  signal?: AbortSignal,
 ): Promise<AIResponse> {
   const response = await fetch(
     `${API_URL}/chat/`,
@@ -145,6 +164,7 @@ export async function askAI(
         history,
         useReasoningModel,
       }),
+      signal,
     },
   );
 
@@ -232,6 +252,82 @@ export async function getChatConversation(
   >(
     response,
     "Unable to load the conversation.",
+  );
+}
+
+
+
+export async function regenerateChatResponse(
+  conversationId: string,
+  useReasoningModel = false,
+  signal?: AbortSignal,
+): Promise<AIResponse> {
+  const normalizedId =
+    conversationId.trim();
+
+  if (!normalizedId) {
+    throw new Error(
+      "Conversation ID is required.",
+    );
+  }
+
+  const response = await fetch(
+    `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}/regenerate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        useReasoningModel,
+      }),
+      signal,
+    },
+  );
+
+  const result =
+    await parseApiResponse<AIResponse>(
+      response,
+      "Unable to regenerate the response.",
+    );
+
+  return {
+    ...result,
+    sources:
+      Array.isArray(
+        result.sources,
+      )
+        ? result.sources
+        : [],
+  };
+}
+
+
+export async function generateChatConversationTitle(
+  conversationId: string,
+): Promise<ChatConversationSummary> {
+  const normalizedId =
+    conversationId.trim();
+
+  if (!normalizedId) {
+    throw new Error(
+      "Conversation ID is required.",
+    );
+  }
+
+  const response = await fetch(
+    `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}/generate-title`,
+    {
+      method: "POST",
+    },
+  );
+
+  return parseApiResponse<
+    ChatConversationSummary
+  >(
+    response,
+    "Unable to generate the conversation title.",
   );
 }
 
@@ -325,4 +421,92 @@ Promise<void> {
     response,
     "Unable to clear chat history.",
   );
+}
+
+
+
+export async function submitChatFeedback(
+  conversationId: string,
+  messageId: number,
+  rating: ChatFeedbackRating,
+  comment: string | null = null,
+): Promise<ChatFeedback> {
+  const normalizedId =
+    conversationId.trim();
+
+  if (!normalizedId) {
+    throw new Error(
+      "Conversation ID is required.",
+    );
+  }
+
+  if (
+    !Number.isInteger(messageId)
+    || messageId <= 0
+  ) {
+    throw new Error(
+      "A valid chat message ID is required.",
+    );
+  }
+
+  const normalizedComment =
+    comment?.trim() || null;
+
+  const response = await fetch(
+    `${API_URL}/chat-feedback/`,
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        conversationId:
+          normalizedId,
+        messageId,
+        rating,
+        comment:
+          normalizedComment,
+      }),
+    },
+  );
+
+  return parseApiResponse<
+    ChatFeedback
+  >(
+    response,
+    "Unable to save feedback.",
+  );
+}
+
+
+export async function getConversationFeedback(
+  conversationId: string,
+): Promise<ChatFeedback[]> {
+  const normalizedId =
+    conversationId.trim();
+
+  if (!normalizedId) {
+    return [];
+  }
+
+  const response = await fetch(
+    `${API_URL}/chat-feedback/conversation/${encodeURIComponent(normalizedId)}`,
+  );
+
+  const result =
+    await parseApiResponse<
+      ChatFeedback[]
+    >(
+      response,
+      "Unable to load feedback.",
+    );
+
+  return Array.isArray(
+    result,
+  )
+    ? result
+    : [];
 }
