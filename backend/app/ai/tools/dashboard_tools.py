@@ -12,9 +12,15 @@ class GetDashboardSummaryTool(BaseAITool):
     name = "get_dashboard_summary"
 
     description = (
-        "Get duplicate-account dashboard metrics, "
-        "latest scan information, application statistics, "
-        "and scan trend data for a selected period."
+        "Get CURRENT system-wide IdentityAI dashboard metrics "
+        "from the latest completed scan for each integration. "
+        "Use this for general questions about total accounts, "
+        "applications, integrations, duplicate groups, duplicate "
+        "accounts, high-confidence matches, application statistics, "
+        "latest scans, or overall platform status. "
+        "For general questions such as 'how many high confidence "
+        "matches do we have', use this tool instead of searching "
+        "individual duplicate groups."
     )
 
     parameters = {

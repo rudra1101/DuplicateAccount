@@ -19,6 +19,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
+import { MenuBookOutlined } from "@mui/icons-material";
 
 import { Link, useLocation } from "react-router-dom";
 
@@ -74,6 +75,11 @@ const menuItems = [
     text: "ML Training",
     path: "/ml-training",
     icon: <ModelTrainingIcon />,
+  },
+  {
+    text: "Knowledge Base",
+    path: "/knowledge",
+    icon: <MenuBookOutlined />,
   },
 ];
 

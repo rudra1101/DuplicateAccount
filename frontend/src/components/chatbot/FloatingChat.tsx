@@ -1,34 +1,73 @@
 import { useState } from "react";
+
 import {
   Fab,
-  Tooltip,
 } from "@mui/material";
-import SmartToyIcon from "@mui/icons-material/SmartToy";
+
+import SupportAgentIcon
+  from "@mui/icons-material/SupportAgent";
 
 import ChatBot from "./ChatBot";
 
 const FloatingChat = () => {
-  const [open, setOpen] = useState(false);
+  const [
+    open,
+    setOpen,
+  ] = useState(false);
 
   return (
     <>
-      <Tooltip title="IdentityAI Copilot">
+      {!open && (
         <Fab
+          variant="extended"
           color="primary"
+          onClick={() =>
+            setOpen(true)
+          }
           sx={{
             position: "fixed",
-            bottom: 25,
-            right: 25,
+            bottom: 24,
+            right: 24,
+
+            px: 2.5,
+            gap: 1,
+
+            minHeight: 48,
+
+            textTransform: "none",
+            fontWeight: 700,
+            fontSize: 14,
+
+            borderRadius: 999,
+
+            zIndex: (theme) =>
+              theme.zIndex.drawer + 1,
+
+            boxShadow:
+              "0 8px 24px rgba(25, 118, 210, 0.28)",
+
+            "&:hover": {
+              boxShadow:
+                "0 10px 28px rgba(25, 118, 210, 0.36)",
+              transform:
+                "translateY(-1px)",
+            },
+
+            transition:
+              "all 0.2s ease",
           }}
-          onClick={() => setOpen(true)}
         >
-          <SmartToyIcon />
+          <SupportAgentIcon />
+
+          Ask Rudrix
         </Fab>
-      </Tooltip>
+      )}
 
       <ChatBot
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={() =>
+          setOpen(false)
+        }
       />
     </>
   );

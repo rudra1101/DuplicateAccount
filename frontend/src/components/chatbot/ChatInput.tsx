@@ -65,8 +65,8 @@ const ChatInput = ({
         size="small"
         placeholder={
           disabled
-            ? "IdentityAI is responding..."
-            : "Ask IdentityAI..."
+            ? "Rudrix is responding..."
+            : "Ask Rudrix..."
         }
         value={message}
         disabled={disabled}

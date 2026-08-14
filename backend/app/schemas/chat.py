@@ -1,4 +1,6 @@
-from typing import Any, Literal
+from __future__ import annotations
+
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -6,48 +8,121 @@ from pydantic import (
 )
 
 
-ChatRole = Literal[
-    "user",
-    "assistant",
-]
+class ChatHistoryMessage(
+    BaseModel
+):
+    role: str
+    content: str
 
 
-class ChatMessage(BaseModel):
-    role: ChatRole
+class ChatRequest(
+    BaseModel
+):
+    message: str
 
-    content: str = Field(
-        min_length=1,
-        max_length=20_000,
-    )
+    conversationId: str | None = None
 
-
-class ChatRequest(BaseModel):
-    message: str = Field(
-        min_length=1,
-        max_length=20_000,
-    )
-
-    conversationId: str | None = Field(
-        default=None,
-        max_length=100,
-    )
-
-    history: list[ChatMessage] = Field(
-        default_factory=list,
-        max_length=30,
+    history: list[
+        ChatHistoryMessage
+    ] = Field(
+        default_factory=list
     )
 
     useReasoningModel: bool = False
 
 
-class ToolInvocationResponse(BaseModel):
+class ToolInvocationResponse(
+    BaseModel
+):
     name: str
-    arguments: dict[str, Any]
+
+    arguments: dict[
+        str,
+        Any,
+    ]
+
     result: Any
 
 
-class ChatResponse(BaseModel):
+class ChatSource(
+    BaseModel
+):
+    documentId: int
+
+    documentName: str
+
+    pageNumber: int | None = None
+
+
+class ChatResponse(
+    BaseModel
+):
     conversationId: str
+
     message: str
+
     model: str
-    toolsUsed: list[ToolInvocationResponse]
+
+    toolsUsed: list[
+        ToolInvocationResponse
+    ] = Field(
+        default_factory=list
+    )
+
+    sources: list[
+        ChatSource
+    ] = Field(
+        default_factory=list
+    )
+
+
+class ChatConversationSummary(
+    BaseModel
+):
+    id: str
+
+    title: str
+
+    createdAt: str | None = None
+
+    updatedAt: str | None = None
+
+
+class StoredChatMessage(
+    BaseModel
+):
+    id: int
+
+    conversationId: str
+
+    role: str
+
+    content: str
+
+    model: str | None = None
+
+    sources: list[
+        ChatSource
+    ] = Field(
+        default_factory=list
+    )
+
+    createdAt: str | None = None
+
+
+class ChatConversationDetails(
+    BaseModel
+):
+    id: str
+
+    title: str
+
+    createdAt: str | None = None
+
+    updatedAt: str | None = None
+
+    messages: list[
+        StoredChatMessage
+    ] = Field(
+        default_factory=list
+    )

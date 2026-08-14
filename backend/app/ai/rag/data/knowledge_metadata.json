@@ -1,0 +1,16 @@
+{
+  "5342361435033583836": {
+    "vector_id": 5342361435033583836,
+    "document_id": 3,
+    "document_name": "Duplicate Account Review Policy.txt",
+    "chunk_id": "3:0",
+    "chunk_index": 0,
+    "content": "Duplicate Account Review Policy\n\nIf employee IDs match but departments are different,\nthe reviewer must verify whether the employee recently\ntransferred departments.\n\nAccounts must not automatically be marked as duplicates\nonly because the employee ID matches.\n\nMatching corporate email addresses are considered a\nstrong duplicate indicator.",
+    "page_number": null,
+    "content_type": "text/plain",
+    "embedding_model": "nomic-embed-text",
+    "extra": {
+      "originalFilename": "Duplicate Account Review Policy.txt"
+    }
+  }
+}

@@ -39,6 +39,12 @@ from app.api.vector_search import (
     router as vector_search_router,
 )
 
+from app.api.knowledge import (
+    router as knowledge_router,
+)
+from app.api.chat_history import (
+    router as chat_history_router,
+)
 # Imports required for ORM and connector registration.
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
@@ -144,5 +150,15 @@ app.include_router(
 
 app.include_router(
     vector_search_router,
+    prefix="/api",
+)
+
+app.include_router(
+    knowledge_router,
+    prefix="/api",
+)
+
+app.include_router(
+    chat_history_router,
     prefix="/api",
 )

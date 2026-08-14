@@ -98,9 +98,12 @@ const ApplicationReview = () => {
   const [searchParams] =
     useSearchParams();
 
-  const applicationName = application
-    ? decodeURIComponent(application)
-    : "";
+  const applicationName =
+    application
+      ? decodeURIComponent(
+          application,
+        )
+      : "";
 
   const integrationId =
     parseIntegrationId(
@@ -114,20 +117,26 @@ const ApplicationReview = () => {
       "integrationName",
     );
 
-  const [groups, setGroups] =
-    useState<DuplicateGroup[]>([]);
+  const [
+    groups,
+    setGroups,
+  ] = useState<
+    DuplicateGroup[]
+  >([]);
 
   const [
     selectedGroup,
     setSelectedGroup,
-  ] = useState<DuplicateGroup | null>(
-    null,
-  );
+  ] = useState<
+    DuplicateGroup | null
+  >(null);
 
-  const [details, setDetails] =
-    useState<DuplicateGroupDetails | null>(
-      null,
-    );
+  const [
+    details,
+    setDetails,
+  ] = useState<
+    DuplicateGroupDetails | null
+  >(null);
 
   const [
     loadingGroups,
@@ -139,268 +148,390 @@ const ApplicationReview = () => {
     setLoadingDetails,
   ] = useState(false);
 
-  const [error, setError] =
-    useState("");
+  const [
+    error,
+    setError,
+  ] = useState("");
 
   const [
     detailsError,
     setDetailsError,
   ] = useState("");
 
-  const [searchText, setSearchText] =
-    useState("");
+  const [
+    searchText,
+    setSearchText,
+  ] = useState("");
 
   const [
     confidenceFilter,
     setConfidenceFilter,
-  ] = useState<ConfidenceFilter>(
-    "all",
-  );
+  ] = useState<
+    ConfidenceFilter
+  >("all");
 
   const [
     duplicateCountFilter,
     setDuplicateCountFilter,
-  ] = useState<DuplicateCountFilter>(
-    "all",
-  );
+  ] = useState<
+    DuplicateCountFilter
+  >("all");
 
 
-  const loadDetails = useCallback(
-    async (
-      group: DuplicateGroup,
-    ) => {
-      try {
-        setSelectedGroup(group);
-        setDetails(null);
-        setDetailsError("");
-        setLoadingDetails(true);
-
-        const result =
-          await getDuplicateGroupDetails(
-            group.groupId,
-            group.integrationId
-              ?? integrationId,
+  const loadDetails =
+    useCallback(
+      async (
+        group: DuplicateGroup,
+      ) => {
+        try {
+          setSelectedGroup(
+            group,
           );
 
-        setDetails(result);
-      } catch (loadError) {
-        console.error(
-          "Unable to load duplicate details:",
-          loadError,
-        );
+          setDetails(
+            null,
+          );
 
-        setDetailsError(
-          loadError instanceof Error
-            ? loadError.message
-            : (
-              "Unable to load account "
-              + "comparison details."
-            ),
-        );
-      } finally {
-        setLoadingDetails(false);
-      }
-    },
-    [integrationId],
-  );
+          setDetailsError(
+            "",
+          );
+
+          setLoadingDetails(
+            true,
+          );
+
+          const result =
+            await getDuplicateGroupDetails(
+              group.groupId,
+              group.integrationId
+                ?? integrationId,
+            );
+
+          setDetails(
+            result,
+          );
+        } catch (
+          loadError
+        ) {
+          console.error(
+            "Unable to load duplicate details:",
+            loadError,
+          );
+
+          setDetailsError(
+            loadError
+              instanceof Error
+              ? loadError.message
+              : (
+                "Unable to load "
+                + "account comparison "
+                + "details."
+              ),
+          );
+        } finally {
+          setLoadingDetails(
+            false,
+          );
+        }
+      },
+      [
+        integrationId,
+      ],
+    );
 
 
   const loadGroups =
-    useCallback(async () => {
-      if (!applicationName) {
-        setError(
-          "Application name is missing.",
-        );
-
-        setLoadingGroups(false);
-        return;
-      }
-
-      try {
-        setLoadingGroups(true);
-        setError("");
-        setDetailsError("");
-
-        const result =
-          await getDuplicateGroups(
-            applicationName,
-            integrationId,
-          );
-
-        const validGroups =
-          Array.isArray(result)
-            ? result
-            : [];
-
-        setGroups(validGroups);
-
+    useCallback(
+      async () => {
         if (
-          validGroups.length > 0
+          !applicationName
         ) {
-          await loadDetails(
-            validGroups[0],
+          setError(
+            "Application name is missing.",
           );
-        } else {
-          setSelectedGroup(null);
-          setDetails(null);
+
+          setLoadingGroups(
+            false,
+          );
+
+          return;
         }
-      } catch (loadError) {
-        console.error(
-          "Unable to load duplicate groups:",
-          loadError,
-        );
 
-        setError(
-          loadError instanceof Error
-            ? loadError.message
-            : (
-              "Unable to load duplicate "
-              + "groups for this application."
-            ),
-        );
-      } finally {
-        setLoadingGroups(false);
-      }
-    }, [
-      applicationName,
-      integrationId,
-      loadDetails,
-    ]);
+        try {
+          setLoadingGroups(
+            true,
+          );
+
+          setError(
+            "",
+          );
+
+          setDetailsError(
+            "",
+          );
+
+          const result =
+            await getDuplicateGroups(
+              applicationName,
+              integrationId,
+            );
+
+          const validGroups =
+            Array.isArray(
+              result,
+            )
+              ? result
+              : [];
+
+          setGroups(
+            validGroups,
+          );
+
+          if (
+            validGroups.length
+            > 0
+          ) {
+            await loadDetails(
+              validGroups[0],
+            );
+          } else {
+            setSelectedGroup(
+              null,
+            );
+
+            setDetails(
+              null,
+            );
+          }
+        } catch (
+          loadError
+        ) {
+          console.error(
+            "Unable to load duplicate groups:",
+            loadError,
+          );
+
+          setError(
+            loadError
+              instanceof Error
+              ? loadError.message
+              : (
+                "Unable to load "
+                + "duplicate groups "
+                + "for this application."
+              ),
+          );
+        } finally {
+          setLoadingGroups(
+            false,
+          );
+        }
+      },
+      [
+        applicationName,
+        integrationId,
+        loadDetails,
+      ],
+    );
 
 
-  useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
+  useEffect(
+    () => {
+      void loadGroups();
+    },
+    [
+      loadGroups,
+    ],
+  );
 
 
   const filteredGroups =
-    useMemo(() => {
-      const search = searchText
-        .trim()
-        .toLowerCase();
+    useMemo(
+      () => {
+        const search =
+          searchText
+            .trim()
+            .toLowerCase();
 
-      const minimumConfidence =
-        confidenceFilter === "all"
-          ? 0
-          : Number(
-              confidenceFilter,
-            );
-
-      return groups.filter(
-        (group) => {
-          const matchesSearch =
-            search === ""
-            || group.primaryAccount
-              .toLowerCase()
-              .includes(search)
-            || String(
-              group.groupId,
-            ).includes(search);
-
-          const matchesConfidence =
-            group.highestConfidence
-            >= minimumConfidence;
-
-          let matchesDuplicateCount =
-            true;
-
-          if (
-            duplicateCountFilter
-            !== "all"
-          ) {
-            const expectedCount =
-              Number(
-                duplicateCountFilter,
+        const minimumConfidence =
+          confidenceFilter
+            === "all"
+            ? 0
+            : Number(
+                confidenceFilter,
               );
 
-            matchesDuplicateCount =
+        return groups.filter(
+          (
+            group,
+          ) => {
+            const matchesSearch =
+              search === ""
+              || group
+                .primaryAccount
+                .toLowerCase()
+                .includes(
+                  search,
+                )
+              || String(
+                group.groupId,
+              ).includes(
+                search,
+              );
+
+            const matchesConfidence =
+              group
+                .highestConfidence
+              >= minimumConfidence;
+
+            let matchesDuplicateCount =
+              true;
+
+            if (
               duplicateCountFilter
-              === "3"
-                ? group.duplicates
-                  >= 3
-                : group.duplicates
-                  === expectedCount;
-          }
+              !== "all"
+            ) {
+              const expectedCount =
+                Number(
+                  duplicateCountFilter,
+                );
 
-          return (
-            matchesSearch
-            && matchesConfidence
-            && matchesDuplicateCount
-          );
-        },
+              matchesDuplicateCount =
+                duplicateCountFilter
+                  === "3"
+                  ? (
+                    group
+                      .duplicates
+                    >= 3
+                  )
+                  : (
+                    group
+                      .duplicates
+                    === expectedCount
+                  );
+            }
+
+            return (
+              matchesSearch
+              && matchesConfidence
+              && matchesDuplicateCount
+            );
+          },
+        );
+      },
+      [
+        groups,
+        searchText,
+        confidenceFilter,
+        duplicateCountFilter,
+      ],
+    );
+
+
+  useEffect(
+    () => {
+      if (
+        selectedGroup
+        && !filteredGroups.some(
+          (
+            group,
+          ) =>
+            group.groupId
+            === selectedGroup.groupId,
+        )
+      ) {
+        setSelectedGroup(
+          null,
+        );
+
+        setDetails(
+          null,
+        );
+      }
+    },
+    [
+      filteredGroups,
+      selectedGroup,
+    ],
+  );
+
+
+  const clearFilters =
+    () => {
+      setSearchText(
+        "",
       );
-    }, [
-      groups,
-      searchText,
-      confidenceFilter,
-      duplicateCountFilter,
-    ]);
 
+      setConfidenceFilter(
+        "all",
+      );
 
-  useEffect(() => {
-    if (
-      selectedGroup
-      && !filteredGroups.some(
-        (group) =>
-          group.groupId
-          === selectedGroup.groupId,
-      )
-    ) {
-      setSelectedGroup(null);
-      setDetails(null);
-    }
-  }, [
-    filteredGroups,
-    selectedGroup,
-  ]);
-
-
-  const clearFilters = () => {
-    setSearchText("");
-    setConfidenceFilter("all");
-    setDuplicateCountFilter("all");
-  };
+      setDuplicateCountFilter(
+        "all",
+      );
+    };
 
 
   const hasActiveFilters =
-    searchText.trim() !== ""
-    || confidenceFilter !== "all"
+    searchText.trim()
+      !== ""
+    || confidenceFilter
+      !== "all"
     || duplicateCountFilter
       !== "all";
 
 
   const duplicateAccountCount =
     groups.reduce(
-      (total, group) =>
-        total + group.duplicates,
+      (
+        total,
+        group,
+      ) =>
+        total
+        + group.duplicates,
       0,
     );
 
 
   const highConfidenceCount =
     groups.filter(
-      (group) =>
-        group.highestConfidence
+      (
+        group,
+      ) =>
+        group
+          .highestConfidence
         >= 95,
     ).length;
 
 
   const resolvedIntegrationName =
-    details?.integrationName
-    ?? selectedGroup?.integrationName
+    details
+      ?.integrationName
+    ?? selectedGroup
+      ?.integrationName
     ?? integrationName
     ?? (
       integrationId
-        ? `Integration #${integrationId}`
+        ? (
+          `Integration #${integrationId}`
+        )
         : "All integrations"
     );
 
 
   return (
-    <PageContainer title="Review Duplicate Accounts">
-      <Breadcrumbs sx={{ mb: 1.5 }}>
+    <PageContainer
+      title="Review Duplicate Accounts"
+    >
+      <Breadcrumbs
+        sx={{
+          mb: 1.5,
+        }}
+      >
         <Link
-          component={RouterLink}
+          component={
+            RouterLink
+          }
           to="/review"
           underline="hover"
           color="inherit"
@@ -408,24 +539,34 @@ const ApplicationReview = () => {
           Review Queue
         </Link>
 
-        <Typography color="text.secondary">
-          {resolvedIntegrationName}
+        <Typography
+          color="text.secondary"
+        >
+          {
+            resolvedIntegrationName
+          }
         </Typography>
 
-        <Typography color="text.primary">
-          {applicationName
-            || "Application"}
+        <Typography
+          color="text.primary"
+        >
+          {
+            applicationName
+            || "Application"
+          }
         </Typography>
       </Breadcrumbs>
 
       <Box
         sx={{
-          display: "flex",
+          display:
+            "flex",
           justifyContent:
             "space-between",
           alignItems:
             "flex-start",
-          flexWrap: "wrap",
+          flexWrap:
+            "wrap",
           gap: 2,
           mb: 2,
         }}
@@ -433,28 +574,40 @@ const ApplicationReview = () => {
         <Box>
           <Typography
             variant="h5"
-            fontWeight={700}
+            fontWeight={
+              700
+            }
           >
-            {applicationName}
+            {
+              applicationName
+            }
           </Typography>
 
           <Typography
             color="text.secondary"
-            sx={{ mt: 0.75 }}
+            sx={{
+              mt: 0.75,
+            }}
           >
             Integration:{" "}
             <strong>
-              {resolvedIntegrationName}
+              {
+                resolvedIntegrationName
+              }
             </strong>
           </Typography>
 
           <Typography
             color="text.secondary"
-            sx={{ mt: 0.5 }}
+            sx={{
+              mt: 0.5,
+            }}
           >
-            Select a duplicate group to
-            compare its primary account
-            with possible duplicate accounts.
+            Select a duplicate
+            group to compare its
+            primary account with
+            possible duplicate
+            accounts.
           </Typography>
 
           <Stack
@@ -462,34 +615,47 @@ const ApplicationReview = () => {
             spacing={1}
             useFlexGap
             flexWrap="wrap"
-            sx={{ mt: 1.5 }}
+            sx={{
+              mt: 1.5,
+            }}
           >
             <Chip
               size="small"
-              label={`${groups.length} groups`}
+              label={
+                `${groups.length} groups`
+              }
               variant="outlined"
             />
 
             <Chip
               size="small"
-              label={`${duplicateAccountCount} duplicate accounts`}
+              label={
+                `${duplicateAccountCount} duplicate accounts`
+              }
               variant="outlined"
             />
 
             <Chip
               size="small"
               color="success"
-              label={`${highConfidenceCount} high confidence`}
+              label={
+                `${highConfidenceCount} high confidence`
+              }
               variant="outlined"
             />
 
-            {integrationId && (
-              <Chip
-                size="small"
-                label={`Integration #${integrationId}`}
-                variant="outlined"
-              />
-            )}
+            {
+              integrationId
+              && (
+                <Chip
+                  size="small"
+                  label={
+                    `Integration #${integrationId}`
+                  }
+                  variant="outlined"
+                />
+              )
+            }
           </Stack>
         </Box>
 
@@ -502,8 +668,11 @@ const ApplicationReview = () => {
             startIcon={
               <ArrowBackIcon />
             }
-            onClick={() =>
-              navigate("/review")
+            onClick={
+              () =>
+                navigate(
+                  "/review",
+                )
             }
           >
             Back
@@ -514,7 +683,11 @@ const ApplicationReview = () => {
             startIcon={
               <RefreshIcon />
             }
-            onClick={loadGroups}
+            onClick={
+              () => {
+                void loadGroups();
+              }
+            }
             disabled={
               loadingGroups
               || loadingDetails
@@ -529,23 +702,33 @@ const ApplicationReview = () => {
         variant="outlined"
         sx={{
           p: 2,
-          borderRadius: 3,
+          borderRadius:
+            3,
           mb: 2,
         }}
       >
         <Box
           sx={{
-            display: "grid",
+            display:
+              "grid",
+
             gridTemplateColumns: {
-              xs: "1fr",
-              sm: "1fr 1fr",
+              xs:
+                "1fr",
+
+              sm:
+                "1fr 1fr",
+
               lg: (
                 "minmax(280px, 2fr) "
                 + "1fr 1fr auto"
               ),
             },
+
             gap: 2,
-            alignItems: "center",
+
+            alignItems:
+              "center",
           }}
         >
           <TextField
@@ -553,16 +736,26 @@ const ApplicationReview = () => {
             size="small"
             label="Search primary account"
             placeholder="Username or group ID"
-            value={searchText}
-            onChange={(event) =>
-              setSearchText(
-                event.target.value,
-              )
+            value={
+              searchText
+            }
+            onChange={
+              (
+                event,
+              ) => {
+                setSearchText(
+                  event
+                    .target
+                    .value,
+                );
+              }
             }
             slotProps={{
               input: {
                 startAdornment: (
-                  <InputAdornment position="start">
+                  <InputAdornment
+                    position="start"
+                  >
                     <SearchIcon />
                   </InputAdornment>
                 ),
@@ -578,38 +771,58 @@ const ApplicationReview = () => {
               Confidence
             </InputLabel>
 
-            <Select
+            <Select<
+              ConfidenceFilter
+            >
               label="Confidence"
-              value={confidenceFilter}
-              onChange={(event) =>
-                setConfidenceFilter(
-                  event.target
-                    .value
-                    as ConfidenceFilter,
-                )
+              value={
+                confidenceFilter
+              }
+              onChange={
+                (
+                  event,
+                ) => {
+                  setConfidenceFilter(
+                    event
+                      .target
+                      .value,
+                  );
+                }
               }
             >
-              <MenuItem value="all">
+              <MenuItem
+                value="all"
+              >
                 All confidence
               </MenuItem>
 
-              <MenuItem value="95">
+              <MenuItem
+                value="95"
+              >
                 95% and above
               </MenuItem>
 
-              <MenuItem value="90">
+              <MenuItem
+                value="90"
+              >
                 90% and above
               </MenuItem>
 
-              <MenuItem value="80">
+              <MenuItem
+                value="80"
+              >
                 80% and above
               </MenuItem>
 
-              <MenuItem value="70">
+              <MenuItem
+                value="70"
+              >
                 70% and above
               </MenuItem>
 
-              <MenuItem value="50">
+              <MenuItem
+                value="50"
+              >
                 50% and above
               </MenuItem>
             </Select>
@@ -623,32 +836,46 @@ const ApplicationReview = () => {
               Group Size
             </InputLabel>
 
-            <Select
+            <Select<
+              DuplicateCountFilter
+            >
               label="Group Size"
               value={
                 duplicateCountFilter
               }
-              onChange={(event) =>
-                setDuplicateCountFilter(
-                  event.target
-                    .value
-                    as DuplicateCountFilter,
-                )
+              onChange={
+                (
+                  event,
+                ) => {
+                  setDuplicateCountFilter(
+                    event
+                      .target
+                      .value,
+                  );
+                }
               }
             >
-              <MenuItem value="all">
+              <MenuItem
+                value="all"
+              >
                 All sizes
               </MenuItem>
 
-              <MenuItem value="1">
+              <MenuItem
+                value="1"
+              >
                 1 duplicate
               </MenuItem>
 
-              <MenuItem value="2">
+              <MenuItem
+                value="2"
+              >
                 2 duplicates
               </MenuItem>
 
-              <MenuItem value="3">
+              <MenuItem
+                value="3"
+              >
                 3 or more
               </MenuItem>
             </Select>
@@ -657,13 +884,17 @@ const ApplicationReview = () => {
           <Button
             color="inherit"
             title="Clear filters"
-            onClick={clearFilters}
+            onClick={
+              clearFilters
+            }
             disabled={
               !hasActiveFilters
             }
             sx={{
-              minWidth: 44,
-              height: 40,
+              minWidth:
+                44,
+              height:
+                40,
             }}
           >
             <FilterAltOffIcon />
@@ -674,199 +905,333 @@ const ApplicationReview = () => {
           variant="caption"
           color="text.secondary"
           sx={{
-            display: "block",
+            display:
+              "block",
             mt: 1.5,
           }}
         >
           Showing{" "}
-          {filteredGroups.length} of{" "}
-          {groups.length} groups
+          {
+            filteredGroups.length
+          }{" "}
+          of{" "}
+          {
+            groups.length
+          }{" "}
+          groups
         </Typography>
       </Paper>
 
-      {error && (
-        <Alert
-          severity="error"
-          sx={{ mb: 2 }}
-        >
-          {error}
-        </Alert>
-      )}
-
-      {loadingGroups ? (
-        <Box
-          sx={{
-            minHeight: 500,
-            display: "flex",
-            justifyContent:
-              "center",
-            alignItems: "center",
-          }}
-        >
-          <CircularProgress />
-        </Box>
-      ) : groups.length === 0 ? (
-        <Alert severity="info">
-          No duplicate groups were found
-          for {applicationName} in{" "}
-          {resolvedIntegrationName}.
-        </Alert>
-      ) : (
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "1fr",
-              lg: (
-                "300px minmax(0, 1fr)"
-              ),
-            },
-            gap: 2,
-            width: "100%",
-            height: {
-              xs: "auto",
-              lg: WORKSPACE_HEIGHT,
-            },
-            minHeight: 0,
-            alignItems: "stretch",
-            overflow: {
-              xs: "visible",
-              lg: "hidden",
-            },
-          }}
-        >
-          <Paper
-            variant="outlined"
+      {
+        error
+        && (
+          <Alert
+            severity="error"
             sx={{
-              width: "100%",
-              height: {
-                xs: 560,
-                lg: "100%",
-              },
-              minHeight: 0,
-              boxSizing:
-                "border-box",
-              borderRadius: 3,
-              display: "flex",
-              flexDirection:
-                "column",
-              overflow: "hidden",
+              mb: 2,
             }}
           >
-            <Box
-              sx={{
-                px: 2,
-                py: 1.75,
-                borderBottom: 1,
-                borderColor:
-                  "divider",
-                flexShrink: 0,
-                backgroundColor:
-                  "background.paper",
-              }}
-            >
-              <Typography
-                variant="h6"
-                fontWeight={700}
-              >
-                Duplicate Groups
-              </Typography>
+            {
+              error
+            }
+          </Alert>
+        )
+      }
 
-              <Typography
-                variant="caption"
-                color="text.secondary"
-              >
-                Select a group to review
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                flex: 1,
-                minHeight: 0,
-                overflowY: "auto",
-                overflowX:
-                  "hidden",
-                p: 1.5,
-              }}
-            >
-              {filteredGroups.length
-                === 0
-                ? (
-                  <Alert severity="info">
-                    No groups match the
-                    selected filters.
-                  </Alert>
-                )
-                : (
-                  <DuplicatePairList
-                    pairs={
-                      filteredGroups
-                    }
-                    selectedId={
-                      selectedGroup
-                        ?.groupId
-                      ?? null
-                    }
-                    onSelect={
-                      loadDetails
-                    }
-                  />
-                )}
-            </Box>
-          </Paper>
-
+      {
+        loadingGroups
+        ? (
           <Box
             sx={{
-              width: "100%",
-              height: {
-                xs: "auto",
-                lg: "100%",
-              },
-              minWidth: 0,
-              minHeight: 0,
-              display: "flex",
-              overflow: {
-                xs: "visible",
-                lg: "hidden",
-              },
+              minHeight:
+                500,
+
+              display:
+                "flex",
+
+              justifyContent:
+                "center",
+
+              alignItems:
+                "center",
             }}
           >
-            {detailsError ? (
-              <Alert
-                severity="error"
-                sx={{
-                  width: "100%",
-                }}
-              >
-                {detailsError}
-              </Alert>
-            ) : loadingDetails ? (
+            <CircularProgress />
+          </Box>
+        )
+        : groups.length
+          === 0
+          ? (
+            <Alert
+              severity="info"
+            >
+              No duplicate
+              groups were
+              found for{" "}
+              {
+                applicationName
+              }{" "}
+              in{" "}
+              {
+                resolvedIntegrationName
+              }.
+            </Alert>
+          )
+          : (
+            <Box
+              sx={{
+                display:
+                  "grid",
+
+                gridTemplateColumns: {
+                  xs:
+                    "1fr",
+
+                  lg: (
+                    "300px "
+                    + "minmax(0, 1fr)"
+                  ),
+                },
+
+                gap: 2,
+
+                width:
+                  "100%",
+
+                height: {
+                  xs:
+                    "auto",
+
+                  lg:
+                    WORKSPACE_HEIGHT,
+                },
+
+                minHeight:
+                  0,
+
+                alignItems:
+                  "stretch",
+
+                overflow: {
+                  xs:
+                    "visible",
+
+                  lg:
+                    "hidden",
+                },
+              }}
+            >
               <Paper
                 variant="outlined"
                 sx={{
-                  width: "100%",
-                  height: "100%",
-                  minHeight: 500,
-                  borderRadius: 3,
-                  display: "flex",
-                  justifyContent:
-                    "center",
-                  alignItems:
-                    "center",
+                  width:
+                    "100%",
+
+                  height: {
+                    xs:
+                      560,
+
+                    lg:
+                      "100%",
+                  },
+
+                  minHeight:
+                    0,
+
+                  boxSizing:
+                    "border-box",
+
+                  borderRadius:
+                    3,
+
+                  display:
+                    "flex",
+
+                  flexDirection:
+                    "column",
+
+                  overflow:
+                    "hidden",
                 }}
               >
-                <CircularProgress />
+                <Box
+                  sx={{
+                    px: 2,
+                    py: 1.75,
+
+                    borderBottom:
+                      1,
+
+                    borderColor:
+                      "divider",
+
+                    flexShrink:
+                      0,
+
+                    backgroundColor:
+                      "background.paper",
+                  }}
+                >
+                  <Typography
+                    variant="h6"
+                    fontWeight={
+                      700
+                    }
+                  >
+                    Duplicate Groups
+                  </Typography>
+
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                  >
+                    Select a group
+                    to review
+                  </Typography>
+                </Box>
+
+                <Box
+                  sx={{
+                    flex:
+                      1,
+
+                    minHeight:
+                      0,
+
+                    overflowY:
+                      "auto",
+
+                    overflowX:
+                      "hidden",
+
+                    p:
+                      1.5,
+                  }}
+                >
+                  {
+                    filteredGroups
+                      .length
+                    === 0
+                    ? (
+                      <Alert
+                        severity="info"
+                      >
+                        No groups
+                        match the
+                        selected
+                        filters.
+                      </Alert>
+                    )
+                    : (
+                      <DuplicatePairList
+                        pairs={
+                          filteredGroups
+                        }
+                        selectedId={
+                          selectedGroup
+                            ?.groupId
+                          ?? null
+                        }
+                        onSelect={
+                          loadDetails
+                        }
+                      />
+                    )
+                  }
+                </Box>
               </Paper>
-            ) : (
-              <AccountComparison
-                pair={selectedGroup}
-                details={details}
-              />
-            )}
-          </Box>
-        </Box>
-      )}
+
+              <Box
+                sx={{
+                  width:
+                    "100%",
+
+                  height: {
+                    xs:
+                      "auto",
+
+                    lg:
+                      "100%",
+                  },
+
+                  minWidth:
+                    0,
+
+                  minHeight:
+                    0,
+
+                  display:
+                    "flex",
+
+                  overflow: {
+                    xs:
+                      "visible",
+
+                    lg:
+                      "hidden",
+                  },
+                }}
+              >
+                {
+                  detailsError
+                  ? (
+                    <Alert
+                      severity="error"
+                      sx={{
+                        width:
+                          "100%",
+                      }}
+                    >
+                      {
+                        detailsError
+                      }
+                    </Alert>
+                  )
+                  : loadingDetails
+                    ? (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          width:
+                            "100%",
+
+                          height:
+                            "100%",
+
+                          minHeight:
+                            500,
+
+                          borderRadius:
+                            3,
+
+                          display:
+                            "flex",
+
+                          justifyContent:
+                            "center",
+
+                          alignItems:
+                            "center",
+                        }}
+                      >
+                        <CircularProgress />
+                      </Paper>
+                    )
+                    : (
+                      <AccountComparison
+                        pair={
+                          selectedGroup
+                        }
+                        details={
+                          details
+                        }
+                      />
+                    )
+                }
+              </Box>
+            </Box>
+          )
+      }
     </PageContainer>
   );
 };
