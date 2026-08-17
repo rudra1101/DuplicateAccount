@@ -1,40 +1,18 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { Alert, Box, Button, CircularProgress, Drawer } from "@mui/material";
+
+import ChatHeader from "./ChatHeader";
+import ChatHistoryPanel from "./ChatHistoryPanel";
+import ChatInput from "./ChatInput";
+import ChatMessages from "./ChatMessages";
+import SuggestedPrompts from "./SuggestedPrompts";
+
+import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
+
+import type { ChatHistoryMessage, ChatMessage } from "../../models/chat";
 
 import {
-  Alert,
-  Box,
-  Button,
-  CircularProgress,
-  Drawer,
-} from "@mui/material";
-
-import ChatHeader
-  from "./ChatHeader";
-import ChatHistoryPanel
-  from "./ChatHistoryPanel";
-import ChatInput
-  from "./ChatInput";
-import ChatMessages
-  from "./ChatMessages";
-import SuggestedPrompts
-  from "./SuggestedPrompts";
-
-import StopCircleOutlinedIcon
-  from "@mui/icons-material/StopCircleOutlined";
-
-import type {
-  ChatHistoryMessage,
-  ChatMessage,
-} from "../../models/chat";
-
-import {
-  askAI,
   clearChatConversations,
   deleteChatConversation,
   getChatConversation,
@@ -43,6 +21,7 @@ import {
   getConversationFeedback,
   regenerateChatResponse,
   submitChatFeedback,
+  streamAI,
   renameChatConversation,
 } from "../../services/aiService";
 
@@ -54,38 +33,30 @@ import type {
   StoredChatMessage,
 } from "../../services/aiService";
 
-
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-
 function createMessageId(): string {
-  return `${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-
-function createWelcomeMessage():
-ChatMessage {
+function createWelcomeMessage(): ChatMessage {
   return {
     id: createMessageId(),
 
     role: "assistant",
 
     content:
-      "👋 Hello! I'm Rudrix.\n\n"
-      + "I can help you analyze duplicate accounts, "
-      + "explain confidence scores, review scan results, "
-      + "and answer IAM-related questions.",
+      "👋 Hello! I'm Rudrix.\n\n" +
+      "I can help you analyze duplicate accounts, " +
+      "explain confidence scores, review scan results, " +
+      "and answer IAM-related questions.",
 
-    timestamp:
-      new Date(),
+    timestamp: new Date(),
   };
 }
-
 
 function stripStructuredSourceFooter(
   message: string,
@@ -97,213 +68,105 @@ function stripStructuredSourceFooter(
 
   return message
     .trim()
-    .replace(
-      /\n{1,3}Sources?:\s*[\s\S]*$/i,
-      "",
-    )
+    .replace(/\n{1,3}Sources?:\s*[\s\S]*$/i, "")
     .trim();
 }
 
-
-function storedMessageToChatMessage(
-  message: StoredChatMessage,
-): ChatMessage {
-  const sources =
-    Array.isArray(
-      message.sources,
-    )
-      ? message.sources
-      : [];
+function storedMessageToChatMessage(message: StoredChatMessage): ChatMessage {
+  const sources = Array.isArray(message.sources) ? message.sources : [];
 
   return {
-    id:
-      `stored-${message.id}`,
+    id: `stored-${message.id}`,
 
-    role:
-      message.role === "user"
-        ? "user"
-        : "assistant",
+    role: message.role === "user" ? "user" : "assistant",
 
-    content:
-      stripStructuredSourceFooter(
-        message.content,
-        sources,
-      ),
+    content: stripStructuredSourceFooter(message.content, sources),
 
-    timestamp:
-      message.createdAt
-        ? new Date(
-          message.createdAt,
-        )
-        : new Date(),
+    timestamp: message.createdAt ? new Date(message.createdAt) : new Date(),
   };
 }
 
-
-const ChatBot = ({
-  open,
-  onClose,
-}: Props) => {
-  const [
-    messages,
-    setMessages,
-  ] = useState<
-    ChatMessage[]
-  >(() => [
+const ChatBot = ({ open, onClose }: Props) => {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
     createWelcomeMessage(),
   ]);
 
-  const [
-    sourcesByMessageId,
-    setSourcesByMessageId,
-  ] = useState<
-    Record<
-      string,
-      ChatSource[]
-    >
+  const [sourcesByMessageId, setSourcesByMessageId] = useState<
+    Record<string, ChatSource[]>
   >({});
 
-
-  const [
-    serverMessageIdByLocalId,
-    setServerMessageIdByLocalId,
-  ] = useState<
+  const [serverMessageIdByLocalId, setServerMessageIdByLocalId] = useState<
     Record<string, number>
   >({});
 
-  const [
-    feedbackByMessageId,
-    setFeedbackByMessageId,
-  ] = useState<
+  const [feedbackByMessageId, setFeedbackByMessageId] = useState<
     Record<number, ChatFeedback>
   >({});
 
-  const [
-    feedbackSavingMessageId,
-    setFeedbackSavingMessageId,
-  ] = useState<
+  const [feedbackSavingMessageId, setFeedbackSavingMessageId] = useState<
     number | null
   >(null);
 
-  const [
-    conversationId,
-    setConversationId,
-  ] = useState<
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
+  const [conversations, setConversations] = useState<ChatConversationSummary[]>(
+    [],
+  );
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const [deletingConversationId, setDeletingConversationId] = useState<
     string | null
   >(null);
 
-  const [
-    conversations,
-    setConversations,
-  ] = useState<
-    ChatConversationSummary[]
-  >([]);
-
-  const [
-    historyOpen,
-    setHistoryOpen,
-  ] = useState(false);
-
-  const [
-    historyLoading,
-    setHistoryLoading,
-  ] = useState(false);
-
-  const [
-    deletingConversationId,
-    setDeletingConversationId,
-  ] = useState<
+  const [renamingConversationId, setRenamingConversationId] = useState<
     string | null
   >(null);
 
-  const [
-    renamingConversationId,
-    setRenamingConversationId,
-  ] = useState<
-    string | null
-  >(null);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
-  const [
-    clearingHistory,
-    setClearingHistory,
-  ] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const [
-    loading,
-    setLoading,
-  ] = useState(false);
+  const [streamingStatus, setStreamingStatus] = useState(
+    "Rudrix is thinking...",
+  );
 
+  const [regenerating, setRegenerating] = useState(false);
 
-  const [
-    regenerating,
-    setRegenerating,
-  ] = useState(false);
+  const activeRequestControllerRef = useRef<AbortController | null>(null);
 
-  const activeRequestControllerRef =
-    useRef<
-      AbortController | null
-    >(null);
+  const [error, setError] = useState("");
 
-  const [
-    error,
-    setError,
-  ] = useState("");
+  const [useReasoningModel] = useState(false);
 
-  const [
-    useReasoningModel,
-  ] = useState(false);
+  const conversationHistory = useMemo<ChatHistoryMessage[]>(() => {
+    return messages
+      .slice(1)
+      .map((message) => ({
+        role: message.role,
 
+        content: message.content,
+      }))
+      .slice(-30);
+  }, [messages]);
 
-  const conversationHistory =
-    useMemo<
-      ChatHistoryMessage[]
-    >(() => {
-      return messages
-        .slice(1)
-        .map(
-          (message) => ({
-            role:
-              message.role,
+  const refreshConversations = useCallback(async (): Promise<void> => {
+    try {
+      const result = await getChatConversations(50);
 
-            content:
-              message.content,
-          }),
-        )
-        .slice(-30);
-    }, [messages]);
+      setConversations(result);
+    } catch (requestError) {
+      console.error("Unable to load chat history:", requestError);
 
-
-  const refreshConversations =
-    useCallback(
-      async (): Promise<void> => {
-        try {
-          const result =
-            await getChatConversations(
-              50,
-            );
-
-          setConversations(
-            result,
-          );
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to load chat history:",
-            requestError,
-          );
-
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to load chat history.",
-          );
-        }
-      },
-      [],
-    );
-
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load chat history.",
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (!open) {
@@ -311,1121 +174,680 @@ const ChatBot = ({
     }
 
     void refreshConversations();
+  }, [open, refreshConversations]);
+
+  const resetCurrentChat = useCallback(() => {
+    setConversationId(null);
+
+    setMessages([createWelcomeMessage()]);
+
+    setSourcesByMessageId({});
+
+    setServerMessageIdByLocalId({});
+
+    setFeedbackByMessageId({});
+
+    setFeedbackSavingMessageId(null);
+
+    setError("");
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    if (
+      loading ||
+      historyLoading ||
+      clearingHistory ||
+      renamingConversationId
+    ) {
+      return;
+    }
+
+    resetCurrentChat();
+
+    setHistoryOpen(false);
   }, [
-    open,
-    refreshConversations,
+    clearingHistory,
+    historyLoading,
+    loading,
+    renamingConversationId,
+    resetCurrentChat,
   ]);
 
-
-  const resetCurrentChat =
-    useCallback(() => {
-      setConversationId(
-        null,
-      );
-
-      setMessages([
-        createWelcomeMessage(),
-      ]);
-
-      setSourcesByMessageId(
-        {},
-      );
-
-      setServerMessageIdByLocalId(
-        {},
-      );
-
-      setFeedbackByMessageId(
-        {},
-      );
-
-      setFeedbackSavingMessageId(
-        null,
-      );
-
-      setError(
-        "",
-      );
-    }, []);
-
-
-  const startNewChat =
-    useCallback(() => {
+  const openConversation = useCallback(
+    async (selectedId: string): Promise<void> => {
       if (
-        loading
-        || historyLoading
-        || clearingHistory
-        || renamingConversationId
+        loading ||
+        historyLoading ||
+        clearingHistory ||
+        renamingConversationId
       ) {
         return;
       }
 
-      resetCurrentChat();
+      setHistoryLoading(true);
 
-      setHistoryOpen(
-        false,
-      );
-    }, [
+      setError("");
+
+      try {
+        const conversation = await getChatConversation(selectedId);
+
+        const restoredMessages: ChatMessage[] = [createWelcomeMessage()];
+
+        const restoredSources: Record<string, ChatSource[]> = {};
+
+        const restoredServerIds: Record<string, number> = {};
+
+        for (const storedMessage of conversation.messages) {
+          const restored = storedMessageToChatMessage(storedMessage);
+
+          restoredMessages.push(restored);
+
+          restoredServerIds[restored.id] = storedMessage.id;
+
+          if (
+            storedMessage.role === "assistant" &&
+            Array.isArray(storedMessage.sources) &&
+            storedMessage.sources.length > 0
+          ) {
+            restoredSources[restored.id] = storedMessage.sources;
+          }
+        }
+
+        const storedFeedback = await getConversationFeedback(conversation.id);
+
+        const restoredFeedback: Record<number, ChatFeedback> = {};
+
+        for (const feedback of storedFeedback) {
+          restoredFeedback[feedback.messageId] = feedback;
+        }
+
+        setConversationId(conversation.id);
+
+        setMessages(restoredMessages);
+
+        setSourcesByMessageId(restoredSources);
+
+        setServerMessageIdByLocalId(restoredServerIds);
+
+        setFeedbackByMessageId(restoredFeedback);
+
+        setHistoryOpen(false);
+      } catch (requestError) {
+        console.error("Unable to open conversation:", requestError);
+
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to open the conversation.",
+        );
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [clearingHistory, historyLoading, loading, renamingConversationId],
+  );
+
+  const renameConversation = useCallback(
+    async (selectedId: string, title: string): Promise<void> => {
+      if (renamingConversationId || deletingConversationId || clearingHistory) {
+        return;
+      }
+
+      setRenamingConversationId(selectedId);
+
+      setError("");
+
+      try {
+        const updated = await renameChatConversation(selectedId, title);
+
+        setConversations((previous) =>
+          previous.map((conversation) =>
+            conversation.id === updated.id ? updated : conversation,
+          ),
+        );
+      } catch (requestError) {
+        console.error("Unable to rename conversation:", requestError);
+
+        const message =
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to rename the conversation.";
+
+        setError(message);
+
+        throw requestError;
+      } finally {
+        setRenamingConversationId(null);
+      }
+    },
+    [clearingHistory, deletingConversationId, renamingConversationId],
+  );
+
+  const removeConversation = useCallback(
+    async (selectedId: string): Promise<void> => {
+      if (
+        deletingConversationId ||
+        renamingConversationId ||
+        loading ||
+        clearingHistory
+      ) {
+        return;
+      }
+
+      const confirmed = window.confirm("Delete this conversation?");
+
+      if (!confirmed) {
+        return;
+      }
+
+      setDeletingConversationId(selectedId);
+
+      setError("");
+
+      try {
+        await deleteChatConversation(selectedId);
+
+        setConversations((previous) =>
+          previous.filter((conversation) => conversation.id !== selectedId),
+        );
+
+        if (conversationId === selectedId) {
+          resetCurrentChat();
+        }
+      } catch (requestError) {
+        console.error("Unable to delete conversation:", requestError);
+
+        setError(
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to delete the conversation.",
+        );
+      } finally {
+        setDeletingConversationId(null);
+      }
+    },
+    [
       clearingHistory,
-      historyLoading,
+      conversationId,
+      deletingConversationId,
       loading,
       renamingConversationId,
       resetCurrentChat,
-    ]);
+    ],
+  );
 
+  const clearAllHistory = useCallback(async (): Promise<void> => {
+    if (
+      clearingHistory ||
+      loading ||
+      renamingConversationId ||
+      conversations.length === 0
+    ) {
+      return;
+    }
 
-  const openConversation =
-    useCallback(
-      async (
-        selectedId: string,
-      ): Promise<void> => {
-        if (
-          loading
-          || historyLoading
-          || clearingHistory
-          || renamingConversationId
-        ) {
-          return;
-        }
-
-        setHistoryLoading(
-          true,
-        );
-
-        setError(
-          "",
-        );
-
-        try {
-          const conversation =
-            await getChatConversation(
-              selectedId,
-            );
-
-          const restoredMessages:
-            ChatMessage[] = [
-              createWelcomeMessage(),
-            ];
-
-          const restoredSources:
-            Record<
-              string,
-              ChatSource[]
-            > = {};
-
-
-          const restoredServerIds:
-            Record<
-              string,
-              number
-            > = {};
-
-          for (
-            const storedMessage
-            of conversation.messages
-          ) {
-            const restored =
-              storedMessageToChatMessage(
-                storedMessage,
-              );
-
-            restoredMessages.push(
-              restored,
-            );
-
-            restoredServerIds[
-              restored.id
-            ] =
-              storedMessage.id;
-
-            if (
-              storedMessage.role
-              === "assistant"
-              && Array.isArray(
-                storedMessage.sources,
-              )
-              && storedMessage.sources
-                .length > 0
-            ) {
-              restoredSources[
-                restored.id
-              ] =
-                storedMessage.sources;
-            }
-          }
-
-          const storedFeedback =
-            await getConversationFeedback(
-              conversation.id,
-            );
-
-          const restoredFeedback:
-            Record<
-              number,
-              ChatFeedback
-            > = {};
-
-          for (
-            const feedback
-            of storedFeedback
-          ) {
-            restoredFeedback[
-              feedback.messageId
-            ] = feedback;
-          }
-
-          setConversationId(
-            conversation.id,
-          );
-
-          setMessages(
-            restoredMessages,
-          );
-
-          setSourcesByMessageId(
-            restoredSources,
-          );
-
-          setServerMessageIdByLocalId(
-            restoredServerIds,
-          );
-
-          setFeedbackByMessageId(
-            restoredFeedback,
-          );
-
-          setHistoryOpen(
-            false,
-          );
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to open conversation:",
-            requestError,
-          );
-
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to open the conversation.",
-          );
-        } finally {
-          setHistoryLoading(
-            false,
-          );
-        }
-      },
-      [
-        clearingHistory,
-        historyLoading,
-        loading,
-        renamingConversationId,
-      ],
+    const confirmed = window.confirm(
+      "Clear all Rudrix conversation history? " + "This cannot be undone.",
     );
 
+    if (!confirmed) {
+      return;
+    }
 
-  const renameConversation =
-    useCallback(
-      async (
-        selectedId: string,
-        title: string,
-      ): Promise<void> => {
-        if (
-          renamingConversationId
-          || deletingConversationId
-          || clearingHistory
-        ) {
-          return;
-        }
+    setClearingHistory(true);
 
-        setRenamingConversationId(
-          selectedId,
-        );
+    setError("");
 
-        setError(
-          "",
-        );
+    try {
+      await clearChatConversations();
 
-        try {
-          const updated =
-            await renameChatConversation(
-              selectedId,
-              title,
-            );
+      setConversations([]);
 
-          setConversations(
-            (previous) =>
-              previous.map(
-                (conversation) =>
-                  conversation.id
-                  === updated.id
-                    ? updated
-                    : conversation,
-              ),
-          );
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to rename conversation:",
-            requestError,
-          );
+      resetCurrentChat();
 
-          const message =
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to rename the conversation.";
+      setHistoryOpen(true);
+    } catch (requestError) {
+      console.error("Unable to clear chat history:", requestError);
 
-          setError(
-            message,
-          );
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to clear chat history.",
+      );
+    } finally {
+      setClearingHistory(false);
+    }
+  }, [
+    clearingHistory,
+    conversations.length,
+    loading,
+    renamingConversationId,
+    resetCurrentChat,
+  ]);
 
-          throw requestError;
-        } finally {
-          setRenamingConversationId(
-            null,
-          );
-        }
-      },
-      [
-        clearingHistory,
-        deletingConversationId,
-        renamingConversationId,
-      ],
-    );
+  const toggleHistory = useCallback(() => {
+    if (loading || clearingHistory || renamingConversationId) {
+      return;
+    }
 
+    setHistoryOpen((previous) => {
+      const next = !previous;
 
-  const removeConversation =
-    useCallback(
-      async (
-        selectedId: string,
-      ): Promise<void> => {
-        if (
-          deletingConversationId
-          || renamingConversationId
-          || loading
-          || clearingHistory
-        ) {
-          return;
-        }
+      if (next) {
+        void refreshConversations();
+      }
 
-        const confirmed =
-          window.confirm(
-            "Delete this conversation?",
-          );
+      return next;
+    });
+  }, [clearingHistory, loading, refreshConversations, renamingConversationId]);
 
-        if (!confirmed) {
-          return;
-        }
+  const isAbortError = (value: unknown): boolean => {
+    return value instanceof DOMException && value.name === "AbortError";
+  };
 
-        setDeletingConversationId(
-          selectedId,
-        );
+  const stopGeneration = useCallback(() => {
+    activeRequestControllerRef.current?.abort();
+  }, []);
 
-        setError(
-          "",
-        );
-
-        try {
-          await deleteChatConversation(
-            selectedId,
-          );
-
-          setConversations(
-            (previous) =>
-              previous.filter(
-                (
-                  conversation,
-                ) =>
-                  conversation.id
-                  !== selectedId,
-              ),
-          );
-
-          if (
-            conversationId
-            === selectedId
-          ) {
-            resetCurrentChat();
-          }
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to delete conversation:",
-            requestError,
-          );
-
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to delete the conversation.",
-          );
-        } finally {
-          setDeletingConversationId(
-            null,
-          );
-        }
-      },
-      [
-        clearingHistory,
-        conversationId,
-        deletingConversationId,
-        loading,
-        renamingConversationId,
-        resetCurrentChat,
-      ],
-    );
-
-
-  const clearAllHistory =
-    useCallback(
-      async (): Promise<void> => {
-        if (
-          clearingHistory
-          || loading
-          || renamingConversationId
-          || conversations.length
-            === 0
-        ) {
-          return;
-        }
-
-        const confirmed =
-          window.confirm(
-            "Clear all Rudrix conversation history? "
-            + "This cannot be undone.",
-          );
-
-        if (!confirmed) {
-          return;
-        }
-
-        setClearingHistory(
-          true,
-        );
-
-        setError(
-          "",
-        );
-
-        try {
-          await clearChatConversations();
-
-          setConversations(
-            [],
-          );
-
-          resetCurrentChat();
-
-          setHistoryOpen(
-            true,
-          );
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to clear chat history:",
-            requestError,
-          );
-
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to clear chat history.",
-          );
-        } finally {
-          setClearingHistory(
-            false,
-          );
-        }
-      },
-      [
-        clearingHistory,
-        conversations.length,
-        loading,
-        renamingConversationId,
-        resetCurrentChat,
-      ],
-    );
-
-
-  const toggleHistory =
-    useCallback(() => {
-      if (
-        loading
-        || clearingHistory
-        || renamingConversationId
-      ) {
+  const saveFeedback = useCallback(
+    async (
+      messageId: number,
+      rating: ChatFeedbackRating,
+      comment: string | null,
+    ): Promise<void> => {
+      if (!conversationId || feedbackSavingMessageId !== null) {
         return;
       }
 
-      setHistoryOpen(
-        (previous) => {
-          const next =
-            !previous;
+      setFeedbackSavingMessageId(messageId);
 
-          if (next) {
-            void refreshConversations();
-          }
+      setError("");
 
-          return next;
-        },
-      );
-    }, [
-      clearingHistory,
-      loading,
-      refreshConversations,
-      renamingConversationId,
-    ]);
-
-
-  const isAbortError =
-    (
-      value: unknown,
-    ): boolean => {
-      return (
-        value
-        instanceof DOMException
-        && value.name
-          === "AbortError"
-      );
-    };
-
-
-  const stopGeneration =
-    useCallback(() => {
-      activeRequestControllerRef
-        .current
-        ?.abort();
-    }, []);
-
-
-  const saveFeedback =
-    useCallback(
-      async (
-        messageId: number,
-        rating: ChatFeedbackRating,
-        comment: string | null,
-      ): Promise<void> => {
-        if (
-          !conversationId
-          || feedbackSavingMessageId
-            !== null
-        ) {
-          return;
-        }
-
-        setFeedbackSavingMessageId(
+      try {
+        const saved = await submitChatFeedback(
+          conversationId,
           messageId,
+          rating,
+          comment,
         );
+
+        setFeedbackByMessageId((previous) => ({
+          ...previous,
+
+          [saved.messageId]: saved,
+        }));
+      } catch (requestError) {
+        console.error("Unable to save chat feedback:", requestError);
 
         setError(
-          "",
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to save feedback.",
         );
 
-        try {
-          const saved =
-            await submitChatFeedback(
-              conversationId,
-              messageId,
-              rating,
-              comment,
-            );
+        throw requestError;
+      } finally {
+        setFeedbackSavingMessageId(null);
+      }
+    },
+    [conversationId, feedbackSavingMessageId],
+  );
 
-          setFeedbackByMessageId(
-            (
-              previous,
-            ) => ({
-              ...previous,
+  const regenerateLastResponse = useCallback(async (): Promise<void> => {
+    if (!conversationId || loading || regenerating || clearingHistory) {
+      return;
+    }
 
-              [saved.messageId]:
-                saved,
-            }),
-          );
-        } catch (
-          requestError
-        ) {
-          console.error(
-            "Unable to save chat feedback:",
-            requestError,
-          );
+    const lastUserIndex =
+      messages
+        .map((message, index) => ({
+          message,
+          index,
+        }))
+        .filter((item) => item.message.role === "user")
+        .at(-1)?.index ?? -1;
 
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to save feedback.",
-          );
+    if (lastUserIndex < 0) {
+      return;
+    }
 
-          throw requestError;
-        } finally {
-          setFeedbackSavingMessageId(
-            null,
-          );
-        }
-      },
-      [
+    let assistantIndex = -1;
+
+    for (let index = messages.length - 1; index > lastUserIndex; index -= 1) {
+      if (messages[index].role === "assistant") {
+        assistantIndex = index;
+        break;
+      }
+    }
+
+    if (assistantIndex < 0) {
+      return;
+    }
+
+    const assistantMessageId = messages[assistantIndex].id;
+
+    const controller = new AbortController();
+
+    activeRequestControllerRef.current = controller;
+
+    setRegenerating(true);
+
+    setLoading(true);
+
+    setError("");
+
+    try {
+      const response = await regenerateChatResponse(
         conversationId,
-        feedbackSavingMessageId,
-      ],
-    );
+        useReasoningModel,
+        controller.signal,
+      );
 
+      const responseSources = Array.isArray(response.sources)
+        ? response.sources
+        : [];
 
-  const regenerateLastResponse =
-    useCallback(
-      async (): Promise<void> => {
-        if (
-          !conversationId
-          || loading
-          || regenerating
-          || clearingHistory
-        ) {
-          return;
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+
+                content: stripStructuredSourceFooter(
+                  response.message || "No response was generated.",
+                  responseSources,
+                ),
+
+                timestamp: new Date(),
+              }
+            : message,
+        ),
+      );
+
+      setSourcesByMessageId((previous) => {
+        const next = {
+          ...previous,
+        };
+
+        if (responseSources.length > 0) {
+          next[assistantMessageId] = responseSources;
+        } else {
+          delete next[assistantMessageId];
         }
 
-        const lastUserIndex = (
-          messages
-            .map(
-              (
-                message,
-                index,
-              ) => ({
-                message,
-                index,
-              }),
-            )
-            .filter(
-              (
-                item,
-              ) =>
-                item.message.role
-                === "user",
-            )
-            .at(-1)
-            ?.index
-          ?? -1
-        );
+        return next;
+      });
 
-        if (
-          lastUserIndex < 0
-        ) {
-          return;
-        }
+      try {
+        const persistedConversation = await getChatConversation(conversationId);
 
-        let assistantIndex = -1;
+        const persistedAssistant = [...persistedConversation.messages]
+          .reverse()
+          .find((storedMessage) => storedMessage.role === "assistant");
 
-        for (
-          let index =
-            messages.length - 1;
-          index > lastUserIndex;
-          index -= 1
-        ) {
-          if (
-            messages[index].role
-            === "assistant"
-          ) {
-            assistantIndex =
-              index;
-            break;
-          }
-        }
+        if (persistedAssistant) {
+          const oldServerMessageId =
+            serverMessageIdByLocalId[assistantMessageId];
 
-        if (
-          assistantIndex < 0
-        ) {
-          return;
-        }
+          setServerMessageIdByLocalId((previous) => ({
+            ...previous,
 
-        const assistantMessageId =
-          messages[
-            assistantIndex
-          ].id;
+            [assistantMessageId]: persistedAssistant.id,
+          }));
 
-        const controller =
-          new AbortController();
-
-        activeRequestControllerRef
-          .current =
-            controller;
-
-        setRegenerating(
-          true,
-        );
-
-        setLoading(
-          true,
-        );
-
-        setError(
-          "",
-        );
-
-        try {
-          const response =
-            await regenerateChatResponse(
-              conversationId,
-              useReasoningModel,
-              controller.signal,
-            );
-
-          const responseSources =
-            Array.isArray(
-              response.sources,
-            )
-              ? response.sources
-              : [];
-
-          setMessages(
-            (previous) =>
-              previous.map(
-                (
-                  message,
-                ) =>
-                  message.id
-                  === assistantMessageId
-                    ? {
-                        ...message,
-
-                        content:
-                          stripStructuredSourceFooter(
-                            response.message
-                            || "No response was generated.",
-                            responseSources,
-                          ),
-
-                        timestamp:
-                          new Date(),
-                      }
-                    : message,
-              ),
-          );
-
-          setSourcesByMessageId(
-            (previous) => {
+          if (oldServerMessageId) {
+            setFeedbackByMessageId((previous) => {
               const next = {
                 ...previous,
               };
 
-              if (
-                responseSources
-                  .length > 0
-              ) {
-                next[
-                  assistantMessageId
-                ] =
-                  responseSources;
-              } else {
-                delete next[
-                  assistantMessageId
-                ];
-              }
+              delete next[oldServerMessageId];
 
               return next;
-            },
-          );
+            });
+          }
+        }
+      } catch (syncError) {
+        console.warn("Unable to sync regenerated message ID:", syncError);
+      }
 
-          try {
-            const persistedConversation =
-              await getChatConversation(
-                conversationId,
+      await refreshConversations();
+    } catch (requestError) {
+      if (isAbortError(requestError)) {
+        return;
+      }
+
+      console.error("Unable to regenerate response:", requestError);
+
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to regenerate the response.",
+      );
+    } finally {
+      if (activeRequestControllerRef.current === controller) {
+        activeRequestControllerRef.current = null;
+      }
+
+      setRegenerating(false);
+
+      setLoading(false);
+    }
+  }, [
+    clearingHistory,
+    conversationId,
+    loading,
+    messages,
+    regenerating,
+    refreshConversations,
+    serverMessageIdByLocalId,
+    useReasoningModel,
+  ]);
+
+  const sendMessage = useCallback(
+    async (text: string): Promise<void> => {
+      const normalizedText = text.trim();
+
+      if (!normalizedText || loading || clearingHistory) {
+        return;
+      }
+
+      const historyBeforeMessage = conversationHistory;
+
+      const isFirstTurn = conversationId === null;
+
+      const controller = new AbortController();
+
+      activeRequestControllerRef.current = controller;
+
+      const userMessage: ChatMessage = {
+        id: createMessageId(),
+
+        role: "user",
+
+        content: normalizedText,
+
+        timestamp: new Date(),
+      };
+
+      setMessages((previous) => [...previous, userMessage]);
+
+      setLoading(true);
+
+      setError("");
+
+      try {
+        const assistantMessageId = createMessageId();
+
+        let streamedText = "";
+        let finalConversationId = conversationId;
+
+        let finalSources: ChatSource[] = [];
+        
+        const assistantMessage: ChatMessage = {
+          id: assistantMessageId,
+
+          role: "assistant",
+
+          content: "",
+
+          timestamp: new Date(),
+        };
+
+        setMessages((previous) => [...previous, assistantMessage]);
+
+        setStreamingStatus("Rudrix is thinking...");
+
+        await streamAI(
+          normalizedText,
+          historyBeforeMessage,
+          conversationId,
+          useReasoningModel,
+          {
+            onStart: (receivedConversationId) => {
+              finalConversationId = receivedConversationId;
+
+              setConversationId(receivedConversationId);
+            },
+
+            onStatus: (status) => {
+              setStreamingStatus(status);
+            },
+
+            onDelta: (textChunk) => {
+              streamedText += textChunk;
+
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+                        content: streamedText,
+                      }
+                    : message,
+                ),
+              );
+            },
+
+            onDone: (event) => {
+              finalConversationId = event.conversationId;
+
+              const responseSources: ChatSource[] = Array.isArray(event.sources)
+                ? event.sources
+                : [];
+
+              setConversationId(event.conversationId);
+
+              setMessages((previous) =>
+                previous.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+
+                        content: stripStructuredSourceFooter(
+                          streamedText || "No response was generated.",
+                          responseSources,
+                        ),
+
+                        timestamp: new Date(),
+                      }
+                    : message,
+                ),
               );
 
-            const persistedAssistant =
-              [...persistedConversation.messages]
-                .reverse()
-                .find(
-                  (
-                    storedMessage,
-                  ) =>
-                    storedMessage.role
-                    === "assistant",
-                );
-
-            if (
-              persistedAssistant
-            ) {
-              const oldServerMessageId =
-                serverMessageIdByLocalId[
-                  assistantMessageId
-                ];
-
-              setServerMessageIdByLocalId(
-                (
-                  previous,
-                ) => ({
+              if (responseSources.length > 0) {
+                setSourcesByMessageId((previous) => ({
                   ...previous,
 
-                  [assistantMessageId]:
-                    persistedAssistant.id,
-                }),
-              );
-
-              if (
-                oldServerMessageId
-              ) {
-                setFeedbackByMessageId(
-                  (
-                    previous,
-                  ) => {
-                    const next = {
-                      ...previous,
-                    };
-
-                    delete next[
-                      oldServerMessageId
-                    ];
-
-                    return next;
-                  },
-                );
+                  [assistantMessageId]: responseSources,
+                }));
               }
-            }
-          } catch (
-            syncError
-          ) {
-            console.warn(
-              "Unable to sync regenerated message ID:",
-              syncError,
-            );
-          }
 
-          await refreshConversations();
-        } catch (
-          requestError
-        ) {
-          if (
-            isAbortError(
-              requestError,
-            )
-          ) {
-            return;
-          }
+              setServerMessageIdByLocalId((previous) => ({
+                ...previous,
 
-          console.error(
-            "Unable to regenerate response:",
-            requestError,
-          );
+                [assistantMessageId]: event.messageId,
+              }));
+            },
+          },
+          controller.signal,
+        );
 
-          setError(
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to regenerate the response.",
-          );
-        } finally {
-          if (
-            activeRequestControllerRef
-              .current
-            === controller
-          ) {
-            activeRequestControllerRef
-              .current =
-                null;
-          }
+        await refreshConversations();
 
-          setRegenerating(
-            false,
-          );
-
-          setLoading(
-            false,
-          );
+        if (isFirstTurn && finalConversationId) {
+          void generateChatConversationTitle(finalConversationId)
+            .then(() => refreshConversations())
+            .catch((titleError) => {
+              console.warn("Unable to generate AI chat title:", titleError);
+            });
         }
-      },
-      [
-        clearingHistory,
-        conversationId,
-        loading,
-        messages,
-        regenerating,
-        refreshConversations,
-        serverMessageIdByLocalId,
-        useReasoningModel,
-      ],
-    );
+      } catch (requestError) {
+        if (isAbortError(requestError)) {
+          setMessages((previous) =>
+            previous.filter(
+              (message) =>
+                !(message.role === "assistant" && message.content === ""),
+            ),
+          );
 
+          setStreamingStatus("Generation stopped.");
 
-  const sendMessage =
-    useCallback(
-      async (
-        text: string,
-      ): Promise<void> => {
-        const normalizedText =
-          text.trim();
-
-        if (
-          !normalizedText
-          || loading
-          || clearingHistory
-        ) {
           return;
         }
 
-        const historyBeforeMessage =
-          conversationHistory;
+        console.error("AI assistant request failed:", requestError);
 
-        const isFirstTurn =
-          conversationId === null;
+        const message =
+          requestError instanceof Error
+            ? requestError.message
+            : "Unable to reach Rudrix.";
 
-        const controller =
-          new AbortController();
+        setError(message);
 
-        activeRequestControllerRef
-          .current =
-            controller;
+        const errorMessage: ChatMessage = {
+          id: createMessageId(),
 
-        const userMessage:
-          ChatMessage = {
-            id:
-              createMessageId(),
+          role: "assistant",
 
-            role:
-              "user",
+          content: "I could not complete that request.\n\n" + message,
 
-            content:
-              normalizedText,
+          timestamp: new Date(),
+        };
 
-            timestamp:
-              new Date(),
-          };
-
-        setMessages(
-          (previous) => [
-            ...previous,
-            userMessage,
-          ],
-        );
-
-        setLoading(
-          true,
-        );
-
-        setError(
-          "",
-        );
-
-        try {
-          const response =
-            await askAI(
-              normalizedText,
-              historyBeforeMessage,
-              conversationId,
-              useReasoningModel,
-              controller.signal,
-            );
-
-          setConversationId(
-            response.conversationId,
-          );
-
-          const responseSources =
-            Array.isArray(
-              response.sources,
-            )
-              ? response.sources
-              : [];
-
-          const assistantMessageId =
-            createMessageId();
-
-          const assistantMessage:
-            ChatMessage = {
-              id:
-                assistantMessageId,
-
-              role:
-                "assistant",
-
-              content:
-                stripStructuredSourceFooter(
-                  response.message
-                  || "No response was generated.",
-                  responseSources,
-                ),
-
-              timestamp:
-                new Date(),
-            };
-
-          setMessages(
-            (previous) => [
-              ...previous,
-              assistantMessage,
-            ],
-          );
-
-          if (
-            responseSources.length
-            > 0
-          ) {
-            setSourcesByMessageId(
-              (previous) => ({
-                ...previous,
-
-                [assistantMessageId]:
-                  responseSources,
-              }),
-            );
-          }
-
-          try {
-            const persistedConversation =
-              await getChatConversation(
-                response.conversationId,
-              );
-
-            const persistedAssistant =
-              [...persistedConversation.messages]
-                .reverse()
-                .find(
-                  (
-                    storedMessage,
-                  ) =>
-                    storedMessage.role
-                    === "assistant",
-                );
-
-            if (
-              persistedAssistant
-            ) {
-              setServerMessageIdByLocalId(
-                (
-                  previous,
-                ) => ({
-                  ...previous,
-
-                  [assistantMessageId]:
-                    persistedAssistant.id,
-                }),
-              );
-            }
-          } catch (
-            syncError
-          ) {
-            console.warn(
-              "Unable to sync persisted chat message ID:",
-              syncError,
-            );
-          }
-
-          await refreshConversations();
-
-          if (isFirstTurn) {
-            void generateChatConversationTitle(
-              response.conversationId,
-            )
-              .then(() =>
-                refreshConversations()
-              )
-              .catch(
-                (
-                  titleError,
-                ) => {
-                  console.warn(
-                    "Unable to generate AI chat title:",
-                    titleError,
-                  );
-                },
-              );
-          }
-        } catch (
-          requestError
-        ) {
-          if (
-            isAbortError(
-              requestError,
-            )
-          ) {
-            return;
-          }
-
-          console.error(
-            "AI assistant request failed:",
-            requestError,
-          );
-
-          const message =
-            requestError
-              instanceof Error
-              ? requestError.message
-              : "Unable to reach Rudrix.";
-
-          setError(
-            message,
-          );
-
-          const errorMessage:
-            ChatMessage = {
-              id:
-                createMessageId(),
-
-              role:
-                "assistant",
-
-              content:
-                "I could not complete that request.\n\n"
-                + message,
-
-              timestamp:
-                new Date(),
-            };
-
-          setMessages(
-            (previous) => [
-              ...previous,
-              errorMessage,
-            ],
-          );
-        } finally {
-          if (
-            activeRequestControllerRef
-              .current
-            === controller
-          ) {
-            activeRequestControllerRef
-              .current =
-                null;
-          }
-
-          setLoading(
-            false,
-          );
+        setMessages((previous) => [...previous, errorMessage]);
+      } finally {
+        if (activeRequestControllerRef.current === controller) {
+          activeRequestControllerRef.current = null;
         }
-      },
-      [
-        clearingHistory,
-        conversationHistory,
-        conversationId,
-        loading,
-        refreshConversations,
-        useReasoningModel,
-      ],
-    );
 
+        setLoading(false);
+
+        setStreamingStatus("Rudrix is thinking...");
+      }
+    },
+    [
+      clearingHistory,
+      conversationHistory,
+      conversationId,
+      loading,
+      refreshConversations,
+      useReasoningModel,
+    ],
+  );
 
   return (
     <Drawer
       anchor="right"
       open={open}
-      onClose={
-        loading
-          ? undefined
-          : onClose
-      }
+      onClose={loading ? undefined : onClose}
       ModalProps={{
         keepMounted: true,
       }}
       slotProps={{
         backdrop: {
           sx: {
-            backgroundColor:
-              "rgba(0, 0, 0, 0.18)",
+            backgroundColor: "rgba(0, 0, 0, 0.18)",
           },
         },
 
@@ -1437,8 +859,7 @@ const ChatBot = ({
               md: "400px",
             },
 
-            maxWidth:
-              "100vw",
+            maxWidth: "100vw",
 
             top: {
               xs: 0,
@@ -1465,62 +886,45 @@ const ChatBot = ({
               sm: "12px !important",
             },
 
-            display:
-              "flex",
+            display: "flex",
 
-            flexDirection:
-              "column",
+            flexDirection: "column",
 
-            overflow:
-              "hidden",
+            overflow: "hidden",
 
-            bgcolor:
-              "background.paper",
+            bgcolor: "background.paper",
 
             borderRadius: {
               xs: 0,
               sm: "14px",
             },
 
-            boxShadow:
-              "-6px 4px 22px rgba(0,0,0,0.15)",
+            boxShadow: "-6px 4px 22px rgba(0,0,0,0.15)",
           },
         },
       }}
     >
       <ChatHeader
-        historyOpen={
-          historyOpen
-        }
+        historyOpen={historyOpen}
 
         disabled={
-          loading
-          || historyLoading
-          || clearingHistory
-          || renamingConversationId
-            !== null
+          loading ||
+          historyLoading ||
+          clearingHistory ||
+          renamingConversationId !== null
         }
 
-        onNewChat={
-          startNewChat
-        }
+        onNewChat={startNewChat}
 
-        onToggleHistory={
-          toggleHistory
-        }
+        onToggleHistory={toggleHistory}
 
-        onClose={
-          onClose
-        }
+        onClose={onClose}
       />
-
 
       {error && (
         <Alert
           severity="error"
-          onClose={() =>
-            setError("")
-          }
+          onClose={() => setError("")}
           sx={{
             mx: 1.5,
             mt: 1.25,
@@ -1531,91 +935,49 @@ const ChatBot = ({
         </Alert>
       )}
 
-
       {historyOpen ? (
         <ChatHistoryPanel
-          conversations={
-            conversations
-          }
+          conversations={conversations}
 
-          selectedConversationId={
-            conversationId
-          }
+          selectedConversationId={conversationId}
 
-          loading={
-            historyLoading
-          }
+          loading={historyLoading}
 
-          deletingConversationId={
-            deletingConversationId
-          }
+          deletingConversationId={deletingConversationId}
 
-          renamingConversationId={
-            renamingConversationId
-          }
+          renamingConversationId={renamingConversationId}
 
-          clearingHistory={
-            clearingHistory
-          }
+          clearingHistory={clearingHistory}
 
-          onSelect={
-            openConversation
-          }
+          onSelect={openConversation}
 
-          onDelete={
-            removeConversation
-          }
+          onDelete={removeConversation}
 
-          onRename={
-            renameConversation
-          }
+          onRename={renameConversation}
 
-          onClearAll={
-            clearAllHistory
-          }
+          onClearAll={clearAllHistory}
         />
       ) : (
         <>
-          <SuggestedPrompts
-            onSelect={
-              sendMessage
-            }
-          />
+          <SuggestedPrompts onSelect={sendMessage} />
 
           <ChatMessages
-            messages={
-              messages
-            }
+            messages={messages}
 
-            sourcesByMessageId={
-              sourcesByMessageId
-            }
+            sourcesByMessageId={sourcesByMessageId}
 
-            serverMessageIdByLocalId={
-              serverMessageIdByLocalId
-            }
+            serverMessageIdByLocalId={serverMessageIdByLocalId}
 
-            feedbackByMessageId={
-              feedbackByMessageId
-            }
+            feedbackByMessageId={feedbackByMessageId}
 
-            feedbackSavingMessageId={
-              feedbackSavingMessageId
-            }
+            feedbackSavingMessageId={feedbackSavingMessageId}
 
-            regenerating={
-              regenerating
-            }
+            regenerating={regenerating}
 
-            onRegenerate={
-              regenerateLastResponse
-            }
+            onRegenerate={regenerateLastResponse}
 
-            onFeedback={
-              saveFeedback
-            }
+            onFeedback={saveFeedback}
           />
-
 
           {loading && (
             <Box
@@ -1623,53 +985,41 @@ const ChatBot = ({
                 px: 2,
                 py: 1,
 
-                display:
-                  "flex",
+                display: "flex",
 
-                alignItems:
-                  "center",
+                alignItems: "center",
 
-                justifyContent:
-                  "space-between",
+                justifyContent: "space-between",
 
                 gap: 1,
 
                 borderTop: 1,
-                borderColor:
-                  "divider",
+                borderColor: "divider",
 
-                bgcolor:
-                  "background.paper",
+                bgcolor: "background.paper",
 
                 flexShrink: 0,
               }}
             >
               <Box
                 sx={{
-                  display:
-                    "flex",
+                  display: "flex",
 
-                  alignItems:
-                    "center",
+                  alignItems: "center",
 
                   gap: 1,
                 }}
               >
-                <CircularProgress
-                  size={18}
-                />
+                <CircularProgress size={18} />
 
                 <Box
                   component="span"
                   sx={{
                     fontSize: 13,
-                    color:
-                      "text.secondary",
+                    color: "text.secondary",
                   }}
                 >
-                  {regenerating
-                    ? "Rudrix is regenerating..."
-                    : "Rudrix is thinking..."}
+                  {regenerating ? "Rudrix is regenerating..." : streamingStatus}
                 </Box>
               </Box>
 
@@ -1677,18 +1027,11 @@ const ChatBot = ({
                 size="small"
                 color="error"
                 variant="outlined"
-                startIcon={
-                  <StopCircleOutlinedIcon
-                    fontSize="small"
-                  />
-                }
-                onClick={
-                  stopGeneration
-                }
+                startIcon={<StopCircleOutlinedIcon fontSize="small" />}
+                onClick={stopGeneration}
                 sx={{
                   minWidth: 0,
-                  textTransform:
-                    "none",
+                  textTransform: "none",
                 }}
               >
                 Stop
@@ -1696,31 +1039,23 @@ const ChatBot = ({
             </Box>
           )}
 
-
           <Box
             sx={{
               px: 1.5,
               py: 1.25,
 
               borderTop: 1,
-              borderColor:
-                "divider",
+              borderColor: "divider",
 
-              bgcolor:
-                "background.paper",
+              bgcolor: "background.paper",
 
               flexShrink: 0,
             }}
           >
             <ChatInput
-              onSend={
-                sendMessage
-              }
+              onSend={sendMessage}
 
-              disabled={
-                loading
-                || clearingHistory
-              }
+              disabled={loading || clearingHistory}
             />
           </Box>
         </>
@@ -1728,6 +1063,5 @@ const ChatBot = ({
     </Drawer>
   );
 };
-
 
 export default ChatBot;

@@ -25,6 +25,55 @@ export interface AIResponse {
 }
 
 
+export type ChatStreamEvent =
+  | {
+      type: "start";
+      conversationId: string;
+    }
+  | {
+      type: "status";
+      message: string;
+    }
+  | {
+      type: "delta";
+      text: string;
+    }
+  | {
+      type: "done";
+      conversationId: string;
+      messageId: number;
+      model?: string | null;
+      sources: ChatSource[];
+      toolsUsed?: unknown[];
+    }
+  | {
+      type: "error";
+      message: string;
+    };
+
+
+export interface StreamAIHandlers {
+  onStart?: (
+    conversationId: string,
+  ) => void;
+
+  onStatus?: (
+    message: string,
+  ) => void;
+
+  onDelta?: (
+    text: string,
+  ) => void;
+
+  onDone?: (
+    event: Extract<
+      ChatStreamEvent,
+      { type: "done" }
+    >,
+  ) => void;
+}
+
+
 export interface KnowledgeChunk {
   id: number;
   chunkId: string;
@@ -509,4 +558,179 @@ export async function getConversationFeedback(
   )
     ? result
     : [];
+}
+
+
+
+export async function streamAI(
+  message: string,
+  history: ChatHistoryMessage[] = [],
+  conversationId: string | null = null,
+  useReasoningModel = false,
+  handlers: StreamAIHandlers = {},
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/chat/stream`,
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+
+      body: JSON.stringify({
+        message,
+        conversationId,
+        history,
+        useReasoningModel,
+      }),
+
+      signal,
+    },
+  );
+
+  if (!response.ok) {
+    await parseApiResponse(
+      response,
+      "Unable to contact Rudrix.",
+    );
+
+    return;
+  }
+
+  if (!response.body) {
+    throw new Error(
+      "Streaming response body is unavailable.",
+    );
+  }
+
+  const reader =
+    response.body.getReader();
+
+  const decoder =
+    new TextDecoder();
+
+  let buffer = "";
+
+  const processLine = (
+    rawLine: string,
+  ) => {
+    const line =
+      rawLine.trim();
+
+    if (!line) {
+      return;
+    }
+
+    let event:
+      ChatStreamEvent;
+
+    try {
+      event =
+        JSON.parse(
+          line,
+        ) as ChatStreamEvent;
+    } catch {
+      return;
+    }
+
+    if (
+      event.type
+      === "start"
+    ) {
+      handlers.onStart?.(
+        event.conversationId,
+      );
+
+      return;
+    }
+
+    if (
+      event.type
+      === "status"
+    ) {
+      handlers.onStatus?.(
+        event.message,
+      );
+
+      return;
+    }
+
+    if (
+      event.type
+      === "delta"
+    ) {
+      handlers.onDelta?.(
+        event.text,
+      );
+
+      return;
+    }
+
+    if (
+      event.type
+      === "done"
+    ) {
+      handlers.onDone?.(
+        event,
+      );
+
+      return;
+    }
+
+    if (
+      event.type
+      === "error"
+    ) {
+      throw new Error(
+        event.message
+        || "Rudrix streaming request failed.",
+      );
+    }
+  };
+
+  while (true) {
+    const {
+      value,
+      done,
+    } = await reader.read();
+
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(
+      value,
+      {
+        stream: true,
+      },
+    );
+
+    const lines =
+      buffer.split("\n");
+
+    buffer =
+      lines.pop()
+      ?? "";
+
+    for (
+      const line of lines
+    ) {
+      processLine(
+        line,
+      );
+    }
+  }
+
+  buffer += decoder.decode();
+
+  if (
+    buffer.trim()
+  ) {
+    processLine(
+      buffer,
+    );
+  }
 }

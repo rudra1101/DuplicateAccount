@@ -1,5 +1,6 @@
 import json
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -41,15 +42,18 @@ def build_messages(
     for message in request.history:
         messages.append(
             {
-                "role": message.role,
-                "content": message.content,
+                "role":
+                    message.role,
+                "content":
+                    message.content,
             }
         )
 
     messages.append(
         {
             "role": "user",
-            "content": request.message,
+            "content":
+                request.message,
         }
     )
 
@@ -60,27 +64,6 @@ def extract_text_tool_calls(
     content: str,
     allowed_tools: set[str],
 ) -> list[dict[str, Any]]:
-    """
-    Fallback parser for local models that emit tool calls
-    as plain JSON text instead of native tool_calls.
-
-    Supported examples:
-
-    {
-        "name": "get_dashboard_summary",
-        "parameters": {
-            "period": "daily"
-        }
-    }
-
-    {
-        "name": "search_knowledge_base",
-        "arguments": {
-            "query": "duplicate review policy"
-        }
-    }
-    """
-
     if not content:
         return []
 
@@ -107,18 +90,15 @@ def extract_text_tool_calls(
                     content[start:]
                 )
             )
-
             index = (
                 start
                 + consumed
             )
-
         except json.JSONDecodeError:
             index = (
                 start
                 + 1
             )
-
             continue
 
         if not isinstance(
@@ -154,8 +134,10 @@ def extract_text_tool_calls(
         ):
             tool_calls.append(
                 {
-                    "name": name,
-                    "arguments": arguments,
+                    "name":
+                        name,
+                    "arguments":
+                        arguments,
                 }
             )
 
@@ -166,24 +148,9 @@ def normalize_tool_arguments(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Defensive normalization for common local-model
-    schema mistakes.
-
-    Handles:
-    - numeric values sent as strings
-    - "null" / "None" sent as strings
-    - knowledge search limit exceeding maximum
-    - invalid semantic similarity values
-    """
-
     normalized = dict(
         arguments
     )
-
-    # -------------------------------------------------
-    # Confidence breakdown
-    # -------------------------------------------------
 
     if tool_name == (
         "get_confidence_breakdown"
@@ -201,16 +168,11 @@ def normalize_tool_arguments(
                 ] = float(
                     minimum_confidence
                 )
-
             except (
                 TypeError,
                 ValueError,
             ):
                 pass
-
-    # -------------------------------------------------
-    # Knowledge / RAG search
-    # -------------------------------------------------
 
     if tool_name == (
         "search_knowledge_base"
@@ -224,7 +186,6 @@ def normalize_tool_arguments(
             limit = int(
                 limit
             )
-
         except (
             TypeError,
             ValueError,
@@ -252,7 +213,6 @@ def normalize_tool_arguments(
             minimum_similarity = float(
                 minimum_similarity
             )
-
         except (
             TypeError,
             ValueError,
@@ -291,7 +251,6 @@ def normalize_tool_arguments(
                 normalized[
                     "document_id"
                 ] = None
-
             else:
                 try:
                     normalized[
@@ -299,309 +258,12 @@ def normalize_tool_arguments(
                     ] = int(
                         document_id
                     )
-
-                except (
-                    TypeError,
-                    ValueError,
-                ):
+                except ValueError:
                     normalized[
                         "document_id"
                     ] = None
 
-        elif document_id is None:
-            normalized[
-                "document_id"
-            ] = None
-
-        else:
-            try:
-                normalized[
-                    "document_id"
-                ] = int(
-                    document_id
-                )
-
-            except (
-                TypeError,
-                ValueError,
-            ):
-                normalized[
-                    "document_id"
-                ] = None
-
     return normalized
-
-
-def compact_dashboard_applications(
-    applications: Any,
-) -> list[dict[str, Any]]:
-    """
-    Keep only useful application-level dashboard metrics.
-
-    This prevents a local model from receiving unnecessary
-    payload fields when it only needs to synthesize an answer.
-    """
-
-    if not isinstance(
-        applications,
-        list,
-    ):
-        return []
-
-    compacted: list[
-        dict[str, Any]
-    ] = []
-
-    for application in applications:
-        if not isinstance(
-            application,
-            dict,
-        ):
-            continue
-
-        compacted.append(
-            {
-                "application":
-                    application.get(
-                        "application"
-                    ),
-
-                "duplicateGroups":
-                    application.get(
-                        "duplicateGroups"
-                    ),
-
-                "duplicateAccounts":
-                    application.get(
-                        "duplicateAccounts"
-                    ),
-
-                "highestConfidence":
-                    application.get(
-                        "highestConfidence"
-                    ),
-
-                "highConfidenceGroups":
-                    application.get(
-                        "highConfidenceGroups"
-                    ),
-            }
-        )
-
-    return compacted
-
-
-def compact_tool_result_for_model(
-    *,
-    tool_name: str,
-    tool_result: dict[str, Any],
-) -> dict[str, Any]:
-    """
-    Return a smaller tool result to the LLM while keeping the
-    complete original tool result in toolsUsed.
-
-    This is especially important for local 8B models because
-    very large scan/trend payloads can distract the model from
-    the actual metric the user asked for.
-
-    toolsUsed:
-        receives the complete result.
-
-    LLM:
-        receives a compact result focused on relevant fields.
-    """
-
-    if not tool_result.get(
-        "success"
-    ):
-        return tool_result
-
-    data = tool_result.get(
-        "data"
-    )
-
-    if not isinstance(
-        data,
-        dict,
-    ):
-        return tool_result
-
-    # -------------------------------------------------
-    # Dashboard
-    #
-    # Do NOT send scans/trend history unless the
-    # current tool is specifically a history tool.
-    # -------------------------------------------------
-
-    if tool_name == (
-        "get_dashboard_summary"
-    ):
-        return {
-            "success": True,
-            "data": {
-                "hasData":
-                    data.get(
-                        "hasData"
-                    ),
-
-                "period":
-                    data.get(
-                        "period"
-                    ),
-
-                "summary":
-                    data.get(
-                        "summary",
-                        {},
-                    ),
-
-                "applications":
-                    compact_dashboard_applications(
-                        data.get(
-                            "applications",
-                            [],
-                        )
-                    ),
-            },
-        }
-
-    # -------------------------------------------------
-    # Confidence breakdown
-    # -------------------------------------------------
-
-    if tool_name == (
-        "get_confidence_breakdown"
-    ):
-        return {
-            "success": True,
-            "data": {
-                "totalMatchingAccounts":
-                    data.get(
-                        "totalMatchingAccounts"
-                    ),
-
-                "applicationCount":
-                    data.get(
-                        "applicationCount"
-                    ),
-
-                "applications":
-                    data.get(
-                        "applications",
-                        [],
-                    ),
-            },
-        }
-
-    # -------------------------------------------------
-    # Knowledge / RAG
-    #
-    # Keep retrieved source content because the model
-    # needs it to answer grounded policy/document questions.
-    # -------------------------------------------------
-
-    if tool_name == (
-        "search_knowledge_base"
-    ):
-        return {
-            "success": True,
-            "data": {
-                "found":
-                    data.get(
-                        "found"
-                    ),
-
-                "query":
-                    data.get(
-                        "query"
-                    ),
-
-                "resultCount":
-                    data.get(
-                        "resultCount"
-                    ),
-
-                "documentId":
-                    data.get(
-                        "documentId"
-                    ),
-
-                "sources":
-                    data.get(
-                        "sources",
-                        [],
-                    ),
-
-                "message":
-                    data.get(
-                        "message"
-                    ),
-            },
-        }
-
-    # -------------------------------------------------
-    # Knowledge document listing
-    # -------------------------------------------------
-
-    if tool_name == (
-        "list_knowledge_documents"
-    ):
-        return {
-            "success": True,
-            "data": {
-                "documentCount":
-                    data.get(
-                        "documentCount"
-                    ),
-
-                "documents":
-                    data.get(
-                        "documents",
-                        [],
-                    ),
-            },
-        }
-
-    # -------------------------------------------------
-    # Duplicate group search
-    #
-    # Keep authoritative totals and returned groups.
-    # -------------------------------------------------
-
-    if tool_name == (
-        "search_duplicate_groups"
-    ):
-        return {
-            "success": True,
-            "data": {
-                "totalMatchingGroups":
-                    data.get(
-                        "totalMatchingGroups"
-                    ),
-
-                "totalMatchingDuplicateAccounts":
-                    data.get(
-                        "totalMatchingDuplicateAccounts"
-                    ),
-
-                "returnedGroups":
-                    data.get(
-                        "returnedGroups"
-                    ),
-
-                "groups":
-                    data.get(
-                        "groups",
-                        [],
-                    ),
-            },
-        }
-
-    # -------------------------------------------------
-    # Other tools are already reasonably scoped.
-    # -------------------------------------------------
-
-    return tool_result
 
 
 def extract_chat_sources(
@@ -609,11 +271,6 @@ def extract_chat_sources(
     tool_name: str,
     tool_result: dict[str, Any],
 ) -> list[ChatSource]:
-    """
-    Extract structured knowledge-document sources from
-    successful search_knowledge_base results.
-    """
-
     if tool_name != (
         "search_knowledge_base"
     ):
@@ -690,7 +347,6 @@ def extract_chat_sources(
             document_id = int(
                 document_id
             )
-
         except (
             TypeError,
             ValueError,
@@ -702,7 +358,6 @@ def extract_chat_sources(
                 page_number = int(
                     page_number
                 )
-
             except (
                 TypeError,
                 ValueError,
@@ -723,21 +378,155 @@ def extract_chat_sources(
 
         sources.append(
             ChatSource(
-                documentId=(
-                    document_id
-                ),
-                documentName=(
+                documentId=
+                    document_id,
+                documentName=
                     str(
                         document_name
-                    )
-                ),
-                pageNumber=(
-                    page_number
-                ),
+                    ),
+                pageNumber=
+                    page_number,
             )
         )
 
     return sources
+
+
+def _execute_tool_calls(
+    *,
+    db: Session,
+    registry: Any,
+    messages: list[
+        dict[str, Any]
+    ],
+    tool_calls: list[Any],
+    tool_history: list[
+        ToolInvocationResponse
+    ],
+    chat_sources: list[
+        ChatSource
+    ],
+    source_keys: set[
+        tuple[
+            int,
+            int | None,
+        ]
+    ],
+) -> None:
+    for tool_call in tool_calls:
+        if isinstance(
+            tool_call,
+            dict,
+        ):
+            tool_name = (
+                tool_call[
+                    "name"
+                ]
+            )
+            tool_arguments = (
+                tool_call[
+                    "arguments"
+                ]
+            )
+        else:
+            tool_name = (
+                tool_call.name
+            )
+            tool_arguments = (
+                tool_call.arguments
+            )
+
+        if not isinstance(
+            tool_arguments,
+            dict,
+        ):
+            tool_arguments = {}
+
+        tool_arguments = (
+            normalize_tool_arguments(
+                tool_name,
+                tool_arguments,
+            )
+        )
+
+        try:
+            result = (
+                registry.execute(
+                    name=
+                        tool_name,
+                    db=db,
+                    arguments=
+                        tool_arguments,
+                )
+            )
+
+            tool_result = {
+                "success":
+                    True,
+                "data":
+                    result,
+            }
+
+        except Exception as exc:
+            tool_result = {
+                "success":
+                    False,
+                "error":
+                    str(exc),
+            }
+
+        tool_history.append(
+            ToolInvocationResponse(
+                name=
+                    tool_name,
+                arguments=
+                    tool_arguments,
+                result=
+                    tool_result,
+            )
+        )
+
+        discovered_sources = (
+            extract_chat_sources(
+                tool_name=
+                    tool_name,
+                tool_result=
+                    tool_result,
+            )
+        )
+
+        for source in (
+            discovered_sources
+        ):
+            key = (
+                source.documentId,
+                source.pageNumber,
+            )
+
+            if key in source_keys:
+                continue
+
+            source_keys.add(
+                key
+            )
+
+            chat_sources.append(
+                source
+            )
+
+        messages.append(
+            {
+                "role":
+                    "tool",
+                "tool_name":
+                    tool_name,
+                "content":
+                    json.dumps(
+                        tool_result,
+                        default=str,
+                    ),
+            }
+        )
 
 
 def run_identity_agent(
@@ -745,6 +534,10 @@ def run_identity_agent(
     db: Session,
     request: ChatRequest,
 ) -> ChatResponse:
+    """
+    Existing non-streaming API path.
+    Kept for regenerate/title/backward compatibility.
+    """
     settings = (
         get_ai_settings()
     )
@@ -786,38 +579,40 @@ def run_identity_agent(
 
     final_message = ""
 
+    definitions = (
+        registry.definitions()
+    )
+
     for _ in range(
         settings.max_tool_iterations
     ):
         provider_response = (
             provider.chat(
-                model=selected_model,
-                messages=messages,
-                tools=registry.definitions(),
+                model=
+                    selected_model,
+                messages=
+                    messages,
+                tools=
+                    definitions,
             )
         )
 
         messages.append(
-            provider_response.assistant_message
+            provider_response
+            .assistant_message
         )
 
         tool_calls = list(
-            provider_response.tool_calls
+            provider_response
+            .tool_calls
             or []
         )
-
-        # -------------------------------------------------
-        # Fallback:
-        #
-        # Some Ollama/local models print function calls as
-        # normal JSON text instead of native tool_calls.
-        # -------------------------------------------------
 
         if not tool_calls:
             allowed_tools = {
                 definition["name"]
                 for definition
-                in registry.definitions()
+                in definitions
             }
 
             fallback_calls = (
@@ -832,166 +627,28 @@ def run_identity_agent(
                     fallback_calls
                 )
 
-        # -------------------------------------------------
-        # No tool call means the model has produced the
-        # final user-facing response.
-        # -------------------------------------------------
-
         if not tool_calls:
             final_message = (
-                provider_response.text.strip()
+                provider_response
+                .text
+                .strip()
                 or "No response was generated."
             )
-
             break
 
-        # -------------------------------------------------
-        # Execute all requested tools.
-        # -------------------------------------------------
-
-        for tool_call in tool_calls:
-
-            # Native provider tool call object.
-            if not isinstance(
-                tool_call,
-                dict,
-            ):
-                tool_name = (
-                    tool_call.name
-                )
-
-                tool_arguments = (
-                    tool_call.arguments
-                )
-
-            # Fallback textual tool-call dictionary.
-            else:
-                tool_name = (
-                    tool_call[
-                        "name"
-                    ]
-                )
-
-                tool_arguments = (
-                    tool_call[
-                        "arguments"
-                    ]
-                )
-
-            if not isinstance(
-                tool_arguments,
-                dict,
-            ):
-                tool_arguments = {}
-
-            tool_arguments = (
-                normalize_tool_arguments(
-                    tool_name,
-                    tool_arguments,
-                )
-            )
-
-            # -------------------------------------------------
-            # Execute tool.
-            # -------------------------------------------------
-
-            try:
-                result = (
-                    registry.execute(
-                        name=tool_name,
-                        db=db,
-                        arguments=(
-                            tool_arguments
-                        ),
-                    )
-                )
-
-                tool_result = {
-                    "success": True,
-                    "data": result,
-                }
-
-            except Exception as exc:
-                tool_result = {
-                    "success": False,
-                    "error": str(
-                        exc
-                    ),
-                }
-
-            # -------------------------------------------------
-            # Keep FULL result for debugging/API response.
-            # -------------------------------------------------
-
-            tool_history.append(
-                ToolInvocationResponse(
-                    name=tool_name,
-                    arguments=(
-                        tool_arguments
-                    ),
-                    result=(
-                        tool_result
-                    ),
-                )
-            )
-
-            # -------------------------------------------------
-            # Extract structured RAG sources.
-            # -------------------------------------------------
-
-            discovered_sources = (
-                extract_chat_sources(
-                    tool_name=tool_name,
-                    tool_result=tool_result,
-                )
-            )
-
-            for source in discovered_sources:
-                key = (
-                    source.documentId,
-                    source.pageNumber,
-                )
-
-                if key in source_keys:
-                    continue
-
-                source_keys.add(
-                    key
-                )
-
-                chat_sources.append(
-                    source
-                )
-
-            # -------------------------------------------------
-            # IMPORTANT:
-            #
-            # Send compact result to the LLM instead of the
-            # full raw tool payload.
-            #
-            # This prevents dashboard scan/trend arrays from
-            # distracting llama3.1:8b.
-            # -------------------------------------------------
-
-            model_tool_result = (
-                compact_tool_result_for_model(
-                    tool_name=tool_name,
-                    tool_result=tool_result,
-                )
-            )
-
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_name": (
-                        tool_name
-                    ),
-                    "content": json.dumps(
-                        model_tool_result,
-                        default=str,
-                    ),
-                }
-            )
+        _execute_tool_calls(
+            db=db,
+            registry=registry,
+            messages=messages,
+            tool_calls=
+                tool_calls,
+            tool_history=
+                tool_history,
+            chat_sources=
+                chat_sources,
+            source_keys=
+                source_keys,
+        )
 
     else:
         final_message = (
@@ -1006,8 +663,301 @@ def run_identity_agent(
                 uuid.uuid4()
             )
         ),
+        message=
+            final_message,
+        model=
+            selected_model,
+        toolsUsed=
+            tool_history,
+        sources=
+            chat_sources,
+    )
+
+
+def run_identity_agent_stream(
+    *,
+    db: Session,
+    request: ChatRequest,
+) -> Iterator[
+    dict[str, Any]
+]:
+    """
+    Hybrid tool + streaming agent.
+
+    Tool-selection turns use the normal non-streaming provider call.
+    This is the most reliable way to preserve Ollama tool calling.
+
+    Once the model no longer requests a tool, the final user-facing
+    answer is generated again with tools disabled and stream=True.
+    Only that final answer is streamed to the browser.
+
+    Yields:
+    {"type": "status", "message": "..."}
+    {"type": "delta", "text": "..."}
+    {"type": "done", "response": ChatResponse}
+    """
+    settings = (
+        get_ai_settings()
+    )
+
+    provider = (
+        AIProviderFactory.create(
+            settings
+        )
+    )
+
+    registry = (
+        create_ai_tool_registry()
+    )
+
+    selected_model = (
+        settings.reasoning_model
+        if request.useReasoningModel
+        else settings.fast_model
+    )
+
+    messages = build_messages(
+        request
+    )
+
+    tool_history: list[
+        ToolInvocationResponse
+    ] = []
+
+    chat_sources: list[
+        ChatSource
+    ] = []
+
+    source_keys: set[
+        tuple[
+            int,
+            int | None,
+        ]
+    ] = set()
+
+    definitions = (
+        registry.definitions()
+    )
+
+    allowed_tools = {
+        definition["name"]
+        for definition
+        in definitions
+    }
+
+    final_message = ""
+
+    stream_method = getattr(
+        provider,
+        "stream_chat",
+        None,
+    )
+
+    for iteration in range(
+        settings.max_tool_iterations
+    ):
+        if iteration == 0:
+            yield {
+                "type": "status",
+                "message":
+                    "Analyzing your request...",
+            }
+        else:
+            yield {
+                "type": "status",
+                "message":
+                    "Reviewing connected data...",
+            }
+
+        # -----------------------------------------------------
+        # Phase 1: reliable tool-selection turn (stream=False)
+        # -----------------------------------------------------
+        provider_response = (
+            provider.chat(
+                model=selected_model,
+                messages=messages,
+                tools=definitions,
+            )
+        )
+
+        tool_calls = list(
+            provider_response.tool_calls
+            or []
+        )
+
+        # Defensive fallback for local models that returned a
+        # textual JSON tool request rather than native tool_calls.
+        if not tool_calls:
+            fallback_calls = (
+                extract_text_tool_calls(
+                    provider_response.text,
+                    allowed_tools,
+                )
+            )
+
+            if fallback_calls:
+                tool_calls = (
+                    fallback_calls
+                )
+
+        if tool_calls:
+            # Preserve the assistant tool-call turn before appending
+            # tool result messages.
+            messages.append(
+                provider_response
+                .assistant_message
+            )
+
+            yield {
+                "type": "status",
+                "message":
+                    "Checking connected data...",
+            }
+
+            _execute_tool_calls(
+                db=db,
+                registry=registry,
+                messages=messages,
+                tool_calls=tool_calls,
+                tool_history=tool_history,
+                chat_sources=chat_sources,
+                source_keys=source_keys,
+            )
+
+            continue
+
+        # -----------------------------------------------------
+        # Phase 2: no tool needed anymore. Generate the final
+        # answer with tools DISABLED and true Ollama streaming.
+        # -----------------------------------------------------
+        yield {
+            "type": "status",
+            "message":
+                "Preparing response...",
+        }
+
+        if not callable(
+            stream_method
+        ):
+            # Fallback for a provider that does not implement
+            # streaming. Use the already generated natural answer.
+            final_message = (
+                provider_response.text.strip()
+                or "No response was generated."
+            )
+
+            yield {
+                "type": "delta",
+                "text": final_message,
+            }
+
+            break
+
+        streamed_parts: list[str] = []
+        streamed_response = None
+
+        # Crucial difference from the previous implementation:
+        # tools=[] here. Ollama only streams the final natural answer,
+        # never the tool-selection turn.
+        for stream_event in stream_method(
+            model=selected_model,
+            messages=messages,
+            tools=[],
+        ):
+            event_type = (
+                stream_event.get(
+                    "type"
+                )
+            )
+
+            if event_type == "delta":
+                text = str(
+                    stream_event.get(
+                        "text"
+                    )
+                    or ""
+                )
+
+                if not text:
+                    continue
+
+                streamed_parts.append(
+                    text
+                )
+
+                yield {
+                    "type": "delta",
+                    "text": text,
+                }
+
+                continue
+
+            if event_type == "result":
+                streamed_response = (
+                    stream_event.get(
+                        "response"
+                    )
+                )
+
+        final_message = (
+            "".join(
+                streamed_parts
+            ).strip()
+        )
+
+        if (
+            not final_message
+            and streamed_response
+            is not None
+        ):
+            final_message = (
+                streamed_response
+                .text
+                .strip()
+            )
+
+        if not final_message:
+            # Last-resort fallback to the non-streaming selection
+            # answer so the user never receives an empty bubble.
+            final_message = (
+                provider_response
+                .text
+                .strip()
+                or "No response was generated."
+            )
+
+            yield {
+                "type": "delta",
+                "text": final_message,
+            }
+
+        break
+
+    else:
+        final_message = (
+            "The assistant reached the maximum "
+            "number of tool operations."
+        )
+
+        yield {
+            "type": "delta",
+            "text": final_message,
+        }
+
+    response = ChatResponse(
+        conversationId=(
+            request.conversationId
+            or str(
+                uuid.uuid4()
+            )
+        ),
         message=final_message,
         model=selected_model,
         toolsUsed=tool_history,
         sources=chat_sources,
     )
+
+    yield {
+        "type": "done",
+        "response": response,
+    }

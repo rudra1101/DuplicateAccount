@@ -1,8 +1,7 @@
 import json
 import re
+from collections.abc import Iterator
 from typing import Any
-
-import httpx
 
 from ollama import Client
 from ollama import ResponseError
@@ -26,18 +25,8 @@ class OllamaProvider(
             host=(
                 settings
                 .ollama_base_url
-            ),
-            timeout=httpx.Timeout(
-                connect=30.0,
-                read=300.0,
-                write=60.0,
-                pool=30.0,
-            ),
+            )
         )
-
-    # ---------------------------------------------------------
-    # Tool schema normalization
-    # ---------------------------------------------------------
 
     @staticmethod
     def _normalize_tools(
@@ -59,36 +48,28 @@ class OllamaProvider(
                 normalized_tools.append(
                     tool
                 )
-
                 continue
 
             normalized_tools.append(
                 {
                     "type":
                         "function",
-
                     "function": {
                         "name":
-                            tool[
-                                "name"
-                            ],
-
+                            tool["name"],
                         "description":
                             tool.get(
                                 "description",
                                 "",
                             ),
-
                         "parameters":
                             tool.get(
                                 "parameters",
                                 {
                                     "type":
                                         "object",
-
                                     "properties":
                                         {},
-
                                     "required":
                                         [],
                                 },
@@ -98,10 +79,6 @@ class OllamaProvider(
             )
 
         return normalized_tools
-
-    # ---------------------------------------------------------
-    # Assistant message conversion
-    # ---------------------------------------------------------
 
     @staticmethod
     def _message_to_dict(
@@ -119,7 +96,6 @@ class OllamaProvider(
                 )
                 or "assistant"
             ),
-
             "content": (
                 getattr(
                     message,
@@ -152,11 +128,9 @@ class OllamaProvider(
                     {
                         "type":
                             "function",
-
                         "function": {
                             "name":
                                 function.name,
-
                             "arguments":
                                 dict(
                                     function
@@ -169,10 +143,6 @@ class OllamaProvider(
 
         return result
 
-    # ---------------------------------------------------------
-    # Fallback parsing
-    # ---------------------------------------------------------
-
     @staticmethod
     def _extract_json_block(
         text: str,
@@ -180,36 +150,20 @@ class OllamaProvider(
         str,
         Any,
     ] | None:
-        """
-        Parse only content that clearly looks like
-        a tool-call JSON object.
-
-        This intentionally does NOT parse arbitrary
-        prose containing JSON.
-        """
-
-        value = (
-            text
-            .strip()
-        )
+        value = text.strip()
 
         if not value:
             return None
-
-        # Remove Markdown JSON fences if the model
-        # returned:
-        #
-        # ```json
-        # {...}
-        # ```
 
         fence_match = re.fullmatch(
             r"\s*```(?:json)?\s*"
             r"(\{.*\})"
             r"\s*```\s*",
             value,
-            flags=re.DOTALL
-            | re.IGNORECASE,
+            flags=(
+                re.DOTALL
+                | re.IGNORECASE
+            ),
         )
 
         if fence_match:
@@ -219,8 +173,6 @@ class OllamaProvider(
                 .strip()
             )
 
-        # Do not try to extract JSON from arbitrary
-        # natural-language responses.
         if not (
             value.startswith(
                 "{"
@@ -232,10 +184,8 @@ class OllamaProvider(
             return None
 
         try:
-            parsed = (
-                json.loads(
-                    value
-                )
+            parsed = json.loads(
+                value
             )
         except (
             json.JSONDecodeError,
@@ -259,30 +209,6 @@ class OllamaProvider(
         allowed_tool_names:
             set[str],
     ) -> ProviderToolCall | None:
-        """
-        Convert a model-generated JSON tool request into
-        a real ProviderToolCall.
-
-        Supported shapes:
-
-        {
-            "name": "tool_name",
-            "arguments": {...}
-        }
-
-        {
-            "name": "tool_name",
-            "parameters": {...}
-        }
-
-        {
-            "function": {
-                "name": "tool_name",
-                "arguments": {...}
-            }
-        }
-        """
-
         payload = (
             cls._extract_json_block(
                 text
@@ -310,7 +236,6 @@ class OllamaProvider(
                     "name"
                 )
             )
-
             arguments = (
                 function_payload.get(
                     "arguments",
@@ -320,14 +245,10 @@ class OllamaProvider(
                     ),
                 )
             )
-
         else:
-            name = (
-                payload.get(
-                    "name"
-                )
+            name = payload.get(
+                "name"
             )
-
             arguments = (
                 payload.get(
                     "arguments",
@@ -344,13 +265,8 @@ class OllamaProvider(
         ):
             return None
 
-        name = (
-            name
-            .strip()
-        )
+        name = name.strip()
 
-        # Critical safety check:
-        # never execute a model-invented tool name.
         if (
             name
             not in allowed_tool_names
@@ -373,28 +289,12 @@ class OllamaProvider(
             ),
         )
 
-    # ---------------------------------------------------------
-    # Chat
-    # ---------------------------------------------------------
-
-    def chat(
-        self,
-        *,
-        model: str,
-        messages: list[
-            dict[str, Any]
-        ],
-        tools: list[
-            dict[str, Any]
-        ],
-    ) -> ProviderResponse:
-        normalized_tools = (
-            self._normalize_tools(
-                tools
-            )
-        )
-
-        allowed_tool_names = {
+    @staticmethod
+    def _allowed_tool_names(
+        normalized_tools:
+            list[dict[str, Any]],
+    ) -> set[str]:
+        return {
             str(
                 tool[
                     "function"
@@ -419,43 +319,94 @@ class OllamaProvider(
             )
         }
 
+    def _build_provider_response(
+        self,
+        *,
+        model: str,
+        content: str,
+        tool_calls:
+            list[ProviderToolCall],
+    ) -> ProviderResponse:
+        assistant_message: dict[str, Any] = {
+                "role":
+                    "assistant",
+                "content":
+                    content,
+            }
+
+        if tool_calls:
+            assistant_message[
+                "content"
+            ] = ""
+
+            assistant_message[
+                "tool_calls"
+            ] = [
+                {
+                    "type":
+                        "function",
+                    "function": {
+                        "name":
+                            call.name,
+                        "arguments":
+                            call.arguments,
+                    },
+                }
+                for call
+                in tool_calls
+            ]
+
+            content = ""
+
+        return ProviderResponse(
+            text=content,
+            assistant_message=
+                assistant_message,
+            tool_calls=
+                tool_calls,
+            model=model,
+        )
+
+    def chat(
+        self,
+        *,
+        model: str,
+        messages: list[
+            dict[str, Any]
+        ],
+        tools: list[
+            dict[str, Any]
+        ],
+    ) -> ProviderResponse:
+        normalized_tools = (
+            self._normalize_tools(
+                tools
+            )
+        )
+
+        allowed_tool_names = (
+            self._allowed_tool_names(
+                normalized_tools
+            )
+        )
+
         try:
             response = (
                 self._client.chat(
                     model=model,
-
-                    messages=
-                        messages,
-
+                    messages=messages,
                     tools=
                         normalized_tools,
-
-                    stream=
-                        False,
+                    stream=False,
                 )
             )
-
-        except (
-            ResponseError
-        ) as exc:
+        except ResponseError as exc:
             raise RuntimeError(
                 "Ollama chat request "
                 "failed: "
                 f"{exc.error}"
             ) from exc
-
-        except (
-            httpx.TimeoutException
-        ) as exc:
-            raise RuntimeError(
-                "Ollama request timed out. "
-                "The model may still be loading "
-                "or the system may be under heavy CPU load."
-            ) from exc
-
-        except (
-            ConnectionError
-        ) as exc:
+        except ConnectionError as exc:
             raise RuntimeError(
                 "Unable to connect "
                 "to Ollama. Confirm "
@@ -463,17 +414,11 @@ class OllamaProvider(
                 "http://127.0.0.1:11434."
             ) from exc
 
-        message = (
-            response.message
-        )
+        message = response.message
 
         tool_calls: list[
             ProviderToolCall
         ] = []
-
-        # -----------------------------------------------------
-        # Native Ollama tool calls
-        # -----------------------------------------------------
 
         for call in (
             message.tool_calls
@@ -482,43 +427,26 @@ class OllamaProvider(
             tool_calls.append(
                 ProviderToolCall(
                     name=(
-                        call
-                        .function
-                        .name
+                        call.function.name
                     ),
-
                     arguments=dict(
-                        call
-                        .function
+                        call.function
                         .arguments
                         or {}
                     ),
                 )
             )
 
-        assistant_message = (
-            self._message_to_dict(
-                message
-            )
-        )
-
         text = (
             message.content
             or ""
         )
-
-        # -----------------------------------------------------
-        # Fallback:
-        # Model wrote tool JSON into content rather than
-        # response.message.tool_calls
-        # -----------------------------------------------------
 
         if not tool_calls:
             fallback_tool_call = (
                 self
                 ._parse_text_tool_call(
                     text=text,
-
                     allowed_tool_names=
                         allowed_tool_names,
                 )
@@ -532,52 +460,271 @@ class OllamaProvider(
                     fallback_tool_call
                 )
 
-                # Convert it to the same structure used by
-                # actual Ollama tool calls.
-                assistant_message = {
-                    "role":
-                        "assistant",
-
-                    "content":
-                        "",
-
-                    "tool_calls": [
-                        {
-                            "type":
-                                "function",
-
-                            "function": {
-                                "name":
-                                    fallback_tool_call
-                                    .name,
-
-                                "arguments":
-                                    fallback_tool_call
-                                    .arguments,
-                            },
-                        }
-                    ],
-                }
-
-                # Do not display raw JSON to the user.
-                text = ""
-
-        return ProviderResponse(
-            text=text,
-
-            assistant_message=
-                assistant_message,
-
-            tool_calls=
-                tool_calls,
-
-            model=
-                model,
+        return (
+            self._build_provider_response(
+                model=model,
+                content=text,
+                tool_calls=
+                    tool_calls,
+            )
         )
 
-    # ---------------------------------------------------------
-    # Embeddings
-    # ---------------------------------------------------------
+    def stream_chat(
+        self,
+        *,
+        model: str,
+        messages: list[
+            dict[str, Any]
+        ],
+        tools: list[
+            dict[str, Any]
+        ],
+    ) -> Iterator[
+        dict[str, Any]
+    ]:
+        """
+        True Ollama token streaming.
+
+        Events yielded:
+        {"type": "delta", "text": "..."}
+        {"type": "result", "response": ProviderResponse}
+
+        Safety:
+        - Native tool-call content is never emitted.
+        - JSON-looking prefixes are buffered so fallback textual
+          tool calls are never shown to the user.
+        """
+        normalized_tools = (
+            self._normalize_tools(
+                tools
+            )
+        )
+
+        allowed_tool_names = (
+            self._allowed_tool_names(
+                normalized_tools
+            )
+        )
+
+        try:
+            chat_kwargs: dict[str, Any] = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+            }
+
+            # For final-answer streaming we intentionally omit the
+            # tools argument completely when there are no tools.
+            # This avoids Ollama entering its tool-capable streaming
+            # path unnecessarily.
+            if normalized_tools:
+                chat_kwargs[
+                    "tools"
+                ] = normalized_tools
+
+            stream = (
+                self._client.chat(
+                    **chat_kwargs
+                )
+            )
+        except ResponseError as exc:
+            raise RuntimeError(
+                "Ollama chat request "
+                "failed: "
+                f"{exc.error}"
+            ) from exc
+        except ConnectionError as exc:
+            raise RuntimeError(
+                "Unable to connect "
+                "to Ollama. Confirm "
+                "Ollama is running on "
+                "http://127.0.0.1:11434."
+            ) from exc
+
+        content_parts: list[
+            str
+        ] = []
+
+        tool_calls: list[
+            ProviderToolCall
+        ] = []
+
+        # We delay the first small prefix until we know the response
+        # is natural language rather than textual tool-call JSON.
+        prefix_buffer = ""
+        streaming_enabled = False
+        suppress_content = False
+
+        try:
+            for chunk in stream:
+                message = (
+                    chunk.message
+                )
+
+                raw_tool_calls = (
+                    message.tool_calls
+                    or []
+                )
+
+                if raw_tool_calls:
+                    suppress_content = True
+
+                    for call in (
+                        raw_tool_calls
+                    ):
+                        tool_calls.append(
+                            ProviderToolCall(
+                                name=(
+                                    call
+                                    .function
+                                    .name
+                                ),
+                                arguments=dict(
+                                    call
+                                    .function
+                                    .arguments
+                                    or {}
+                                ),
+                            )
+                        )
+
+                text = (
+                    message.content
+                    or ""
+                )
+
+                if not text:
+                    continue
+
+                content_parts.append(
+                    text
+                )
+
+                if suppress_content:
+                    continue
+
+                if streaming_enabled:
+                    yield {
+                        "type":
+                            "delta",
+                        "text":
+                            text,
+                    }
+                    continue
+
+                prefix_buffer += text
+
+                stripped = (
+                    prefix_buffer
+                    .lstrip()
+                )
+
+                # Hold JSON/markdown-code prefixes until completion.
+                # These may be fallback tool requests.
+                if (
+                    stripped.startswith(
+                        "{"
+                    )
+                    or stripped.startswith(
+                        "```"
+                    )
+                ):
+                    continue
+
+                # Once we have a clearly natural-language prefix,
+                # begin true token streaming.
+                if (
+                    len(
+                        stripped
+                    ) >= 8
+                    or any(
+                        character
+                        in stripped
+                        for character
+                        in (
+                            " ",
+                            "\n",
+                            ".",
+                            ":",
+                            "-",
+                        )
+                    )
+                ):
+                    streaming_enabled = True
+
+                    yield {
+                        "type":
+                            "delta",
+                        "text":
+                            prefix_buffer,
+                    }
+
+                    prefix_buffer = ""
+
+        finally:
+            close_method = getattr(
+                stream,
+                "close",
+                None,
+            )
+
+            if callable(
+                close_method
+            ):
+                close_method()
+
+        full_text = "".join(
+            content_parts
+        )
+
+        if not tool_calls:
+            fallback_tool_call = (
+                self
+                ._parse_text_tool_call(
+                    text=full_text,
+                    allowed_tool_names=
+                        allowed_tool_names,
+                )
+            )
+
+            if (
+                fallback_tool_call
+                is not None
+            ):
+                tool_calls.append(
+                    fallback_tool_call
+                )
+                suppress_content = True
+
+        # If we buffered a short natural answer and it was not a tool call,
+        # flush it now.
+        if (
+            not suppress_content
+            and not tool_calls
+            and prefix_buffer
+        ):
+            yield {
+                "type":
+                    "delta",
+                "text":
+                    prefix_buffer,
+            }
+
+        response = (
+            self._build_provider_response(
+                model=model,
+                content=full_text,
+                tool_calls=
+                    tool_calls,
+            )
+        )
+
+        yield {
+            "type":
+                "result",
+            "response":
+                response,
+        }
 
     def embed(
         self,
@@ -599,26 +746,13 @@ class OllamaProvider(
                     input=inputs,
                 )
             )
-
-        except (
-            ResponseError
-        ) as exc:
+        except ResponseError as exc:
             raise RuntimeError(
                 "Ollama embedding request "
                 "failed: "
                 f"{exc.error}"
             ) from exc
-
-        except (
-            httpx.TimeoutException
-        ) as exc:
-            raise RuntimeError(
-                "Ollama embedding request timed out."
-            ) from exc
-
-        except (
-            ConnectionError
-        ) as exc:
+        except ConnectionError as exc:
             raise RuntimeError(
                 "Unable to connect "
                 "to Ollama."
