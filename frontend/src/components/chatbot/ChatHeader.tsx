@@ -162,27 +162,25 @@ const ChatHeader = ({
       </Tooltip>
 
       <Tooltip title="Close">
-        <span>
-          <IconButton
-            size="small"
-            color="inherit"
-            onClick={onClose}
-            disabled={disabled}
-            sx={{
-              bgcolor:
-                "rgba(255,255,255,0.08)",
+        <IconButton
+          size="small"
+          color="inherit"
+          onClick={onClose}
+          aria-label="Close Rudrix"
+          sx={{
+            bgcolor:
+              "rgba(255,255,255,0.08)",
 
-              "&:hover": {
-                bgcolor:
-                  "rgba(255,255,255,0.16)",
-              },
-            }}
-          >
-            <CloseIcon
-              fontSize="small"
-            />
-          </IconButton>
-        </span>
+            "&:hover": {
+              bgcolor:
+                "rgba(255,255,255,0.16)",
+            },
+          }}
+        >
+          <CloseIcon
+            fontSize="small"
+          />
+        </IconButton>
       </Tooltip>
     </Box>
   );

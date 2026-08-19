@@ -9,6 +9,8 @@ import ChatMessages from "./ChatMessages";
 import SuggestedPrompts from "./SuggestedPrompts";
 
 import StopCircleOutlinedIcon from "@mui/icons-material/StopCircleOutlined";
+import ClickAwayListener
+  from "@mui/material/ClickAwayListener";
 
 import type { ChatHistoryMessage, ChatMessage } from "../../models/chat";
 
@@ -683,7 +685,7 @@ const ChatBot = ({ open, onClose }: Props) => {
         let finalConversationId = conversationId;
 
         let finalSources: ChatSource[] = [];
-        
+
         const assistantMessage: ChatMessage = {
           id: assistantMessageId,
 
@@ -837,21 +839,21 @@ const ChatBot = ({ open, onClose }: Props) => {
   );
 
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={loading ? undefined : onClose}
-      ModalProps={{
-        keepMounted: true,
+    <ClickAwayListener
+      mouseEvent="onMouseDown"
+      touchEvent="onTouchStart"
+      onClickAway={() => {
+        if (open) {
+          onClose();
+        }
       }}
-      slotProps={{
-        backdrop: {
-          sx: {
-            backgroundColor: "rgba(0, 0, 0, 0.18)",
-          },
-        },
-
-        paper: {
+    >
+      <Drawer
+        anchor="right"
+        open={open}
+        variant="persistent"
+        slotProps={{
+          paper: {
           sx: {
             width: {
               xs: "100%",
@@ -1060,7 +1062,8 @@ const ChatBot = ({ open, onClose }: Props) => {
           </Box>
         </>
       )}
-    </Drawer>
+      </Drawer>
+    </ClickAwayListener>
   );
 };
 
