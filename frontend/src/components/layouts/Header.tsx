@@ -27,9 +27,9 @@ const Header = () => {
       elevation={0}
       sx={{
         zIndex: (theme) => theme.zIndex.drawer + 1,
-        background: "linear-gradient(90deg, #081A2B 0%, #0B2638 58%, #0F3A46 100%)",
+        backgroundColor: "#0f172a",
         color: "#FFFFFF",
-        borderBottom: "3px solid #19C3C8",
+        borderBottom: "1px solid #1e293b",
       }}
     >
       <Toolbar
@@ -59,7 +59,7 @@ const Header = () => {
               <Typography variant="body2" fontWeight={700} sx={{ color: "#FFFFFF" }}>
                 {user.fullName}
               </Typography>
-              <Typography variant="caption" sx={{ color: "#B7D8DE" }}>
+              <Typography variant="caption" sx={{ color: "#94a3b8" }}>
                 {user.username}
               </Typography>
             </Box>
@@ -69,9 +69,9 @@ const Header = () => {
               label={user.role}
               variant="outlined"
               sx={{
-                color: "#E8FFFF",
-                borderColor: "#53DADF",
-                backgroundColor: "rgba(25, 195, 200, 0.10)",
+                color: "#FFFFFF",
+                borderColor: "#64748b",
+                backgroundColor: "rgba(255,255,255,0.04)",
                 fontWeight: 700,
               }}
             />
@@ -86,7 +86,7 @@ const Header = () => {
                 borderRadius: 2,
                 px: 1.5,
                 "&:hover": {
-                  backgroundColor: "rgba(25, 195, 200, 0.12)",
+                  backgroundColor: "#1e293b",
                 },
               }}
             >
