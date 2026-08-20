@@ -11,6 +11,7 @@ from sqlalchemy.exc import (
 )
 from sqlalchemy.orm import Session
 
+from app.auth import require_roles
 from app.connectors.exceptions import (
     ConnectorError,
 )
@@ -37,12 +38,16 @@ router = APIRouter(
     tags=["Integrations"],
 )
 
+
 @router.post(
     "/{integration_id}/run"
 )
 def run_now(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     integration = get_integration(
         db,
@@ -99,6 +104,9 @@ def execution_history(
     integration_id: int,
     limit: int = 20,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     integration = get_integration(
         db,
@@ -122,8 +130,13 @@ def execution_history(
         limit=safe_limit,
     )
 
+
 @router.get("/connector-types")
-def connector_types():
+def connector_types(
+    _current_user=Depends(
+        require_roles("ADMIN")
+    ),
+):
     return list_connector_types()
 
 
@@ -134,6 +147,9 @@ def connector_types():
 def create(
     payload: IntegrationCreate,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN")
+    ),
 ):
     try:
         integration = create_integration(
@@ -168,6 +184,9 @@ def create(
 @router.get("/")
 def list_all(
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     integrations = get_integrations(db)
 
@@ -181,6 +200,9 @@ def list_all(
 def get_one(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     integration = get_integration(
         db,
@@ -203,6 +225,9 @@ def update(
     integration_id: int,
     payload: IntegrationUpdate,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN")
+    ),
 ):
     integration = get_integration(
         db,
@@ -253,6 +278,9 @@ def update(
 def delete(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN")
+    ),
 ):
     integration = get_integration(
         db,
@@ -283,6 +311,9 @@ def delete(
 def test(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN")
+    ),
 ):
     integration = get_integration(
         db,
