@@ -21,6 +21,9 @@ from app.database.base import Base
 
 
 if TYPE_CHECKING:
+    from app.db_models.application import (
+        ApplicationRecord,
+    )
     from app.db_models.job_execution import (
         JobExecutionRecord,
     )
@@ -90,6 +93,19 @@ class IntegrationRecord(Base):
         nullable=False,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
+    )
+
+    # ---------------------------------------------
+    # Applications / account objects in integration
+    # ---------------------------------------------
+
+    applications: Mapped[
+        list["ApplicationRecord"]
+    ] = relationship(
+        "ApplicationRecord",
+        back_populates="integration",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     # ---------------------------------------------
