@@ -27,35 +27,80 @@ import { useAuth } from "../../auth/AuthContext";
 const drawerWidth = 250;
 
 const menuItems = [
-  { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
-  { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates" },
-  { text: "Review Queue", icon: <FactCheckIcon />, path: "/review" },
-  { text: "Reports", icon: <AssessmentIcon />, path: "/reports" },
+  {
+    text: "Dashboard",
+    icon: <DashboardIcon />,
+    path: "/",
+    permissions: ["dashboard.view"],
+  },
+  {
+    text: "Duplicate Detection",
+    icon: <SearchIcon />,
+    path: "/duplicates",
+    permissions: ["duplicate.view"],
+  },
+  {
+    text: "Review Queue",
+    icon: <FactCheckIcon />,
+    path: "/review",
+    permissions: ["duplicate.review"],
+  },
+  {
+    text: "Reports",
+    icon: <AssessmentIcon />,
+    path: "/reports",
+    permissions: ["report.view"],
+  },
   {
     text: "Admin",
     icon: <AdminPanelSettingsIcon />,
     path: "/admin",
     permissions: ["user.view", "role.view"],
   },
-  { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload" },
-  { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon /> },
-  { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
+  {
+    text: "Upload Accounts",
+    icon: <CloudUploadIcon />,
+    path: "/upload",
+    permissions: ["upload.manage"],
+  },
+  {
+    text: "Operations",
+    path: "/operations",
+    icon: <MonitorHeartOutlinedIcon />,
+    permissions: ["operations.view"],
+  },
+  {
+    text: "Settings",
+    icon: <SettingsIcon />,
+    path: "/settings",
+    permissions: ["settings.view"],
+  },
   {
     text: "Integrations",
     path: "/integrations",
     icon: <CableIcon />,
     permissions: ["integration.view"],
   },
-  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon /> },
-  { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined /> },
+  {
+    text: "ML Training",
+    path: "/ml-training",
+    icon: <ModelTrainingIcon />,
+    permissions: ["ml.view"],
+  },
+  {
+    text: "Knowledge Base",
+    path: "/knowledge",
+    icon: <MenuBookOutlined />,
+    permissions: ["knowledge.view"],
+  },
 ];
 
 const Sidebar = () => {
   const location = useLocation();
   const { hasPermission } = useAuth();
 
-  const visibleItems = menuItems.filter(
-    (item) => !item.permissions || item.permissions.some((permission) => hasPermission(permission)),
+  const visibleItems = menuItems.filter((item) =>
+    item.permissions.some((permission) => hasPermission(permission)),
   );
 
   return (
