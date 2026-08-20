@@ -1,4 +1,7 @@
 from app.db_models.account import AccountRecord
+from app.db_models.application import ApplicationRecord
+from app.db_models.application_schema import ApplicationSchemaRecord
+from app.db_models.schema_attribute import SchemaAttributeRecord
 from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.integration import IntegrationRecord
@@ -18,6 +21,9 @@ from app.db_models.user import UserRecord
 
 __all__ = [
     "AccountRecord",
+    "ApplicationRecord",
+    "ApplicationSchemaRecord",
+    "SchemaAttributeRecord",
     "DuplicateCandidateRecord",
     "DuplicateGroupRecord",
     "IntegrationRecord",
