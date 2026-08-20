@@ -1,0 +1,72 @@
+name: Rudrix Fast Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/app/ai/**"
+      - "backend/app/schemas/chat.py"
+      - "backend/tests/rudrix/**"
+      - "backend/requirements.txt"
+      - "backend/requirements-dev.txt"
+      - "backend/pytest.ini"
+      - ".github/workflows/rudrix-fast-tests.yml"
+
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/app/ai/**"
+      - "backend/app/schemas/chat.py"
+      - "backend/tests/rudrix/**"
+      - "backend/requirements.txt"
+      - "backend/requirements-dev.txt"
+      - "backend/pytest.ini"
+      - ".github/workflows/rudrix-fast-tests.yml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rudrix-fast-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rudrix-fast-tests:
+    name: Rudrix fast regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install backend dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run Rudrix fast regression suite
+        env:
+          RUN_RUDRIX_LIVE_TESTS: "0"
+        run: python -m pytest tests/rudrix -m "not rudrix_live" -v --tb=short

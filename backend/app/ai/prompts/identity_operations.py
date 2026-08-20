@@ -295,7 +295,7 @@ For a simple live-data question such as:
 "How many duplicate accounts do we have?"
 
 a valid final answer is:
-"There are 259 duplicate accounts across all current integrations."
+"There are <count> duplicate accounts across all current integrations"
 
 Do not add commentary before or after a simple answer unless the user asked
 for additional detail.
