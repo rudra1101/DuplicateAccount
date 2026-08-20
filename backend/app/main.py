@@ -18,13 +18,15 @@ from app.api.knowledge import router as knowledge_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
 from app.api.review import router as review_router
+from app.api.roles import router as roles_router
 from app.api.scans import router as scans_router
 from app.api.upload import router as upload_router
 from app.api.users import router as users_router
 from app.api.vector_search import router as vector_search_router
 from app.auth.middleware import authentication_middleware
 from app.database.base import Base
-from app.database.session import engine
+from app.database.session import SessionLocal, engine
+from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 
 # Imports required for ORM and connector registration.
@@ -33,6 +35,8 @@ import app.db_models  # noqa: F401
 
 
 Base.metadata.create_all(bind=engine)
+with SessionLocal() as db:
+    seed_rbac(db)
 
 
 @asynccontextmanager
@@ -50,7 +54,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -66,6 +69,7 @@ app.middleware("http")(authentication_middleware)
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
+app.include_router(roles_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
 app.include_router(ai_health_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
