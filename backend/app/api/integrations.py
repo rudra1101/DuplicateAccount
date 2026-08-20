@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session
 from app.auth import require_permission
 from app.connectors.exceptions import ConnectorError
 from app.database.session import get_db
-from app.schemas.integration import IntegrationCreate, IntegrationUpdate
+from app.schemas.integration import (
+    IntegrationCreate,
+    IntegrationUpdate,
+    SchemaDetectionRequest,
+)
 from app.services.integration_service import (
     create_integration,
     delete_integration,
@@ -18,8 +22,30 @@ from app.services.integration_service import (
     test_integration,
     update_integration,
 )
+from app.services.schema_detection_service import detect_delimited_schema
 
 router = APIRouter(prefix="/integrations", tags=["Integrations"])
+
+
+@router.post("/detect-schema")
+def detect_schema(
+    payload: SchemaDetectionRequest,
+    _user=Depends(require_permission("integration.create")),
+):
+    try:
+        return detect_delimited_schema(
+            connector_type=payload.connectorType,
+            configuration=payload.configuration,
+        )
+    except ConnectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (UnicodeError, csv.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to detect schema: {exc}",
+        ) from exc
 
 
 @router.post("/{integration_id}/run")
