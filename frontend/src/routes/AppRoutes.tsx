@@ -33,9 +33,12 @@ const AppRoutes = () => {
           <Route path="review" element={<ReviewQueue />} />
           <Route path="review/:application" element={<ApplicationReview />} />
           <Route path="upload" element={<UploadAccounts />} />
-          <Route path="integrations" element={<Integrations />} />
           <Route path="operations" element={<Operations />} />
           <Route path="ml-training" element={<MlTrainingDashboard />} />
+
+          <Route element={<PermissionRoute anyOf={["integration.view"]} />}>
+            <Route path="integrations" element={<Integrations />} />
+          </Route>
 
           <Route element={<PermissionRoute anyOf={["user.view", "role.view"]} />}>
             <Route path="admin" element={<Admin />} />
