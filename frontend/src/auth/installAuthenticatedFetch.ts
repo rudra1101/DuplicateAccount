@@ -1,7 +1,4 @@
-const BACKEND_ORIGINS = new Set([
-  "http://127.0.0.1:8000",
-  "http://localhost:8000",
-]);
+const BACKEND_HOSTS = new Set(["127.0.0.1", "localhost"]);
 
 let installed = false;
 
@@ -26,8 +23,15 @@ export function installAuthenticatedFetch() {
       url = null;
     }
 
-    if (url && BACKEND_ORIGINS.has(url.origin)) {
-      return originalFetch(input, {
+    if (url && url.port === "8000" && BACKEND_HOSTS.has(url.hostname)) {
+      url.hostname = window.location.hostname;
+
+      const rewrittenInput =
+        typeof input === "string" || input instanceof URL
+          ? url.toString()
+          : new Request(url.toString(), input);
+
+      return originalFetch(rewrittenInput, {
         ...init,
         credentials: "include",
       });
