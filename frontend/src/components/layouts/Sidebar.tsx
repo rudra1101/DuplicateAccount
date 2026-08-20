@@ -40,7 +40,12 @@ const menuItems = [
   { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload" },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon /> },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
-  { text: "Integrations", path: "/integrations", icon: <CableIcon /> },
+  {
+    text: "Integrations",
+    path: "/integrations",
+    icon: <CableIcon />,
+    permissions: ["integration.view"],
+  },
   { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon /> },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined /> },
 ];
