@@ -9,6 +9,7 @@ from app.auth.security import create_access_token, verify_password
 from app.database.session import get_db
 from app.db_models.user import UserRecord
 from app.schemas.auth import AuthResponse, LoginRequest, UserResponse
+from app.services.rbac_service import permission_codes_for_role
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -21,6 +22,7 @@ def serialize(user: UserRecord) -> UserResponse:
         email=user.email,
         fullName=user.full_name,
         role=user.role,
+        permissions=permission_codes_for_role(user.role_record),
         isActive=user.is_active,
     )
 
