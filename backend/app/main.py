@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ai_health import router as ai_health_router
+from app.api.application_schemas import router as application_schemas_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.chat_feedback import router as chat_feedback_router
@@ -78,6 +79,7 @@ app.include_router(dashboard_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(application_schemas_router, prefix="/api")
 app.include_router(job_schedules_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
