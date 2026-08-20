@@ -25,7 +25,12 @@ interface Props {
   schedule: JobSchedule | null | undefined;
   testing: boolean;
   running: boolean;
-  canManage: boolean;
+  canRun: boolean;
+  canSchedule: boolean;
+  canViewHistory: boolean;
+  canTest: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onEdit: (integration: Integration) => void;
   onDelete: (integration: Integration) => void;
   onTest: (integration: Integration) => void;
@@ -35,10 +40,7 @@ interface Props {
 }
 
 function connectorIcon(connectorType: string): React.ReactNode {
-  if (connectorType === "LOCAL") {
-    return <StorageIcon color="primary" />;
-  }
-
+  if (connectorType === "LOCAL") return <StorageIcon color="primary" />;
   return <SettingsEthernetIcon color="primary" />;
 }
 
@@ -54,7 +56,12 @@ const IntegrationCard = ({
   schedule,
   testing,
   running,
-  canManage,
+  canRun,
+  canSchedule,
+  canViewHistory,
+  canTest,
+  canEdit,
+  canDelete,
   onEdit,
   onDelete,
   onTest,
@@ -78,49 +85,21 @@ const IntegrationCard = ({
         display: "flex",
         flexDirection: "column",
         transition: "transform 0.2s, box-shadow 0.2s",
-        "&:hover": {
-          transform: "translateY(-3px)",
-          boxShadow: 3,
-        },
+        "&:hover": { transform: "translateY(-3px)", boxShadow: 3 },
       }}
     >
-      <CardContent
-        sx={{
-          p: 3,
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          "&:last-child": { pb: 3 },
-        }}
-      >
+      <CardContent sx={{ p: 3, display: "flex", flexDirection: "column", flex: 1, "&:last-child": { pb: 3 } }}>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
           <Stack direction="row" spacing={1.5} alignItems="center" sx={{ minWidth: 0, flex: 1 }}>
-            <Box
-              sx={{
-                width: 44,
-                height: 44,
-                borderRadius: 2,
-                flexShrink: 0,
-                backgroundColor: "action.hover",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
+            <Box sx={{ width: 44, height: 44, borderRadius: 2, flexShrink: 0, backgroundColor: "action.hover", display: "flex", alignItems: "center", justifyContent: "center" }}>
               {connectorIcon(integration.connectorType)}
             </Box>
-
             <Box sx={{ minWidth: 0 }}>
               <Typography fontWeight={700} noWrap>{integration.name}</Typography>
               <Typography variant="body2" color="text.secondary">{integration.connectorType}</Typography>
             </Box>
           </Stack>
-
-          <Chip
-            size="small"
-            label={integration.enabled ? "Enabled" : "Disabled"}
-            color={integration.enabled ? "success" : "default"}
-          />
+          <Chip size="small" label={integration.enabled ? "Enabled" : "Disabled"} color={integration.enabled ? "success" : "default"} />
         </Stack>
 
         <Typography variant="body2" color="text.secondary" sx={{ mt: 3, minHeight: 42 }}>
@@ -129,12 +108,7 @@ const IntegrationCard = ({
 
         <Box sx={{ mt: 2, p: 1.75, borderRadius: 2, backgroundColor: "action.hover" }}>
           <Typography variant="caption" color="text.secondary">Configuration</Typography>
-          <Typography
-            variant="body2"
-            fontWeight={600}
-            title={folderPath}
-            sx={{ mt: 0.5, lineHeight: 1.5, overflowWrap: "anywhere" }}
-          >
+          <Typography variant="body2" fontWeight={600} title={folderPath} sx={{ mt: 0.5, lineHeight: 1.5, overflowWrap: "anywhere" }}>
             {folderPath}
           </Typography>
         </Box>
@@ -145,12 +119,7 @@ const IntegrationCard = ({
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
             <Typography variant="subtitle2" fontWeight={700}>Schedule</Typography>
             {schedule ? (
-              <Chip
-                size="small"
-                label={schedule.enabled ? "Active" : "Disabled"}
-                color={schedule.enabled ? "success" : "default"}
-                variant="outlined"
-              />
+              <Chip size="small" label={schedule.enabled ? "Active" : "Disabled"} color={schedule.enabled ? "success" : "default"} variant="outlined" />
             ) : (
               <Chip size="small" label="Not configured" variant="outlined" />
             )}
@@ -165,99 +134,59 @@ const IntegrationCard = ({
               <Box>
                 <Typography variant="caption" color="text.secondary">Next run</Typography>
                 <Typography variant="body2" fontWeight={600}>
-                  {schedule.enabled
-                    ? formatDateTime(schedule.nextRunAt, schedule.timezone)
-                    : "Schedule disabled"}
+                  {schedule.enabled ? formatDateTime(schedule.nextRunAt, schedule.timezone) : "Schedule disabled"}
                 </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Last run</Typography>
                 <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-                  <Typography variant="body2" fontWeight={600}>
-                    {formatDateTime(schedule.lastRunAt, schedule.timezone)}
-                  </Typography>
-                  {schedule.lastRunStatus && (
-                    <Chip
-                      size="small"
-                      label={schedule.lastRunStatus}
-                      color={getStatusColor(schedule.lastRunStatus)}
-                    />
-                  )}
+                  <Typography variant="body2" fontWeight={600}>{formatDateTime(schedule.lastRunAt, schedule.timezone)}</Typography>
+                  {schedule.lastRunStatus && <Chip size="small" label={schedule.lastRunStatus} color={getStatusColor(schedule.lastRunStatus)} />}
                 </Stack>
               </Box>
             </Stack>
           ) : (
-            <Typography variant="body2" color="text.secondary">
-              Create a schedule to run this integration automatically.
-            </Typography>
+            <Typography variant="body2" color="text.secondary">No schedule configured.</Typography>
           )}
         </Box>
 
         <Box sx={{ flex: 1 }} />
 
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 3 }}>
-          <Button
-            size="small"
-            variant="contained"
-            color="success"
-            startIcon={<RocketLaunchOutlinedIcon />}
-            onClick={() => onRun(integration)}
-            disabled={running || testing || !integration.enabled}
-          >
-            {running ? "Running..." : "Run Now"}
-          </Button>
+          {canRun && (
+            <Button size="small" variant="contained" color="success" startIcon={<RocketLaunchOutlinedIcon />} onClick={() => onRun(integration)} disabled={running || testing || !integration.enabled}>
+              {running ? "Running..." : "Run Now"}
+            </Button>
+          )}
 
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<ScheduleIcon />}
-            onClick={() => onSchedule(integration)}
-            disabled={running}
-          >
-            Schedule
-          </Button>
+          {canSchedule && (
+            <Button size="small" variant="outlined" startIcon={<ScheduleIcon />} onClick={() => onSchedule(integration)} disabled={running}>
+              Schedule
+            </Button>
+          )}
 
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<HistoryIcon />}
-            onClick={() => onHistory(integration)}
-          >
-            History
-          </Button>
+          {canViewHistory && (
+            <Button size="small" variant="outlined" startIcon={<HistoryIcon />} onClick={() => onHistory(integration)}>
+              History
+            </Button>
+          )}
 
-          {canManage && (
-            <>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<PlayCircleOutlineIcon />}
-                onClick={() => onTest(integration)}
-                disabled={testing || running}
-              >
-                {testing ? "Testing..." : "Test"}
-              </Button>
+          {canTest && (
+            <Button size="small" variant="outlined" startIcon={<PlayCircleOutlineIcon />} onClick={() => onTest(integration)} disabled={testing || running}>
+              {testing ? "Testing..." : "Test"}
+            </Button>
+          )}
 
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<EditOutlinedIcon />}
-                onClick={() => onEdit(integration)}
-                disabled={running}
-              >
-                Edit
-              </Button>
+          {canEdit && (
+            <Button size="small" variant="outlined" startIcon={<EditOutlinedIcon />} onClick={() => onEdit(integration)} disabled={running}>
+              Edit
+            </Button>
+          )}
 
-              <Button
-                size="small"
-                color="error"
-                startIcon={<DeleteOutlineIcon />}
-                onClick={() => onDelete(integration)}
-                disabled={running}
-              >
-                Delete
-              </Button>
-            </>
+          {canDelete && (
+            <Button size="small" color="error" startIcon={<DeleteOutlineIcon />} onClick={() => onDelete(integration)} disabled={running}>
+              Delete
+            </Button>
           )}
         </Stack>
       </CardContent>
