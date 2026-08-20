@@ -49,6 +49,26 @@ export interface ApplicationSchemaResponse {
   } | null;
 }
 
+export interface GeneratedMatchingAttribute {
+  name: string;
+  category: string;
+  matchType: MatchType;
+  matchWeight: number;
+  normalizationType: NormalizationType;
+  reason: string;
+}
+
+export interface GeneratedMatchingPolicy {
+  applicationName: string;
+  strategy: "AUTOMATIC";
+  generatorVersion: string;
+  recommendedThreshold: number;
+  selectedAttributeCount: number;
+  selectedAttributes: GeneratedMatchingAttribute[];
+  ignoredTechnicalAttributes: string[];
+  attributes: SchemaAttributeInput[];
+}
+
 async function parseResponse<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
@@ -92,5 +112,24 @@ export async function saveIntegrationApplications(
   return parseResponse<ApplicationSchemaResponse[]>(
     response,
     "Unable to save application schemas.",
+  );
+}
+
+export async function generateMatchingPolicy(
+  applicationName: string,
+  attributes: SchemaAttributeInput[],
+): Promise<GeneratedMatchingPolicy> {
+  const response = await fetch(
+    `${API_URL}/matching-policy/generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applicationName, attributes }),
+    },
+  );
+
+  return parseResponse<GeneratedMatchingPolicy>(
+    response,
+    "Unable to generate the automatic detection strategy.",
   );
 }
