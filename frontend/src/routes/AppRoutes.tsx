@@ -26,15 +26,38 @@ const AppRoutes = () => {
 
       <Route element={<ProtectedRoute />}>
         <Route path="/" element={<MainLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="duplicates" element={<DuplicateDetection />} />
-          <Route path="reports" element={<Reports />} />
-          <Route path="settings" element={<Settings />} />
-          <Route path="review" element={<ReviewQueue />} />
-          <Route path="review/:application" element={<ApplicationReview />} />
-          <Route path="upload" element={<UploadAccounts />} />
-          <Route path="operations" element={<Operations />} />
-          <Route path="ml-training" element={<MlTrainingDashboard />} />
+          <Route element={<PermissionRoute anyOf={["dashboard.view"]} />}>
+            <Route index element={<Dashboard />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["duplicate.view"]} />}>
+            <Route path="duplicates" element={<DuplicateDetection />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["duplicate.review"]} />}>
+            <Route path="review" element={<ReviewQueue />} />
+            <Route path="review/:application" element={<ApplicationReview />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["report.view"]} />}>
+            <Route path="reports" element={<Reports />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["settings.view"]} />}>
+            <Route path="settings" element={<Settings />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["upload.manage"]} />}>
+            <Route path="upload" element={<UploadAccounts />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["operations.view"]} />}>
+            <Route path="operations" element={<Operations />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
+            <Route path="ml-training" element={<MlTrainingDashboard />} />
+          </Route>
 
           <Route element={<PermissionRoute anyOf={["integration.view"]} />}>
             <Route path="integrations" element={<Integrations />} />
@@ -57,7 +80,9 @@ const AppRoutes = () => {
           </Route>
         </Route>
 
-        <Route path="/knowledge" element={<KnowledgeBase />} />
+        <Route element={<PermissionRoute anyOf={["knowledge.view"]} />}>
+          <Route path="/knowledge" element={<KnowledgeBase />} />
+        </Route>
       </Route>
     </Routes>
   );
