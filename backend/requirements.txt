@@ -13,6 +13,7 @@ scikit-learn
 joblib
 faiss-cpu
 paramiko
+apscheduler
 PyJWT>=2.10,<3
 argon2-cffi>=23,<26
 email-validator>=2,<3
