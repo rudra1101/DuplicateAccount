@@ -19,7 +19,6 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
-import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import { MenuBookOutlined } from "@mui/icons-material";
 
 import { Link, useLocation } from "react-router-dom";
@@ -32,8 +31,12 @@ const menuItems = [
   { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates" },
   { text: "Review Queue", icon: <FactCheckIcon />, path: "/review" },
   { text: "Reports", icon: <AssessmentIcon />, path: "/reports" },
-  { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", adminOnly: true },
-  { text: "User Management", icon: <PeopleAltOutlinedIcon />, path: "/users", adminOnly: true },
+  {
+    text: "Admin",
+    icon: <AdminPanelSettingsIcon />,
+    path: "/admin",
+    permissions: ["user.view", "role.view"],
+  },
   { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload" },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon /> },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
@@ -44,9 +47,11 @@ const menuItems = [
 
 const Sidebar = () => {
   const location = useLocation();
-  const { isAdmin } = useAuth();
+  const { hasPermission } = useAuth();
 
-  const visibleItems = menuItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleItems = menuItems.filter(
+    (item) => !item.permissions || item.permissions.some((permission) => hasPermission(permission)),
+  );
 
   return (
     <Drawer
