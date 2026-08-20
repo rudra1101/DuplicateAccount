@@ -1,6 +1,6 @@
 import type { AuthUser, UserRole } from "../auth/types";
 
-const API_URL = "http://127.0.0.1:8000/api";
+const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
 
 export interface CreateUserPayload {
   username: string;
