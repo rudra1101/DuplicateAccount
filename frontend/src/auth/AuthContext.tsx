@@ -19,7 +19,9 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   authenticated: boolean;
+  isOwner: boolean;
   isAdmin: boolean;
+  hasPermission: (permission: string) => boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -54,16 +56,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const hasPermission = useCallback(
+    (permission: string) => {
+      if (!user) return false;
+      if (user.role === "OWNER") return true;
+      return user.permissions.includes(permission);
+    },
+    [user],
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
       loading,
       authenticated: user !== null,
-      isAdmin: user?.role === "ADMIN",
+      isOwner: user?.role === "OWNER",
+      isAdmin: hasPermission("user.view") || hasPermission("role.view"),
+      hasPermission,
       login,
       logout,
     }),
-    [user, loading, login, logout],
+    [user, loading, hasPermission, login, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -71,10 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-
   if (!context) {
     throw new Error("useAuth must be used inside AuthProvider.");
   }
-
   return context;
 }
