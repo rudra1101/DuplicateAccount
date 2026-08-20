@@ -64,6 +64,26 @@ export interface IntegrationTestResult {
   details: Record<string, unknown>;
 }
 
+export interface DetectedSchemaAttribute {
+  name: string;
+  displayName: string;
+  dataType: string;
+  required: boolean;
+  multiValued: boolean;
+  position: number;
+  useForMatching: boolean;
+  matchType: "NONE";
+  matchWeight: number;
+  normalizationType: "NONE";
+}
+
+export interface SchemaDetectionResult {
+  filename: string;
+  sourcePath: string;
+  sampledRows: number;
+  attributes: DetectedSchemaAttribute[];
+}
+
 export interface IntegrationExecution {
   executionId: number;
   integrationId: number;
@@ -94,22 +114,6 @@ export interface JobSchedule {
   lastError: string | null;
   createdAt: string | null;
   updatedAt: string | null;
-}
-
-export interface IntegrationExecution {
-  executionId: number;
-  integrationId: number;
-  scanId: number | null;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
-  sourceFileName: string | null;
-  sourcePath: string | null;
-  fileChecksum: string | null;
-  accountsScanned: number;
-  duplicateGroups: number;
-  duplicateAccounts: number;
-  errorMessage: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
 }
 
 export interface CreateSchedulePayload {
@@ -161,6 +165,22 @@ export async function getConnectorTypes(): Promise<ConnectorType[]> {
   return parseResponse<ConnectorType[]>(
     response,
     "Unable to load connector types.",
+  );
+}
+
+export async function detectIntegrationSchema(
+  connectorType: string,
+  configuration: Record<string, unknown>,
+): Promise<SchemaDetectionResult> {
+  const response = await fetch(`${API_URL}/integrations/detect-schema`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connectorType, configuration }),
+  });
+
+  return parseResponse<SchemaDetectionResult>(
+    response,
+    "Unable to detect schema from the configured CSV source.",
   );
 }
 
