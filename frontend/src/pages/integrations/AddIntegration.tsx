@@ -28,7 +28,6 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SaveIcon from "@mui/icons-material/Save";
@@ -45,17 +44,15 @@ import {
   type ConnectorType,
 } from "../../services/integrationService";
 import {
-  generateMatchingPolicy,
   getIntegrationApplications,
   saveIntegrationApplications,
   type ApplicationInput,
-  type GeneratedMatchingPolicy,
   type MatchType,
   type NormalizationType,
   type SchemaAttributeInput,
 } from "../../services/applicationSchemaService";
 
-const steps = ["Connection", "Applications", "Schema", "Detection Strategy", "Review & Save"];
+const steps = ["Connection", "Applications", "Schema", "Review & Save"];
 
 const emptyAttribute = (position: number): SchemaAttributeInput => ({
   name: "",
@@ -93,11 +90,9 @@ const AddIntegration = () => {
   const [configuration, setConfiguration] = useState<Record<string, unknown>>({});
   const [applications, setApplications] = useState<ApplicationInput[]>([emptyApplication()]);
   const [selectedApplicationIndex, setSelectedApplicationIndex] = useState(0);
-  const [generatedPolicies, setGeneratedPolicies] = useState<Record<number, GeneratedMatchingPolicy>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [detectingSchema, setDetectingSchema] = useState(false);
   const [schemaDetectionMessage, setSchemaDetectionMessage] = useState("");
   const [error, setError] = useState("");
@@ -108,7 +103,6 @@ const AddIntegration = () => {
   );
 
   const selectedApplication = applications[selectedApplicationIndex] ?? null;
-  const selectedPolicy = generatedPolicies[selectedApplicationIndex] ?? null;
 
   useEffect(() => {
     const loadPage = async () => {
@@ -142,10 +136,12 @@ const AddIntegration = () => {
                   required: attribute.required,
                   multiValued: attribute.multiValued,
                   position: index,
-                  useForMatching: attribute.useForMatching,
-                  matchType: attribute.matchType,
-                  matchWeight: Number(attribute.matchWeight ?? 0),
-                  normalizationType: attribute.normalizationType,
+                  // These fields remain in the transport contract for backend
+                  // compatibility, but are not exposed or controlled by the UI.
+                  useForMatching: false,
+                  matchType: "NONE" as MatchType,
+                  matchWeight: 0,
+                  normalizationType: "NONE" as NormalizationType,
                 })) ?? [],
               })),
             );
@@ -190,11 +186,6 @@ const AddIntegration = () => {
     setApplications((current) => current.map((item, itemIndex) => (
       itemIndex === index ? { ...item, ...patch } : item
     )));
-    setGeneratedPolicies((current) => {
-      const next = { ...current };
-      delete next[index];
-      return next;
-    });
   };
 
   const updateAttribute = (
@@ -241,17 +232,22 @@ const AddIntegration = () => {
       if (!Array.isArray(parsed.attributes)) {
         throw new Error("Schema JSON must contain an attributes array.");
       }
+
       const mapped = parsed.attributes.map((attribute, index): SchemaAttributeInput => ({
         ...emptyAttribute(index),
         ...attribute,
         name: String(attribute.name ?? "").trim(),
         position: index,
-        matchType: (attribute.matchType ?? "NONE") as MatchType,
-        normalizationType: (attribute.normalizationType ?? "NONE") as NormalizationType,
+        useForMatching: false,
+        matchType: "NONE",
+        matchWeight: 0,
+        normalizationType: "NONE",
       }));
+
       if (mapped.some((attribute) => !attribute.name)) {
         throw new Error("Every uploaded schema attribute requires a name.");
       }
+
       updateApplication(selectedApplicationIndex, { attributes: mapped });
       setSchemaDetectionMessage(`Loaded ${mapped.length} attributes from JSON schema.`);
       setError("");
@@ -260,9 +256,24 @@ const AddIntegration = () => {
     }
   };
 
+  const validateConnection = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!name.trim()) errors.name = "Integration name is required.";
+    if (!connectorType) errors.connectorType = "Connector type is required.";
+
+    selectedConnector?.configurationSchema.fields.forEach((field) => {
+      const value = configuration[field.name];
+      if (field.required && (value === undefined || value === null || value === "")) {
+        errors[field.name] = `${field.label} is required.`;
+      }
+    });
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   const detectSchemaFromCsv = async () => {
     if (!selectedApplication) return;
-
     if (!validateConnection()) {
       setError("Complete the connector configuration before detecting the CSV schema.");
       return;
@@ -275,10 +286,13 @@ const AddIntegration = () => {
 
       const result = await detectIntegrationSchema(connectorType, configuration);
       const attributes: SchemaAttributeInput[] = result.attributes.map((attribute, index) => ({
+        ...emptyAttribute(index),
         ...attribute,
         position: index,
-        matchType: "NONE" as MatchType,
-        normalizationType: "NONE" as NormalizationType,
+        useForMatching: false,
+        matchType: "NONE",
+        matchWeight: 0,
+        normalizationType: "NONE",
       }));
 
       updateApplication(selectedApplicationIndex, { attributes });
@@ -296,34 +310,23 @@ const AddIntegration = () => {
     }
   };
 
-  const validateConnection = (): boolean => {
-    const errors: Record<string, string> = {};
-    if (!name.trim()) errors.name = "Integration name is required.";
-    if (!connectorType) errors.connectorType = "Connector type is required.";
-    selectedConnector?.configurationSchema.fields.forEach((field) => {
-      const value = configuration[field.name];
-      if (field.required && (value === undefined || value === null || value === "")) {
-        errors[field.name] = `${field.label} is required.`;
-      }
-    });
-    setFieldErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
   const validateApplications = (): boolean => {
     if (applications.length === 0) {
       setError("At least one application is required.");
       return false;
     }
+
     const names = applications.map((item) => item.name.trim()).filter(Boolean);
     if (names.length !== applications.length) {
       setError("Every application requires a name.");
       return false;
     }
+
     if (new Set(names.map((item) => item.toLowerCase())).size !== names.length) {
       setError("Application names must be unique within the integration.");
       return false;
     }
+
     return true;
   };
 
@@ -333,117 +336,35 @@ const AddIntegration = () => {
         setError(`${applicationItem.name} requires at least one schema attribute.`);
         return false;
       }
+
       const names = applicationItem.attributes.map((item) => item.name.trim()).filter(Boolean);
       if (names.length !== applicationItem.attributes.length) {
         setError(`${applicationItem.name} contains an unnamed schema attribute.`);
         return false;
       }
+
       if (new Set(names.map((item) => item.toLowerCase())).size !== names.length) {
         setError(`${applicationItem.name} contains duplicate schema attribute names.`);
         return false;
       }
     }
+
     return true;
   };
 
-  const validateMatching = (): boolean => {
-    for (const applicationItem of applications) {
-      const selected = applicationItem.attributes.filter((item) => item.useForMatching);
-      if (selected.length === 0) {
-        setError(`${applicationItem.name} has no usable attributes for duplicate detection.`);
-        return false;
-      }
-      const total = selected.reduce((sum, item) => sum + Number(item.matchWeight || 0), 0);
-      if (Math.abs(total - 100) > 0.01) {
-        setError(`${applicationItem.name} matching weights must total 100. Current total: ${total}.`);
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const generateStrategies = async () => {
-    if (!validateSchemas()) return false;
-
-    try {
-      setGeneratingStrategy(true);
-      setError("");
-
-      const results = await Promise.all(
-        applications.map((applicationItem) =>
-          generateMatchingPolicy(
-            applicationItem.name.trim(),
-            applicationItem.attributes,
-          ),
-        ),
-      );
-
-      setApplications((current) => current.map((applicationItem, index) => ({
-        ...applicationItem,
-        attributes: results[index]?.attributes ?? applicationItem.attributes,
-      })));
-
-      setGeneratedPolicies(
-        Object.fromEntries(results.map((policy, index) => [index, policy])),
-      );
-
-      return true;
-    } catch (strategyError) {
-      setError(
-        strategyError instanceof Error
-          ? strategyError.message
-          : "Unable to generate the automatic detection strategy.",
-      );
-      return false;
-    } finally {
-      setGeneratingStrategy(false);
-    }
-  };
-
-  const regenerateSelectedStrategy = async () => {
-    if (!selectedApplication) return;
-    try {
-      setGeneratingStrategy(true);
-      setError("");
-      const policy = await generateMatchingPolicy(
-        selectedApplication.name.trim(),
-        selectedApplication.attributes,
-      );
-      setApplications((current) => current.map((item, index) => (
-        index === selectedApplicationIndex
-          ? { ...item, attributes: policy.attributes }
-          : item
-      )));
-      setGeneratedPolicies((current) => ({
-        ...current,
-        [selectedApplicationIndex]: policy,
-      }));
-    } catch (strategyError) {
-      setError(strategyError instanceof Error ? strategyError.message : "Unable to regenerate strategy.");
-    } finally {
-      setGeneratingStrategy(false);
-    }
-  };
-
-  const goNext = async () => {
+  const goNext = () => {
     setError("");
 
     if (activeStep === 0 && !validateConnection()) return;
     if (activeStep === 1 && !validateApplications()) return;
-
-    if (activeStep === 2) {
-      if (!validateSchemas()) return;
-      const generated = await generateStrategies();
-      if (!generated) return;
-    }
-
-    if (activeStep === 3 && !validateMatching()) return;
+    if (activeStep === 2 && !validateSchemas()) return;
 
     setActiveStep((current) => Math.min(current + 1, steps.length - 1));
   };
 
   const handleSave = async () => {
-    if (!validateConnection() || !validateApplications() || !validateSchemas() || !validateMatching()) return;
+    if (!validateConnection() || !validateApplications() || !validateSchemas()) return;
+
     try {
       setSaving(true);
       setError("");
@@ -480,6 +401,12 @@ const AddIntegration = () => {
             name: attribute.name.trim(),
             displayName: attribute.displayName?.trim() || null,
             position: index,
+            // Backend intentionally ignores these client-side matching fields
+            // and calculates its own internal strategy.
+            useForMatching: false,
+            matchType: "NONE",
+            matchWeight: 0,
+            normalizationType: "NONE",
           })),
         })),
       );
@@ -491,10 +418,6 @@ const AddIntegration = () => {
       setSaving(false);
     }
   };
-
-  const matchingTotal = selectedApplication?.attributes
-    .filter((item) => item.useForMatching)
-    .reduce((sum, item) => sum + Number(item.matchWeight || 0), 0) ?? 0;
 
   if (loading) {
     return (
@@ -514,7 +437,7 @@ const AddIntegration = () => {
             {editing ? "Edit Integration" : "Create Integration"}
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Configure the connection and application schemas. Duplicate matching is generated automatically by the backend.
+            Configure the source and application schema. Duplicate scoring is handled automatically by the backend.
           </Typography>
         </Box>
         <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>
@@ -540,13 +463,20 @@ const AddIntegration = () => {
             <FormControl disabled={editing} error={Boolean(fieldErrors.connectorType)}>
               <InputLabel>Connector Type</InputLabel>
               <Select label="Connector Type" value={connectorType} onChange={(event) => handleConnectorTypeChange(event.target.value)}>
-                {connectorTypes.map((connector) => <MenuItem key={connector.type} value={connector.type}>{connector.displayName}</MenuItem>)}
+                {connectorTypes.map((connector) => (
+                  <MenuItem key={connector.type} value={connector.type}>{connector.displayName}</MenuItem>
+                ))}
               </Select>
             </FormControl>
             {selectedConnector && (
               <>
                 <Alert severity="info">{selectedConnector.description}</Alert>
-                <DynamicConnectorForm connector={selectedConnector} values={configuration} errors={fieldErrors} onChange={(fieldName, value) => setConfiguration((current) => ({ ...current, [fieldName]: value }))} />
+                <DynamicConnectorForm
+                  connector={selectedConnector}
+                  values={configuration}
+                  errors={fieldErrors}
+                  onChange={(fieldName, value) => setConfiguration((current) => ({ ...current, [fieldName]: value }))}
+                />
               </>
             )}
             <FormControlLabel control={<Switch checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />} label="Enable integration" />
@@ -557,7 +487,9 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Applications</Typography>
-              <Typography color="text.secondary" variant="body2">Define each account population independently. Accounts are compared only within the same application.</Typography>
+              <Typography color="text.secondary" variant="body2">
+                Define each account population independently. Accounts are compared only within the same application.
+              </Typography>
             </Box>
             {applications.map((applicationItem, index) => (
               <Paper key={index} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
@@ -569,15 +501,13 @@ const AddIntegration = () => {
                   <IconButton disabled={applications.length === 1} color="error" onClick={() => {
                     setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index));
                     setSelectedApplicationIndex(0);
-                    setGeneratedPolicies({});
-                  }}><DeleteOutlineIcon /></IconButton>
+                  }}>
+                    <DeleteOutlineIcon />
+                  </IconButton>
                 </Stack>
               </Paper>
             ))}
-            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => {
-              setApplications((current) => [...current, emptyApplication()]);
-              setGeneratedPolicies({});
-            }} sx={{ alignSelf: "flex-start" }}>
+            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => setApplications((current) => [...current, emptyApplication()])} sx={{ alignSelf: "flex-start" }}>
               Add Application
             </Button>
           </Stack>
@@ -587,24 +517,31 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Application Schema</Typography>
-              <Typography color="text.secondary" variant="body2">Detect schema directly from the configured CSV source, upload a JSON schema, or create attributes manually. The backend will then generate the duplicate detection strategy automatically.</Typography>
+              <Typography color="text.secondary" variant="body2">
+                Detect attributes from the configured CSV source, upload a JSON schema, or define attributes manually.
+              </Typography>
             </Box>
+
             <FormControl sx={{ maxWidth: 360 }}>
               <InputLabel>Application</InputLabel>
               <Select label="Application" value={selectedApplicationIndex} onChange={(event) => {
                 setSelectedApplicationIndex(Number(event.target.value));
                 setSchemaDetectionMessage("");
               }}>
-                {applications.map((item, index) => <MenuItem key={`${item.name}-${index}`} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>)}
+                {applications.map((item, index) => (
+                  <MenuItem key={`${item.name}-${index}`} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>
+                ))}
               </Select>
             </FormControl>
+
+            {schemaDetectionMessage && <Alert severity="success">{schemaDetectionMessage}</Alert>}
+
             {selectedApplication && (
               <>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
                   <TextField label="Schema Name" value={selectedApplication.schemaName ?? ""} onChange={(event) => updateApplication(selectedApplicationIndex, { schemaName: event.target.value })} sx={{ minWidth: 260 }} />
                   <Button
                     variant="outlined"
-                    startIcon={detectingSchema ? <CircularProgress size={17} /> : <AutoAwesomeIcon />}
                     disabled={detectingSchema}
                     onClick={() => void detectSchemaFromCsv()}
                   >
@@ -620,20 +557,35 @@ const AddIntegration = () => {
                   </Button>
                   <Button variant="contained" startIcon={<AddIcon />} onClick={addAttribute}>Add Attribute</Button>
                 </Stack>
-                {schemaDetectionMessage && <Alert severity="success">{schemaDetectionMessage}</Alert>}
+
                 <TableContainer variant="outlined" component={Paper}>
                   <Table size="small">
-                    <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell align="center">Required</TableCell><TableCell align="center">Multi-valued</TableCell><TableCell /></TableRow></TableHead>
+                    <TableHead>
+                      <TableRow sx={{ backgroundColor: "#f8fafc" }}>
+                        <TableCell>Attribute</TableCell>
+                        <TableCell>Display Name</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell align="center">Required</TableCell>
+                        <TableCell align="center">Multi-valued</TableCell>
+                        <TableCell />
+                      </TableRow>
+                    </TableHead>
                     <TableBody>
                       {selectedApplication.attributes.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No attributes yet. Detect them from CSV, add one manually, or upload a schema.</Typography></TableCell></TableRow>
+                        <TableRow>
+                          <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                            <Typography color="text.secondary">No attributes yet. Detect the CSV schema, upload JSON, or add attributes manually.</Typography>
+                          </TableCell>
+                        </TableRow>
                       ) : selectedApplication.attributes.map((attribute, index) => (
                         <TableRow key={index}>
                           <TableCell><TextField size="small" value={attribute.name} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { name: event.target.value })} /></TableCell>
                           <TableCell><TextField size="small" value={attribute.displayName ?? ""} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { displayName: event.target.value })} /></TableCell>
                           <TableCell>
                             <Select size="small" value={attribute.dataType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { dataType: event.target.value })}>
-                              {['string','number','boolean','date','datetime','array','object'].map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
+                              {['string', 'number', 'boolean', 'date', 'datetime', 'array', 'object'].map((type) => (
+                                <MenuItem key={type} value={type}>{type}</MenuItem>
+                              ))}
                             </Select>
                           </TableCell>
                           <TableCell align="center"><Checkbox checked={attribute.required} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { required: event.target.checked })} /></TableCell>
@@ -649,107 +601,57 @@ const AddIntegration = () => {
           </Stack>
         )}
 
-        {activeStep === 3 && selectedApplication && (
-          <Stack spacing={2.5}>
-            <Box>
-              <Typography variant="h6" fontWeight={700}>Automatic Detection Strategy</Typography>
-              <Typography color="text.secondary" variant="body2">The backend selected matching attributes, comparison methods, normalization and weights automatically. Manual changes below are optional advanced overrides.</Typography>
-            </Box>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
-              <FormControl sx={{ minWidth: 300 }}>
-                <InputLabel>Application</InputLabel>
-                <Select label="Application" value={selectedApplicationIndex} onChange={(event) => setSelectedApplicationIndex(Number(event.target.value))}>
-                  {applications.map((item, index) => <MenuItem key={`${item.name}-${index}`} value={index}>{item.name}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <Button
-                variant="outlined"
-                startIcon={generatingStrategy ? <CircularProgress size={17} /> : <AutoAwesomeIcon />}
-                disabled={generatingStrategy}
-                onClick={() => void regenerateSelectedStrategy()}
-              >
-                Regenerate Automatically
-              </Button>
-            </Stack>
-
-            <Alert severity="success" icon={<AutoAwesomeIcon />}>
-              Automatic strategy{selectedPolicy ? ` generated by ${selectedPolicy.generatorVersion}` : " generated by the backend"}. Recommended duplicate threshold: <strong>{selectedPolicy?.recommendedThreshold ?? 85}%</strong>. Current weight total: <strong>{matchingTotal}/100</strong>.
-            </Alert>
-
-            {selectedPolicy && selectedPolicy.ignoredTechnicalAttributes.length > 0 && (
-              <Alert severity="info">
-                Technical/source-unique attributes excluded automatically: {selectedPolicy.ignoredTechnicalAttributes.join(", ")}.
-              </Alert>
-            )}
-
-            <TableContainer component={Paper} variant="outlined">
-              <Table size="small">
-                <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Selected</TableCell><TableCell>Attribute</TableCell><TableCell>Comparison</TableCell><TableCell>Weight</TableCell><TableCell>Normalization</TableCell></TableRow></TableHead>
-                <TableBody>
-                  {selectedApplication.attributes.map((attribute, index) => (
-                    <TableRow key={attribute.name || index}>
-                      <TableCell><Checkbox checked={attribute.useForMatching} onChange={(event) => updateAttribute(selectedApplicationIndex, index, {
-                        useForMatching: event.target.checked,
-                        matchType: event.target.checked ? (attribute.matchType === "NONE" ? "EXACT" : attribute.matchType) : "NONE",
-                        matchWeight: event.target.checked ? attribute.matchWeight : 0,
-                      })} /></TableCell>
-                      <TableCell><Typography fontWeight={600}>{attribute.name}</Typography></TableCell>
-                      <TableCell>
-                        <Select size="small" disabled={!attribute.useForMatching} value={attribute.useForMatching ? attribute.matchType : "NONE"} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { matchType: event.target.value as MatchType })}>
-                          <MenuItem value="EXACT">Exact</MenuItem><MenuItem value="FUZZY">Fuzzy</MenuItem><MenuItem value="CONTAINS">Contains</MenuItem><MenuItem value="NONE">None</MenuItem>
-                        </Select>
-                      </TableCell>
-                      <TableCell><TextField size="small" type="number" disabled={!attribute.useForMatching} value={attribute.matchWeight} inputProps={{ min: 0, max: 100, step: 1 }} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { matchWeight: Number(event.target.value) })} sx={{ width: 110 }} /></TableCell>
-                      <TableCell>
-                        <Select size="small" disabled={!attribute.useForMatching} value={attribute.normalizationType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { normalizationType: event.target.value as NormalizationType })}>
-                          {['NONE','TRIM','LOWERCASE','UPPERCASE','ALPHANUMERIC','EMAIL','PHONE','NAME'].map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-                        </Select>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Stack>
-        )}
-
-        {activeStep === 4 && (
+        {activeStep === 3 && (
           <Stack spacing={3}>
-            <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography color="text.secondary" variant="body2">Confirm the integration and automatically generated application-specific detection configuration before saving.</Typography></Box>
+            <Box>
+              <Typography variant="h6" fontWeight={700}>Review Configuration</Typography>
+              <Typography color="text.secondary" variant="body2">
+                Confirm the integration and application schemas. Duplicate scoring and attribute weighting are calculated internally.
+              </Typography>
+            </Box>
+
             <Paper variant="outlined" sx={{ p: 2.5 }}>
               <Typography fontWeight={700}>{name}</Typography>
-              <Typography variant="body2" color="text.secondary">Connector: {selectedConnector?.displayName ?? connectorType} · {enabled ? "Enabled" : "Disabled"}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Connector: {selectedConnector?.displayName ?? connectorType} · {enabled ? "Enabled" : "Disabled"}
+              </Typography>
             </Paper>
-            {applications.map((applicationItem, index) => {
-              const matchingAttributes = applicationItem.attributes.filter((attribute) => attribute.useForMatching);
-              const total = matchingAttributes.reduce((sum, attribute) => sum + Number(attribute.matchWeight || 0), 0);
-              return (
-                <Paper key={`${applicationItem.name}-${index}`} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
-                  <Typography fontWeight={700}>{applicationItem.name}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{applicationItem.attributes.length} schema attributes · {matchingAttributes.length} automatically selected matching attributes · weight {total}/100</Typography>
-                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                    {matchingAttributes.map((attribute) => (
-                      <Box key={attribute.name} sx={{ px: 1.25, py: 0.6, border: 1, borderColor: "divider", borderRadius: 2, fontSize: 13 }}>
-                        {attribute.name}: {attribute.matchType} ({attribute.matchWeight})
-                      </Box>
-                    ))}
-                  </Stack>
-                </Paper>
-              );
-            })}
+
+            {applications.map((applicationItem, index) => (
+              <Paper key={`${applicationItem.name}-${index}`} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+                <Typography fontWeight={700}>{applicationItem.name}</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                  {applicationItem.attributes.length} schema attributes · {applicationItem.enabled ? "Enabled" : "Disabled"}
+                </Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                  {applicationItem.attributes.map((attribute) => (
+                    <Box key={attribute.name} sx={{ px: 1.25, py: 0.6, border: 1, borderColor: "divider", borderRadius: 2, fontSize: 13 }}>
+                      {attribute.name} · {attribute.dataType}
+                    </Box>
+                  ))}
+                </Stack>
+              </Paper>
+            ))}
+
+            <Alert severity="info">
+              After the integration is saved, the backend determines which attributes are useful for duplicate detection and calculates the internal scoring model automatically. Those internal weights are not part of the integrator workflow.
+            </Alert>
           </Stack>
         )}
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          <Button disabled={activeStep === 0 || saving || generatingStrategy || detectingSchema} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
+          <Button disabled={activeStep === 0 || saving || detectingSchema} onClick={() => {
+            setError("");
+            setActiveStep((current) => Math.max(0, current - 1));
+          }}>
+            Back
+          </Button>
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" disabled={saving || generatingStrategy || detectingSchema} onClick={() => navigate("/integrations")}>Cancel</Button>
+            <Button variant="outlined" disabled={saving || detectingSchema} onClick={() => navigate("/integrations")}>Cancel</Button>
             {activeStep < steps.length - 1 ? (
-              <Button variant="contained" disabled={generatingStrategy || detectingSchema} onClick={() => void goNext()}>
-                {generatingStrategy ? "Generating Strategy..." : detectingSchema ? "Detecting Schema..." : "Next"}
-              </Button>
+              <Button variant="contained" disabled={detectingSchema} onClick={goNext}>Next</Button>
             ) : (
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || generatingStrategy || detectingSchema} onClick={() => void handleSave()}>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || detectingSchema} onClick={() => void handleSave()}>
                 {saving ? "Saving..." : editing ? "Update Integration" : "Create Integration"}
               </Button>
             )}
