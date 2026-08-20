@@ -8,6 +8,7 @@ from fastapi import (
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.auth import require_roles
 from app.database.session import get_db
 from app.db_models.integration import IntegrationRecord
 from app.schemas.job_schedule import (
@@ -75,6 +76,9 @@ def create_integration_schedule(
     integration_id: int,
     payload: JobScheduleCreate,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     integration = get_integration_or_404(
         db,
@@ -115,6 +119,9 @@ def create_integration_schedule(
 def get_integration_schedule(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     get_integration_or_404(
         db,
@@ -138,6 +145,9 @@ def update_integration_schedule(
     integration_id: int,
     payload: JobScheduleUpdate,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     get_integration_or_404(
         db,
@@ -183,6 +193,9 @@ def update_integration_schedule(
 def enable_integration_schedule(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     get_integration_or_404(
         db,
@@ -219,6 +232,9 @@ def enable_integration_schedule(
 def disable_integration_schedule(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     get_integration_or_404(
         db,
@@ -247,6 +263,9 @@ def disable_integration_schedule(
 def delete_integration_schedule(
     integration_id: int,
     db: Session = Depends(get_db),
+    _current_user=Depends(
+        require_roles("ADMIN", "USER")
+    ),
 ):
     get_integration_or_404(
         db,
