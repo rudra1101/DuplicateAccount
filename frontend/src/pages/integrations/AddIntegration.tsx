@@ -28,6 +28,7 @@ import {
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import AddIcon from "@mui/icons-material/Add";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SaveIcon from "@mui/icons-material/Save";
@@ -43,15 +44,17 @@ import {
   type ConnectorType,
 } from "../../services/integrationService";
 import {
+  generateMatchingPolicy,
   getIntegrationApplications,
   saveIntegrationApplications,
   type ApplicationInput,
+  type GeneratedMatchingPolicy,
   type MatchType,
   type NormalizationType,
   type SchemaAttributeInput,
 } from "../../services/applicationSchemaService";
 
-const steps = ["Connection", "Applications", "Schema", "Matching Rules", "Review & Save"];
+const steps = ["Connection", "Applications", "Schema", "Detection Strategy", "Review & Save"];
 
 const emptyAttribute = (position: number): SchemaAttributeInput => ({
   name: "",
@@ -89,9 +92,11 @@ const AddIntegration = () => {
   const [configuration, setConfiguration] = useState<Record<string, unknown>>({});
   const [applications, setApplications] = useState<ApplicationInput[]>([emptyApplication()]);
   const [selectedApplicationIndex, setSelectedApplicationIndex] = useState(0);
+  const [generatedPolicies, setGeneratedPolicies] = useState<Record<number, GeneratedMatchingPolicy>>({});
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingStrategy, setGeneratingStrategy] = useState(false);
   const [error, setError] = useState("");
 
   const selectedConnector = useMemo(
@@ -100,6 +105,7 @@ const AddIntegration = () => {
   );
 
   const selectedApplication = applications[selectedApplicationIndex] ?? null;
+  const selectedPolicy = generatedPolicies[selectedApplicationIndex] ?? null;
 
   useEffect(() => {
     const loadPage = async () => {
@@ -180,6 +186,11 @@ const AddIntegration = () => {
     setApplications((current) => current.map((item, itemIndex) => (
       itemIndex === index ? { ...item, ...patch } : item
     )));
+    setGeneratedPolicies((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
   };
 
   const updateAttribute = (
@@ -298,7 +309,7 @@ const AddIntegration = () => {
     for (const applicationItem of applications) {
       const selected = applicationItem.attributes.filter((item) => item.useForMatching);
       if (selected.length === 0) {
-        setError(`${applicationItem.name} needs at least one attribute enabled for matching.`);
+        setError(`${applicationItem.name} has no usable attributes for duplicate detection.`);
         return false;
       }
       const total = selected.reduce((sum, item) => sum + Number(item.matchWeight || 0), 0);
@@ -310,15 +321,84 @@ const AddIntegration = () => {
     return true;
   };
 
-  const goNext = () => {
+  const generateStrategies = async () => {
+    if (!validateSchemas()) return false;
+
+    try {
+      setGeneratingStrategy(true);
+      setError("");
+
+      const results = await Promise.all(
+        applications.map((applicationItem) =>
+          generateMatchingPolicy(
+            applicationItem.name.trim(),
+            applicationItem.attributes,
+          ),
+        ),
+      );
+
+      setApplications((current) => current.map((applicationItem, index) => ({
+        ...applicationItem,
+        attributes: results[index]?.attributes ?? applicationItem.attributes,
+      })));
+
+      setGeneratedPolicies(
+        Object.fromEntries(results.map((policy, index) => [index, policy])),
+      );
+
+      return true;
+    } catch (strategyError) {
+      setError(
+        strategyError instanceof Error
+          ? strategyError.message
+          : "Unable to generate the automatic detection strategy.",
+      );
+      return false;
+    } finally {
+      setGeneratingStrategy(false);
+    }
+  };
+
+  const regenerateSelectedStrategy = async () => {
+    if (!selectedApplication) return;
+    try {
+      setGeneratingStrategy(true);
+      setError("");
+      const policy = await generateMatchingPolicy(
+        selectedApplication.name.trim(),
+        selectedApplication.attributes,
+      );
+      setApplications((current) => current.map((item, index) => (
+        index === selectedApplicationIndex
+          ? { ...item, attributes: policy.attributes }
+          : item
+      )));
+      setGeneratedPolicies((current) => ({
+        ...current,
+        [selectedApplicationIndex]: policy,
+      }));
+    } catch (strategyError) {
+      setError(strategyError instanceof Error ? strategyError.message : "Unable to regenerate strategy.");
+    } finally {
+      setGeneratingStrategy(false);
+    }
+  };
+
+  const goNext = async () => {
     setError("");
-    const valid =
-      activeStep === 0 ? validateConnection()
-      : activeStep === 1 ? validateApplications()
-      : activeStep === 2 ? validateSchemas()
-      : activeStep === 3 ? validateMatching()
-      : true;
-    if (valid) setActiveStep((current) => Math.min(current + 1, steps.length - 1));
+
+    if (activeStep === 0 && !validateConnection()) return;
+    if (activeStep === 1 && !validateApplications()) return;
+
+    if (activeStep === 2) {
+      if (!validateSchemas()) return;
+      const generated = await generateStrategies();
+      if (!generated) return;
+    }
+
+    if (activeStep === 3 && !validateMatching()) return;
+
+    setActiveStep((current) => Math.min(current + 1, steps.length - 1));
   };
 
   const handleSave = async () => {
@@ -393,7 +473,7 @@ const AddIntegration = () => {
             {editing ? "Edit Integration" : "Create Integration"}
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Configure the connection, application schemas and duplicate matching rules.
+            Configure the connection and application schemas. Duplicate matching is generated automatically by the backend.
           </Typography>
         </Box>
         <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>
@@ -448,11 +528,15 @@ const AddIntegration = () => {
                   <IconButton disabled={applications.length === 1} color="error" onClick={() => {
                     setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index));
                     setSelectedApplicationIndex(0);
+                    setGeneratedPolicies({});
                   }}><DeleteOutlineIcon /></IconButton>
                 </Stack>
               </Paper>
             ))}
-            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => setApplications((current) => [...current, emptyApplication()])} sx={{ alignSelf: "flex-start" }}>
+            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => {
+              setApplications((current) => [...current, emptyApplication()]);
+              setGeneratedPolicies({});
+            }} sx={{ alignSelf: "flex-start" }}>
               Add Application
             </Button>
           </Stack>
@@ -462,7 +546,7 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Application Schema</Typography>
-              <Typography color="text.secondary" variant="body2">Create attributes manually or upload a JSON schema. Connector-based automatic discovery can be added per connector later.</Typography>
+              <Typography color="text.secondary" variant="body2">Create attributes manually or upload a JSON schema. The backend will automatically decide which attributes are useful for duplicate detection.</Typography>
             </Box>
             <FormControl sx={{ maxWidth: 360 }}>
               <InputLabel>Application</InputLabel>
@@ -482,7 +566,7 @@ const AddIntegration = () => {
                       event.target.value = "";
                     }} />
                   </Button>
-                  <Button variant="outlined" disabled title="Automatic discovery will be implemented connector by connector">Detect Schema</Button>
+                  <Button variant="outlined" disabled title="Automatic schema discovery will be implemented connector by connector">Detect Schema</Button>
                   <Button variant="contained" startIcon={<AddIcon />} onClick={addAttribute}>Add Attribute</Button>
                 </Stack>
                 <TableContainer variant="outlined" component={Paper}>
@@ -516,8 +600,8 @@ const AddIntegration = () => {
         {activeStep === 3 && selectedApplication && (
           <Stack spacing={2.5}>
             <Box>
-              <Typography variant="h6" fontWeight={700}>Matching Rules</Typography>
-              <Typography color="text.secondary" variant="body2">Choose which attributes participate in duplicate detection for each application. Weights must total 100.</Typography>
+              <Typography variant="h6" fontWeight={700}>Automatic Detection Strategy</Typography>
+              <Typography color="text.secondary" variant="body2">The backend selected matching attributes, comparison methods, normalization and weights automatically. Manual changes below are optional advanced overrides.</Typography>
             </Box>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ sm: "center" }}>
               <FormControl sx={{ minWidth: 300 }}>
@@ -526,13 +610,29 @@ const AddIntegration = () => {
                   {applications.map((item, index) => <MenuItem key={`${item.name}-${index}`} value={index}>{item.name}</MenuItem>)}
                 </Select>
               </FormControl>
-              <Alert severity={Math.abs(matchingTotal - 100) < 0.01 ? "success" : "warning"} sx={{ flex: 1 }}>
-                Current matching weight total: <strong>{matchingTotal}</strong> / 100
-              </Alert>
+              <Button
+                variant="outlined"
+                startIcon={generatingStrategy ? <CircularProgress size={17} /> : <AutoAwesomeIcon />}
+                disabled={generatingStrategy}
+                onClick={() => void regenerateSelectedStrategy()}
+              >
+                Regenerate Automatically
+              </Button>
             </Stack>
+
+            <Alert severity="success" icon={<AutoAwesomeIcon />}>
+              Automatic strategy{selectedPolicy ? ` generated by ${selectedPolicy.generatorVersion}` : " generated by the backend"}. Recommended duplicate threshold: <strong>{selectedPolicy?.recommendedThreshold ?? 85}%</strong>. Current weight total: <strong>{matchingTotal}/100</strong>.
+            </Alert>
+
+            {selectedPolicy && selectedPolicy.ignoredTechnicalAttributes.length > 0 && (
+              <Alert severity="info">
+                Technical/source-unique attributes excluded automatically: {selectedPolicy.ignoredTechnicalAttributes.join(", ")}.
+              </Alert>
+            )}
+
             <TableContainer component={Paper} variant="outlined">
               <Table size="small">
-                <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Use</TableCell><TableCell>Attribute</TableCell><TableCell>Comparison</TableCell><TableCell>Weight</TableCell><TableCell>Normalization</TableCell></TableRow></TableHead>
+                <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Selected</TableCell><TableCell>Attribute</TableCell><TableCell>Comparison</TableCell><TableCell>Weight</TableCell><TableCell>Normalization</TableCell></TableRow></TableHead>
                 <TableBody>
                   {selectedApplication.attributes.map((attribute, index) => (
                     <TableRow key={attribute.name || index}>
@@ -563,7 +663,7 @@ const AddIntegration = () => {
 
         {activeStep === 4 && (
           <Stack spacing={3}>
-            <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography color="text.secondary" variant="body2">Confirm the integration and application-specific matching configuration before saving.</Typography></Box>
+            <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography color="text.secondary" variant="body2">Confirm the integration and automatically generated application-specific detection configuration before saving.</Typography></Box>
             <Paper variant="outlined" sx={{ p: 2.5 }}>
               <Typography fontWeight={700}>{name}</Typography>
               <Typography variant="body2" color="text.secondary">Connector: {selectedConnector?.displayName ?? connectorType} · {enabled ? "Enabled" : "Disabled"}</Typography>
@@ -574,7 +674,7 @@ const AddIntegration = () => {
               return (
                 <Paper key={`${applicationItem.name}-${index}`} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
                   <Typography fontWeight={700}>{applicationItem.name}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{applicationItem.attributes.length} schema attributes · {matchingAttributes.length} matching attributes · weight {total}/100</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{applicationItem.attributes.length} schema attributes · {matchingAttributes.length} automatically selected matching attributes · weight {total}/100</Typography>
                   <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
                     {matchingAttributes.map((attribute) => (
                       <Box key={attribute.name} sx={{ px: 1.25, py: 0.6, border: 1, borderColor: "divider", borderRadius: 2, fontSize: 13 }}>
@@ -589,13 +689,15 @@ const AddIntegration = () => {
         )}
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          <Button disabled={activeStep === 0 || saving} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
+          <Button disabled={activeStep === 0 || saving || generatingStrategy} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" disabled={saving} onClick={() => navigate("/integrations")}>Cancel</Button>
+            <Button variant="outlined" disabled={saving || generatingStrategy} onClick={() => navigate("/integrations")}>Cancel</Button>
             {activeStep < steps.length - 1 ? (
-              <Button variant="contained" onClick={goNext}>Next</Button>
+              <Button variant="contained" disabled={generatingStrategy} onClick={() => void goNext()}>
+                {generatingStrategy ? "Generating Strategy..." : "Next"}
+              </Button>
             ) : (
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving} onClick={() => void handleSave()}>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || generatingStrategy} onClick={() => void handleSave()}>
                 {saving ? "Saving..." : editing ? "Update Integration" : "Create Integration"}
               </Button>
             )}
