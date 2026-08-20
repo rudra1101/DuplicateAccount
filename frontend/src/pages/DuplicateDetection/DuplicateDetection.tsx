@@ -18,6 +18,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   TextField,
   Typography,
@@ -58,6 +59,8 @@ const confidenceOptions = [
   { value: "LOW", label: "Low (<80%)" },
 ];
 
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
 function confidenceColor(value: number): "success" | "warning" | "error" {
   if (value >= 95) return "success";
   if (value >= 80) return "warning";
@@ -83,6 +86,8 @@ const DuplicateDetection = () => {
   const [application, setApplication] = useState("ALL");
   const [integration, setIntegration] = useState("ALL");
   const [confidence, setConfidence] = useState("ALL");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [details, setDetails] = useState<DuplicateGroupDetails | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsError, setDetailsError] = useState("");
@@ -158,6 +163,22 @@ const DuplicateDetection = () => {
       return matchesSearch && matchesApplication && matchesIntegration && matchesConfidence;
     });
   }, [rows, search, application, integration, confidence]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [search, application, integration, confidence]);
+
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(filteredRows.length / rowsPerPage) - 1);
+    if (page > lastPage) {
+      setPage(lastPage);
+    }
+  }, [filteredRows.length, page, rowsPerPage]);
+
+  const paginatedRows = useMemo(() => {
+    const start = page * rowsPerPage;
+    return filteredRows.slice(start, start + rowsPerPage);
+  }, [filteredRows, page, rowsPerPage]);
 
   const totalCandidates = useMemo(
     () => filteredRows.reduce((sum, row) => sum + row.duplicates, 0),
@@ -268,52 +289,74 @@ const DuplicateDetection = () => {
         </Stack>
       </Paper>
 
-      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
-        <Table>
-          <TableHead>
-            <TableRow sx={{ backgroundColor: "#f8fafc" }}>
-              <TableCell>Primary Account</TableCell>
-              <TableCell>Application</TableCell>
-              <TableCell>Integration</TableCell>
-              <TableCell align="center">Candidates</TableCell>
-              <TableCell align="center">Confidence</TableCell>
-              <TableCell align="right">Action</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><CircularProgress /></TableCell></TableRow>
-            ) : filteredRows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 7 }}>
-                  <Typography fontWeight={700}>No duplicate groups match the current filters.</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                    Change the filters or run a new integration scan.
-                  </Typography>
-                </TableCell>
+      <Paper variant="outlined" sx={{ borderRadius: 3, overflow: "hidden" }}>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ backgroundColor: "#f8fafc" }}>
+                <TableCell>Primary Account</TableCell>
+                <TableCell>Application</TableCell>
+                <TableCell>Integration</TableCell>
+                <TableCell align="center">Candidates</TableCell>
+                <TableCell align="center">Confidence</TableCell>
+                <TableCell align="right">Action</TableCell>
               </TableRow>
-            ) : filteredRows.map((row) => (
-              <TableRow key={row.groupId} hover>
-                <TableCell>
-                  <Typography fontWeight={700}>{row.primaryAccount}</Typography>
-                  <Typography variant="caption" color="text.secondary">Group #{row.groupId} · Scan #{row.scanId}</Typography>
-                </TableCell>
-                <TableCell>{row.application}</TableCell>
-                <TableCell>{row.integrationName ?? (row.integrationId ? `Integration #${row.integrationId}` : "Legacy upload")}</TableCell>
-                <TableCell align="center">{row.duplicates}</TableCell>
-                <TableCell align="center">
-                  <Chip size="small" label={`${row.highestConfidence}%`} color={confidenceColor(row.highestConfidence)} variant="outlined" />
-                </TableCell>
-                <TableCell align="right">
-                  <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => void openDetails(row)}>
-                    Investigate
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><CircularProgress /></TableCell></TableRow>
+              ) : filteredRows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 7 }}>
+                    <Typography fontWeight={700}>No duplicate groups match the current filters.</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      Change the filters or run a new integration scan.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : paginatedRows.map((row) => (
+                <TableRow key={row.groupId} hover>
+                  <TableCell>
+                    <Typography fontWeight={700}>{row.primaryAccount}</Typography>
+                    <Typography variant="caption" color="text.secondary">Group #{row.groupId} · Scan #{row.scanId}</Typography>
+                  </TableCell>
+                  <TableCell>{row.application}</TableCell>
+                  <TableCell>{row.integrationName ?? (row.integrationId ? `Integration #${row.integrationId}` : "Legacy upload")}</TableCell>
+                  <TableCell align="center">{row.duplicates}</TableCell>
+                  <TableCell align="center">
+                    <Chip size="small" label={`${row.highestConfidence}%`} color={confidenceColor(row.highestConfidence)} variant="outlined" />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button size="small" startIcon={<VisibilityOutlinedIcon />} onClick={() => void openDetails(row)}>
+                      Investigate
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {!loading && filteredRows.length > 0 && (
+          <TablePagination
+            component="div"
+            count={filteredRows.length}
+            page={page}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={(event) => {
+              const requested = Number.parseInt(event.target.value, 10);
+              const nextRowsPerPage = PAGE_SIZE_OPTIONS.includes(requested) ? requested : 25;
+              setRowsPerPage(nextRowsPerPage);
+              setPage(0);
+            }}
+            rowsPerPageOptions={PAGE_SIZE_OPTIONS}
+            labelRowsPerPage="Records per page:"
+            showFirstButton
+            showLastButton
+          />
+        )}
+      </Paper>
 
       <Drawer
         anchor="right"
