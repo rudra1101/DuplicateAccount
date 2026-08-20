@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.auth import require_permission
+from app.auth import require_any_permission, require_permission
 from app.database.session import get_db
 from app.schemas.application_schema import IntegrationApplicationsPayload
 from app.services.application_schema_service import (
@@ -36,7 +36,12 @@ def replace_applications(
     integration_id: int,
     payload: IntegrationApplicationsPayload,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("integration.edit")),
+    _user=Depends(
+        require_any_permission(
+            "integration.create",
+            "integration.edit",
+        )
+    ),
 ):
     integration = get_integration(db, integration_id)
     if integration is None:
