@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.auth import require_permission
+from app.auth import require_any_permission, require_permission
 from app.connectors.exceptions import ConnectorError
 from app.database.session import get_db
 from app.schemas.integration import (
@@ -32,7 +32,12 @@ router = APIRouter(prefix="/integrations", tags=["Integrations"])
 @router.post("/detect-schema")
 def detect_schema(
     payload: SchemaDetectionRequest,
-    _user=Depends(require_permission("integration.create")),
+    _user=Depends(
+        require_any_permission(
+            "integration.create",
+            "integration.edit",
+        )
+    ),
 ):
     try:
         return detect_delimited_schema(
