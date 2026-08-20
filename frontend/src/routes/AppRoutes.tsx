@@ -1,17 +1,15 @@
 import { Route, Routes } from "react-router-dom";
 
+import PermissionRoute from "../auth/PermissionRoute";
 import ProtectedRoute from "../auth/ProtectedRoute";
-import RoleRoute from "../auth/RoleRoute";
 import MainLayout from "../layouts/MainLayout/Mainlayout";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
 import DuplicateDetection from "../pages/DuplicateDetection/DuplicateDetection";
 import Reports from "../pages/Reports/Reports";
 import Admin from "../pages/Admin/Admin";
-import UserManagement from "../pages/Admin/UserManagement";
 import Settings from "../pages/Settings/Settings";
 import LoginPage from "../pages/Login/LoginPage";
-
 import ReviewQueue from "../pages/Review/ReviewQueue";
 import ApplicationReview from "../pages/review/ApplicationReview";
 import UploadAccounts from "../pages/upload/UploadAccounts";
@@ -39,14 +37,20 @@ const AppRoutes = () => {
           <Route path="operations" element={<Operations />} />
           <Route path="ml-training" element={<MlTrainingDashboard />} />
 
-          <Route element={<RoleRoute roles={["ADMIN"]} />}>
+          <Route element={<PermissionRoute anyOf={["user.view", "role.view"]} />}>
             <Route path="admin" element={<Admin />} />
-            <Route path="users" element={<UserManagement />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["user.view"]} />}>
+            <Route path="users" element={<Admin />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["integration.create"]} />}>
             <Route path="integrations/new" element={<AddIntegration />} />
-            <Route
-              path="integrations/:integrationId/edit"
-              element={<AddIntegration />}
-            />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["integration.edit"]} />}>
+            <Route path="integrations/:integrationId/edit" element={<AddIntegration />} />
           </Route>
         </Route>
 
