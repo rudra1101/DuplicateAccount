@@ -37,10 +37,7 @@ PERMISSIONS = [
 
 DEFAULT_ROLE_PERMISSIONS = {
     "OWNER": "ALL",
-    "ADMIN": {
-        *{code for code, _, _ in PERMISSIONS if not code.startswith("role.")},
-        "role.view",
-    },
+    "ADMIN": "ALL",
     "USER": {
         "dashboard.view",
         "duplicate.view",
@@ -55,8 +52,8 @@ DEFAULT_ROLE_PERMISSIONS = {
 }
 
 ROLE_DESCRIPTIONS = {
-    "OWNER": "System owner with unrestricted access and role-management authority.",
-    "ADMIN": "Application administrator. Can manage users and integrations but cannot change role definitions.",
+    "OWNER": "System owner with unrestricted access. OWNER is protected from modification or deletion.",
+    "ADMIN": "Application administrator with user, integration, role, and permission management capabilities.",
     "USER": "Standard operational user with run and schedule capabilities.",
 }
 
@@ -89,8 +86,8 @@ def seed_rbac(db: Session) -> None:
             db.flush()
             existing_roles[role_name] = role
 
-        # Seed defaults only when a system role has no permissions yet so OWNER can
-        # later customize ADMIN/USER without startup overwriting those choices.
+        # Seed defaults only when a system role has no permissions yet so later
+        # permission changes are not overwritten at every application startup.
         if not role.permissions:
             requested = DEFAULT_ROLE_PERMISSIONS[role_name]
             if requested == "ALL":
