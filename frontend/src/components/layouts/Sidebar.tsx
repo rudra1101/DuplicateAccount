@@ -19,72 +19,34 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import { MenuBookOutlined } from "@mui/icons-material";
 
 import { Link, useLocation } from "react-router-dom";
+import { useAuth } from "../../auth/AuthContext";
 
 const drawerWidth = 250;
 
 const menuItems = [
-  {
-    text: "Dashboard",
-    icon: <DashboardIcon />,
-    path: "/",
-  },
-  {
-    text: "Duplicate Detection",
-    icon: <SearchIcon />,
-    path: "/duplicates",
-  },
-  {
-    text: "Review Queue",
-    icon: <FactCheckIcon />,
-    path: "/review",
-  },
-  {
-    text: "Reports",
-    icon: <AssessmentIcon />,
-    path: "/reports",
-  },
-  {
-    text: "Admin",
-    icon: <AdminPanelSettingsIcon />,
-    path: "/admin",
-  },
-  {
-    text: "Upload Accounts",
-    icon: <CloudUploadIcon />,
-    path: "/upload",
-  },
-  {
-    text: "Operations",
-    path: "/operations",
-    icon: <MonitorHeartOutlinedIcon />,
-  },
-  {
-    text: "Settings",
-    icon: <SettingsIcon />,
-    path: "/settings",
-  },
-  {
-    text: "Integrations",
-    path: "/integrations",
-    icon: <CableIcon />,
-  },
-  {
-    text: "ML Training",
-    path: "/ml-training",
-    icon: <ModelTrainingIcon />,
-  },
-  {
-    text: "Knowledge Base",
-    path: "/knowledge",
-    icon: <MenuBookOutlined />,
-  },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/" },
+  { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates" },
+  { text: "Review Queue", icon: <FactCheckIcon />, path: "/review" },
+  { text: "Reports", icon: <AssessmentIcon />, path: "/reports" },
+  { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", adminOnly: true },
+  { text: "User Management", icon: <PeopleAltOutlinedIcon />, path: "/users", adminOnly: true },
+  { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload" },
+  { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon /> },
+  { text: "Settings", icon: <SettingsIcon />, path: "/settings" },
+  { text: "Integrations", path: "/integrations", icon: <CableIcon /> },
+  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon /> },
+  { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined /> },
 ];
 
 const Sidebar = () => {
   const location = useLocation();
+  const { isAdmin } = useAuth();
+
+  const visibleItems = menuItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <Drawer
@@ -92,7 +54,6 @@ const Sidebar = () => {
       sx={{
         width: drawerWidth,
         flexShrink: 0,
-
         "& .MuiDrawer-paper": {
           width: drawerWidth,
           boxSizing: "border-box",
@@ -103,29 +64,17 @@ const Sidebar = () => {
     >
       <Toolbar>
         <Box>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 700,
-              color: "#fff",
-            }}
-          >
+          <Typography variant="h6" sx={{ fontWeight: 700, color: "#fff" }}>
             IdentityAI
           </Typography>
-
-          <Typography
-            variant="caption"
-            sx={{
-              color: "#94a3b8",
-            }}
-          >
+          <Typography variant="caption" sx={{ color: "#94a3b8" }}>
             Duplicate Detection Platform
           </Typography>
         </Box>
       </Toolbar>
 
       <List sx={{ mt: 2 }}>
-        {menuItems.map((item) => (
+        {visibleItems.map((item) => (
           <ListItemButton
             key={item.text}
             component={Link}
@@ -135,29 +84,14 @@ const Sidebar = () => {
               mx: 1,
               borderRadius: 2,
               mb: 0.5,
-
-              "&.Mui-selected": {
-                backgroundColor: "#1976d2",
-              },
-
-              "&.Mui-selected:hover": {
-                backgroundColor: "#1565c0",
-              },
-
-              "&:hover": {
-                backgroundColor: "#1e293b",
-              },
+              "&.Mui-selected": { backgroundColor: "#1976d2" },
+              "&.Mui-selected:hover": { backgroundColor: "#1565c0" },
+              "&:hover": { backgroundColor: "#1e293b" },
             }}
           >
-            <ListItemIcon
-              sx={{
-                color: "inherit",
-                minWidth: 40,
-              }}
-            >
+            <ListItemIcon sx={{ color: "inherit", minWidth: 40 }}>
               {item.icon}
             </ListItemIcon>
-
             <ListItemText primary={item.text} />
           </ListItemButton>
         ))}
