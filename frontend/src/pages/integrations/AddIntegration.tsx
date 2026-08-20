@@ -38,6 +38,7 @@ import PageContainer from "../../components/common/PageContainer";
 import DynamicConnectorForm from "../../components/integrations/DynamicConnectorForm";
 import {
   createIntegration,
+  detectIntegrationSchema,
   getConnectorTypes,
   getIntegration,
   updateIntegration,
@@ -97,6 +98,8 @@ const AddIntegration = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [generatingStrategy, setGeneratingStrategy] = useState(false);
+  const [detectingSchema, setDetectingSchema] = useState(false);
+  const [schemaDetectionMessage, setSchemaDetectionMessage] = useState("");
   const [error, setError] = useState("");
 
   const selectedConnector = useMemo(
@@ -180,6 +183,7 @@ const AddIntegration = () => {
     ) ?? {};
     setConfiguration(defaults);
     setFieldErrors({});
+    setSchemaDetectionMessage("");
   };
 
   const updateApplication = (index: number, patch: Partial<ApplicationInput>) => {
@@ -249,9 +253,46 @@ const AddIntegration = () => {
         throw new Error("Every uploaded schema attribute requires a name.");
       }
       updateApplication(selectedApplicationIndex, { attributes: mapped });
+      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes from JSON schema.`);
       setError("");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to read schema file.");
+    }
+  };
+
+  const detectSchemaFromCsv = async () => {
+    if (!selectedApplication) return;
+
+    if (!validateConnection()) {
+      setError("Complete the connector configuration before detecting the CSV schema.");
+      return;
+    }
+
+    try {
+      setDetectingSchema(true);
+      setError("");
+      setSchemaDetectionMessage("");
+
+      const result = await detectIntegrationSchema(connectorType, configuration);
+      const attributes: SchemaAttributeInput[] = result.attributes.map((attribute, index) => ({
+        ...attribute,
+        position: index,
+        matchType: "NONE" as MatchType,
+        normalizationType: "NONE" as NormalizationType,
+      }));
+
+      updateApplication(selectedApplicationIndex, { attributes });
+      setSchemaDetectionMessage(
+        `Detected ${attributes.length} attributes from ${result.filename} using ${result.sampledRows} sample row${result.sampledRows === 1 ? "" : "s"}.`,
+      );
+    } catch (detectError) {
+      setError(
+        detectError instanceof Error
+          ? detectError.message
+          : "Unable to detect schema from the configured CSV source.",
+      );
+    } finally {
+      setDetectingSchema(false);
     }
   };
 
@@ -546,11 +587,14 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Application Schema</Typography>
-              <Typography color="text.secondary" variant="body2">Create attributes manually or upload a JSON schema. The backend will automatically decide which attributes are useful for duplicate detection.</Typography>
+              <Typography color="text.secondary" variant="body2">Detect schema directly from the configured CSV source, upload a JSON schema, or create attributes manually. The backend will then generate the duplicate detection strategy automatically.</Typography>
             </Box>
             <FormControl sx={{ maxWidth: 360 }}>
               <InputLabel>Application</InputLabel>
-              <Select label="Application" value={selectedApplicationIndex} onChange={(event) => setSelectedApplicationIndex(Number(event.target.value))}>
+              <Select label="Application" value={selectedApplicationIndex} onChange={(event) => {
+                setSelectedApplicationIndex(Number(event.target.value));
+                setSchemaDetectionMessage("");
+              }}>
                 {applications.map((item, index) => <MenuItem key={`${item.name}-${index}`} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>)}
               </Select>
             </FormControl>
@@ -558,6 +602,14 @@ const AddIntegration = () => {
               <>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
                   <TextField label="Schema Name" value={selectedApplication.schemaName ?? ""} onChange={(event) => updateApplication(selectedApplicationIndex, { schemaName: event.target.value })} sx={{ minWidth: 260 }} />
+                  <Button
+                    variant="outlined"
+                    startIcon={detectingSchema ? <CircularProgress size={17} /> : <AutoAwesomeIcon />}
+                    disabled={detectingSchema}
+                    onClick={() => void detectSchemaFromCsv()}
+                  >
+                    {detectingSchema ? "Detecting..." : "Detect CSV Schema"}
+                  </Button>
                   <Button component="label" variant="outlined" startIcon={<UploadFileIcon />}>
                     Upload JSON Schema
                     <input hidden type="file" accept="application/json,.json" onChange={(event) => {
@@ -566,15 +618,15 @@ const AddIntegration = () => {
                       event.target.value = "";
                     }} />
                   </Button>
-                  <Button variant="outlined" disabled title="Automatic schema discovery will be implemented connector by connector">Detect Schema</Button>
                   <Button variant="contained" startIcon={<AddIcon />} onClick={addAttribute}>Add Attribute</Button>
                 </Stack>
+                {schemaDetectionMessage && <Alert severity="success">{schemaDetectionMessage}</Alert>}
                 <TableContainer variant="outlined" component={Paper}>
                   <Table size="small">
                     <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell align="center">Required</TableCell><TableCell align="center">Multi-valued</TableCell><TableCell /></TableRow></TableHead>
                     <TableBody>
                       {selectedApplication.attributes.length === 0 ? (
-                        <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No attributes yet. Add one manually or upload a schema.</Typography></TableCell></TableRow>
+                        <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No attributes yet. Detect them from CSV, add one manually, or upload a schema.</Typography></TableCell></TableRow>
                       ) : selectedApplication.attributes.map((attribute, index) => (
                         <TableRow key={index}>
                           <TableCell><TextField size="small" value={attribute.name} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { name: event.target.value })} /></TableCell>
@@ -689,15 +741,15 @@ const AddIntegration = () => {
         )}
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          <Button disabled={activeStep === 0 || saving || generatingStrategy} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
+          <Button disabled={activeStep === 0 || saving || generatingStrategy || detectingSchema} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" disabled={saving || generatingStrategy} onClick={() => navigate("/integrations")}>Cancel</Button>
+            <Button variant="outlined" disabled={saving || generatingStrategy || detectingSchema} onClick={() => navigate("/integrations")}>Cancel</Button>
             {activeStep < steps.length - 1 ? (
-              <Button variant="contained" disabled={generatingStrategy} onClick={() => void goNext()}>
-                {generatingStrategy ? "Generating Strategy..." : "Next"}
+              <Button variant="contained" disabled={generatingStrategy || detectingSchema} onClick={() => void goNext()}>
+                {generatingStrategy ? "Generating Strategy..." : detectingSchema ? "Detecting Schema..." : "Next"}
               </Button>
             ) : (
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || generatingStrategy} onClick={() => void handleSave()}>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || generatingStrategy || detectingSchema} onClick={() => void handleSave()}>
                 {saving ? "Saving..." : editing ? "Update Integration" : "Create Integration"}
               </Button>
             )}
