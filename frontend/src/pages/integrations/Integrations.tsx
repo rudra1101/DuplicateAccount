@@ -13,16 +13,14 @@ import {
   Snackbar,
   Typography,
 } from "@mui/material";
-
 import AddIcon from "@mui/icons-material/Add";
-
 import { useNavigate } from "react-router-dom";
 
+import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
 import IntegrationCard from "../../components/integrations/IntegrationCard";
 import ScheduleDialog from "../../components/integrations/ScheduleDialog";
 import ExecutionHistoryDrawer from "../../components/integrations/ExecutionHistoryDrawer";
-
 import {
   deleteIntegration,
   getIntegrationSchedule,
@@ -35,100 +33,66 @@ import {
 
 const Integrations = () => {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
 
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-
-  const [schedules, setSchedules] = useState<
-    Record<number, JobSchedule | null>
-  >({});
-
+  const [schedules, setSchedules] = useState<Record<number, JobSchedule | null>>({});
   const [loading, setLoading] = useState(true);
-
   const [error, setError] = useState("");
-
   const [testingId, setTestingId] = useState<number | null>(null);
-
   const [runningId, setRunningId] = useState<number | null>(null);
-
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null);
-
-  const [scheduleTarget, setScheduleTarget] = useState<Integration | null>(
-    null,
-  );
-
-  const [message, setMessage] = useState("");
-
-  const [messageType, setMessageType] = useState<"success" | "error">(
-    "success",
-  );
-
+  const [scheduleTarget, setScheduleTarget] = useState<Integration | null>(null);
   const [historyTarget, setHistoryTarget] = useState<Integration | null>(null);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">("success");
 
   const loadIntegrations = async () => {
     try {
       setLoading(true);
       setError("");
-
       const data = await getIntegrations();
-
       setIntegrations(data);
 
       const scheduleResults = await Promise.all(
         data.map(async (integration) => {
           try {
-            const schedule = await getIntegrationSchedule(integration.id);
-
             return {
               integrationId: integration.id,
-              schedule,
+              schedule: await getIntegrationSchedule(integration.id),
             };
           } catch {
-            return {
-              integrationId: integration.id,
-              schedule: null,
-            };
+            return { integrationId: integration.id, schedule: null };
           }
         }),
       );
 
       const scheduleMap: Record<number, JobSchedule | null> = {};
-
       scheduleResults.forEach((result) => {
         scheduleMap[result.integrationId] = result.schedule;
       });
-
       setSchedules(scheduleMap);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load integrations.",
-      );
+      setError(loadError instanceof Error ? loadError.message : "Unable to load integrations.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadIntegrations();
+    void loadIntegrations();
   }, []);
 
   const handleTest = async (integration: Integration) => {
+    if (!isAdmin) return;
+
     try {
       setTestingId(integration.id);
-
       const result = await testIntegration(integration.id);
-
       setMessage(result.message);
-
       setMessageType(result.success ? "success" : "error");
     } catch (testError) {
-      setMessage(
-        testError instanceof Error
-          ? testError.message
-          : "Connection test failed.",
-      );
-
+      setMessage(testError instanceof Error ? testError.message : "Connection test failed.");
       setMessageType("error");
     } finally {
       setTestingId(null);
@@ -138,30 +102,22 @@ const Integrations = () => {
   const handleRun = async (integration: Integration) => {
     try {
       setRunningId(integration.id);
-
       const result = await runIntegration(integration.id);
-
       setMessage(
         `${result.sourceFileName ?? "File"} processed successfully. ` +
           `${result.accountsScanned.toLocaleString()} accounts scanned, ` +
           `${result.duplicateGroups.toLocaleString()} duplicate groups found.`,
       );
-
       setMessageType("success");
 
-      const updatedSchedule = await getIntegrationSchedule(integration.id);
-
-      setSchedules((current) => ({
-        ...current,
-        [integration.id]: updatedSchedule,
-      }));
+      try {
+        const updatedSchedule = await getIntegrationSchedule(integration.id);
+        setSchedules((current) => ({ ...current, [integration.id]: updatedSchedule }));
+      } catch {
+        // An integration can be run without a schedule.
+      }
     } catch (runError) {
-      setMessage(
-        runError instanceof Error
-          ? runError.message
-          : "Integration execution failed.",
-      );
-
+      setMessage(runError instanceof Error ? runError.message : "Integration execution failed.");
       setMessageType("error");
     } finally {
       setRunningId(null);
@@ -169,58 +125,29 @@ const Integrations = () => {
   };
 
   const confirmDelete = async () => {
-    if (!deleteTarget) {
-      return;
-    }
+    if (!isAdmin || !deleteTarget) return;
 
     try {
       await deleteIntegration(deleteTarget.id);
-
-      setIntegrations((current) =>
-        current.filter((item) => item.id !== deleteTarget.id),
-      );
-
+      setIntegrations((current) => current.filter((item) => item.id !== deleteTarget.id));
       setSchedules((current) => {
-        const updated = {
-          ...current,
-        };
-
+        const updated = { ...current };
         delete updated[deleteTarget.id];
-
         return updated;
       });
-
       setMessage("Integration deleted successfully.");
-
       setMessageType("success");
     } catch (deleteError) {
-      setMessage(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Unable to delete integration.",
-      );
-
+      setMessage(deleteError instanceof Error ? deleteError.message : "Unable to delete integration.");
       setMessageType("error");
     } finally {
       setDeleteTarget(null);
     }
   };
 
-  const handleScheduleSaved = (
-    integrationId: number,
-    schedule: JobSchedule | null,
-  ) => {
-    setSchedules((current) => ({
-      ...current,
-      [integrationId]: schedule,
-    }));
-
-    setMessage(
-      schedule
-        ? "Schedule saved successfully."
-        : "Schedule deleted successfully.",
-    );
-
+  const handleScheduleSaved = (integrationId: number, schedule: JobSchedule | null) => {
+    setSchedules((current) => ({ ...current, [integrationId]: schedule }));
+    setMessage(schedule ? "Schedule saved successfully." : "Schedule deleted successfully.");
     setMessageType("success");
   };
 
@@ -240,37 +167,26 @@ const Integrations = () => {
           <Typography variant="h5" fontWeight={700}>
             File Integrations
           </Typography>
-
           <Typography color="text.secondary" sx={{ mt: 1 }}>
-            Configure reusable file-source connectors for scheduled account
-            ingestion.
+            Run and schedule configured account-source integrations.
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate("/integrations/new")}
-        >
-          Add Integration
-        </Button>
+        {isAdmin && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate("/integrations/new")}
+          >
+            Add Integration
+          </Button>
+        )}
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
       {loading ? (
-        <Box
-          sx={{
-            minHeight: 350,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
+        <Box sx={{ minHeight: 350, display: "flex", justifyContent: "center", alignItems: "center" }}>
           <CircularProgress />
         </Box>
       ) : integrations.length === 0 ? (
@@ -280,21 +196,15 @@ const Integrations = () => {
           {integrations.map((integration) => (
             <Grid
               key={integration.id}
-              size={{
-                xs: 12,
-                md: 6,
-                xl: 4,
-              }}
-              sx={{
-                minWidth: 0,
-                display: "flex",
-              }}
+              size={{ xs: 12, md: 6, xl: 4 }}
+              sx={{ minWidth: 0, display: "flex" }}
             >
               <IntegrationCard
                 integration={integration}
                 schedule={schedules[integration.id]}
                 testing={testingId === integration.id}
                 running={runningId === integration.id}
+                canManage={isAdmin}
                 onRun={handleRun}
                 onTest={handleTest}
                 onSchedule={setScheduleTarget}
@@ -313,6 +223,7 @@ const Integrations = () => {
         onClose={() => setScheduleTarget(null)}
         onSaved={handleScheduleSaved}
       />
+
       <ExecutionHistoryDrawer
         open={Boolean(historyTarget)}
         integration={historyTarget}
@@ -320,30 +231,22 @@ const Integrations = () => {
         onClose={() => setHistoryTarget(null)}
       />
 
-      <Dialog
-        open={Boolean(deleteTarget)}
-        onClose={() => setDeleteTarget(null)}
-      >
-        <DialogTitle>Delete Integration</DialogTitle>
+      {isAdmin && (
+        <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
+          <DialogTitle>Delete Integration</DialogTitle>
+          <DialogContent>
+            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>?
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button color="error" variant="contained" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
-        <DialogContent>
-          Are you sure you want to delete <strong>{deleteTarget?.name}</strong>?
-        </DialogContent>
-
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-
-          <Button color="error" variant="contained" onClick={confirmDelete}>
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Snackbar
-        open={Boolean(message)}
-        autoHideDuration={5000}
-        onClose={() => setMessage("")}
-      >
+      <Snackbar open={Boolean(message)} autoHideDuration={5000} onClose={() => setMessage("")}>
         <Alert
           severity={messageType}
           onClose={() => setMessage("")}
