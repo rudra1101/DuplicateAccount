@@ -33,7 +33,15 @@ import {
 
 const Integrations = () => {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { hasPermission } = useAuth();
+
+  const canCreate = hasPermission("integration.create");
+  const canRun = hasPermission("integration.run");
+  const canSchedule = hasPermission("integration.schedule");
+  const canViewHistory = hasPermission("integration.view");
+  const canTest = hasPermission("integration.test");
+  const canEdit = hasPermission("integration.edit");
+  const canDelete = hasPermission("integration.delete");
 
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [schedules, setSchedules] = useState<Record<number, JobSchedule | null>>({});
@@ -54,24 +62,26 @@ const Integrations = () => {
       const data = await getIntegrations();
       setIntegrations(data);
 
-      const scheduleResults = await Promise.all(
-        data.map(async (integration) => {
-          try {
-            return {
-              integrationId: integration.id,
-              schedule: await getIntegrationSchedule(integration.id),
-            };
-          } catch {
-            return { integrationId: integration.id, schedule: null };
-          }
-        }),
-      );
+      if (canSchedule) {
+        const scheduleResults = await Promise.all(
+          data.map(async (integration) => {
+            try {
+              return {
+                integrationId: integration.id,
+                schedule: await getIntegrationSchedule(integration.id),
+              };
+            } catch {
+              return { integrationId: integration.id, schedule: null };
+            }
+          }),
+        );
 
-      const scheduleMap: Record<number, JobSchedule | null> = {};
-      scheduleResults.forEach((result) => {
-        scheduleMap[result.integrationId] = result.schedule;
-      });
-      setSchedules(scheduleMap);
+        const scheduleMap: Record<number, JobSchedule | null> = {};
+        scheduleResults.forEach((result) => {
+          scheduleMap[result.integrationId] = result.schedule;
+        });
+        setSchedules(scheduleMap);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load integrations.");
     } finally {
@@ -84,8 +94,7 @@ const Integrations = () => {
   }, []);
 
   const handleTest = async (integration: Integration) => {
-    if (!isAdmin) return;
-
+    if (!canTest) return;
     try {
       setTestingId(integration.id);
       const result = await testIntegration(integration.id);
@@ -100,6 +109,7 @@ const Integrations = () => {
   };
 
   const handleRun = async (integration: Integration) => {
+    if (!canRun) return;
     try {
       setRunningId(integration.id);
       const result = await runIntegration(integration.id);
@@ -110,11 +120,13 @@ const Integrations = () => {
       );
       setMessageType("success");
 
-      try {
-        const updatedSchedule = await getIntegrationSchedule(integration.id);
-        setSchedules((current) => ({ ...current, [integration.id]: updatedSchedule }));
-      } catch {
-        // An integration can be run without a schedule.
+      if (canSchedule) {
+        try {
+          const updatedSchedule = await getIntegrationSchedule(integration.id);
+          setSchedules((current) => ({ ...current, [integration.id]: updatedSchedule }));
+        } catch {
+          // An integration can be run without a schedule.
+        }
       }
     } catch (runError) {
       setMessage(runError instanceof Error ? runError.message : "Integration execution failed.");
@@ -125,8 +137,7 @@ const Integrations = () => {
   };
 
   const confirmDelete = async () => {
-    if (!isAdmin || !deleteTarget) return;
-
+    if (!canDelete || !deleteTarget) return;
     try {
       await deleteIntegration(deleteTarget.id);
       setIntegrations((current) => current.filter((item) => item.id !== deleteTarget.id));
@@ -153,31 +164,16 @@ const Integrations = () => {
 
   return (
     <PageContainer title="Integrations">
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          flexWrap: "wrap",
-          gap: 2,
-          mb: 4,
-        }}
-      >
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 2, mb: 4 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            File Integrations
-          </Typography>
+          <Typography variant="h5" fontWeight={700}>File Integrations</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
             Run and schedule configured account-source integrations.
           </Typography>
         </Box>
 
-        {isAdmin && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => navigate("/integrations/new")}
-          >
+        {canCreate && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate("/integrations/new")}>
             Add Integration
           </Button>
         )}
@@ -194,17 +190,18 @@ const Integrations = () => {
       ) : (
         <Grid container spacing={3}>
           {integrations.map((integration) => (
-            <Grid
-              key={integration.id}
-              size={{ xs: 12, md: 6, xl: 4 }}
-              sx={{ minWidth: 0, display: "flex" }}
-            >
+            <Grid key={integration.id} size={{ xs: 12, md: 6, xl: 4 }} sx={{ minWidth: 0, display: "flex" }}>
               <IntegrationCard
                 integration={integration}
                 schedule={schedules[integration.id]}
                 testing={testingId === integration.id}
                 running={runningId === integration.id}
-                canManage={isAdmin}
+                canRun={canRun}
+                canSchedule={canSchedule}
+                canViewHistory={canViewHistory}
+                canTest={canTest}
+                canEdit={canEdit}
+                canDelete={canDelete}
                 onRun={handleRun}
                 onTest={handleTest}
                 onSchedule={setScheduleTarget}
@@ -217,21 +214,25 @@ const Integrations = () => {
         </Grid>
       )}
 
-      <ScheduleDialog
-        open={Boolean(scheduleTarget)}
-        integration={scheduleTarget}
-        onClose={() => setScheduleTarget(null)}
-        onSaved={handleScheduleSaved}
-      />
+      {canSchedule && (
+        <ScheduleDialog
+          open={Boolean(scheduleTarget)}
+          integration={scheduleTarget}
+          onClose={() => setScheduleTarget(null)}
+          onSaved={handleScheduleSaved}
+        />
+      )}
 
-      <ExecutionHistoryDrawer
-        open={Boolean(historyTarget)}
-        integration={historyTarget}
-        schedule={historyTarget ? schedules[historyTarget.id] : null}
-        onClose={() => setHistoryTarget(null)}
-      />
+      {canViewHistory && (
+        <ExecutionHistoryDrawer
+          open={Boolean(historyTarget)}
+          integration={historyTarget}
+          schedule={historyTarget ? schedules[historyTarget.id] : null}
+          onClose={() => setHistoryTarget(null)}
+        />
+      )}
 
-      {isAdmin && (
+      {canDelete && (
         <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
           <DialogTitle>Delete Integration</DialogTitle>
           <DialogContent>
@@ -239,19 +240,13 @@ const Integrations = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button color="error" variant="contained" onClick={confirmDelete}>
-              Delete
-            </Button>
+            <Button color="error" variant="contained" onClick={confirmDelete}>Delete</Button>
           </DialogActions>
         </Dialog>
       )}
 
       <Snackbar open={Boolean(message)} autoHideDuration={5000} onClose={() => setMessage("")}>
-        <Alert
-          severity={messageType}
-          onClose={() => setMessage("")}
-          variant="filled"
-        >
+        <Alert severity={messageType} onClose={() => setMessage("")} variant="filled">
           {message}
         </Alert>
       </Snackbar>
