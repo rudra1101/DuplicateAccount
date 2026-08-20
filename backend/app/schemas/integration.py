@@ -44,6 +44,16 @@ class IntegrationUpdate(BaseModel):
     enabled: bool | None = None
 
 
+class SchemaDetectionRequest(BaseModel):
+    connectorType: str = Field(
+        min_length=2,
+        max_length=50,
+    )
+    configuration: dict[str, Any] = Field(
+        default_factory=dict,
+    )
+
+
 class IntegrationResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True
