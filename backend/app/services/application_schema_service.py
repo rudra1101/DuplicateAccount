@@ -8,6 +8,7 @@ from app.db_models.application_schema import ApplicationSchemaRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.schema_attribute import SchemaAttributeRecord
 from app.schemas.application_schema import IntegrationApplicationsPayload
+from app.services.matching_policy_service import generate_matching_policy
 
 
 def _attribute_to_dict(attribute: SchemaAttributeRecord) -> dict:
@@ -19,6 +20,8 @@ def _attribute_to_dict(attribute: SchemaAttributeRecord) -> dict:
         "required": attribute.required,
         "multiValued": attribute.multi_valued,
         "position": attribute.position,
+        # Internal duplicate-detection settings are returned for backend/admin
+        # compatibility, but the integration UI no longer exposes them.
         "useForMatching": attribute.use_for_matching,
         "matchType": attribute.match_type,
         "matchWeight": attribute.match_weight,
@@ -73,6 +76,25 @@ def get_applications_for_integration(
     return [_application_to_dict(item) for item in applications]
 
 
+def _schema_input_for_policy(app_input) -> list[dict]:
+    """Convert an application schema into the policy engine's input shape.
+
+    Matching fields received from the client are intentionally ignored. The
+    backend owns selection, comparison method, normalization and weighting.
+    """
+    return [
+        {
+            "name": attribute.name,
+            "displayName": attribute.displayName,
+            "dataType": attribute.dataType,
+            "required": attribute.required,
+            "multiValued": attribute.multiValued,
+            "position": attribute.position if attribute.position is not None else index,
+        }
+        for index, attribute in enumerate(app_input.attributes)
+    ]
+
+
 def replace_integration_applications(
     db: Session,
     integration: IntegrationRecord,
@@ -87,8 +109,6 @@ def replace_integration_applications(
     for item in existing:
         db.delete(item)
     db.flush()
-
-    created: list[ApplicationRecord] = []
 
     for app_input in payload.applications:
         application = ApplicationRecord(
@@ -110,7 +130,19 @@ def replace_integration_applications(
         db.add(schema)
         db.flush()
 
+        # Internal policy generation happens automatically. The application
+        # integrator supplies only the source schema; no manual weights or
+        # comparison rules are required from the UI.
+        policy = generate_matching_policy(_schema_input_for_policy(app_input))
+        policy_attributes = policy.get("attributes", [])
+
         for position, attribute_input in enumerate(app_input.attributes):
+            generated = (
+                policy_attributes[position]
+                if position < len(policy_attributes)
+                else {}
+            )
+
             attribute = SchemaAttributeRecord(
                 schema_id=schema.id,
                 name=attribute_input.name,
@@ -118,15 +150,19 @@ def replace_integration_applications(
                 data_type=attribute_input.dataType,
                 required=attribute_input.required,
                 multi_valued=attribute_input.multiValued,
-                position=attribute_input.position or position,
-                use_for_matching=attribute_input.useForMatching,
-                match_type=attribute_input.matchType,
-                match_weight=attribute_input.matchWeight,
-                normalization_type=attribute_input.normalizationType,
+                position=(
+                    attribute_input.position
+                    if attribute_input.position is not None
+                    else position
+                ),
+                use_for_matching=bool(generated.get("useForMatching", False)),
+                match_type=str(generated.get("matchType") or "NONE"),
+                match_weight=float(generated.get("matchWeight") or 0.0),
+                normalization_type=str(
+                    generated.get("normalizationType") or "NONE"
+                ),
             )
             db.add(attribute)
-
-        created.append(application)
 
     db.commit()
     return get_applications_for_integration(db, integration.id)
