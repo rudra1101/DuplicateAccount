@@ -16,6 +16,7 @@ from app.api.health import router as health_router
 from app.api.integrations import router as integrations_router
 from app.api.job_schedules import router as job_schedules_router
 from app.api.knowledge import router as knowledge_router
+from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
 from app.api.review import router as review_router
@@ -80,6 +81,7 @@ app.include_router(review_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(application_schemas_router, prefix="/api")
+app.include_router(matching_policy_router, prefix="/api")
 app.include_router(job_schedules_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
