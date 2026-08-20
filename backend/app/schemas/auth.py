@@ -1,9 +1,4 @@
-from typing import Literal
-
 from pydantic import BaseModel, EmailStr, Field
-
-
-Role = Literal["ADMIN", "USER"]
 
 
 class LoginRequest(BaseModel):
@@ -16,7 +11,8 @@ class UserResponse(BaseModel):
     username: str
     email: str
     fullName: str
-    role: Role
+    role: str
+    permissions: list[str] = []
     isActive: bool
 
 
@@ -29,4 +25,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     fullName: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=12, max_length=1024)
-    role: Role
+    role: str = Field(min_length=1, max_length=100)
+
+
+class UserRoleUpdate(BaseModel):
+    role: str = Field(min_length=1, max_length=100)
