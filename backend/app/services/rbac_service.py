@@ -38,7 +38,8 @@ PERMISSIONS = [
 DEFAULT_ROLE_PERMISSIONS = {
     "OWNER": "ALL",
     "ADMIN": {
-        code for code, _, _ in PERMISSIONS if not code.startswith("role.")
+        *{code for code, _, _ in PERMISSIONS if not code.startswith("role.")},
+        "role.view",
     },
     "USER": {
         "dashboard.view",
