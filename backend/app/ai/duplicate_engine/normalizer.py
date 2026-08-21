@@ -14,6 +14,9 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "id",
         "native_identity",
         "nativeIdentity",
+        "object_id",
+        "objectId",
+        "uuid",
     ),
     "application": (
         "application",
@@ -21,6 +24,9 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "applicationName",
         "source",
         "source_name",
+        "sourceName",
+        "system",
+        "app",
     ),
     "username": (
         "username",
@@ -31,6 +37,11 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "sam_account_name",
         "sAMAccountName",
         "samAccountName",
+        "userPrincipalName",
+        "upn",
+        "uid",
+        "login",
+        "loginName",
     ),
     "display_name": (
         "display_name",
@@ -38,6 +49,8 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "name",
         "full_name",
         "fullName",
+        "commonName",
+        "cn",
     ),
     "first_name": (
         "first_name",
@@ -58,6 +71,8 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "mail",
         "email_address",
         "emailAddress",
+        "workEmail",
+        "primaryEmail",
         "userPrincipalName",
         "upn",
     ),
@@ -65,14 +80,21 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "employee_id",
         "employeeId",
         "employeeID",
+        "employeeNumber",
         "worker_id",
         "workerId",
+        "workerNumber",
+        "person_id",
+        "personId",
         "person_number",
+        "personNumber",
     ),
     "department": (
         "department",
         "department_name",
         "departmentName",
+        "businessUnit",
+        "orgUnit",
     ),
     "manager": (
         "manager",
@@ -105,6 +127,7 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "status",
         "account_status",
         "accountStatus",
+        "state",
         "enabled",
         "active",
     ),
@@ -112,19 +135,110 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "created_at",
         "createdAt",
         "created",
+        "createdDate",
+        "whenCreated",
         "creation_date",
         "creationDate",
     ),
 }
 
 
+def _canonical_field_name(value: Any) -> str:
+    return re.sub(
+        r"[^a-z0-9]",
+        "",
+        str(value or "").strip().lower(),
+    )
+
+
+def _flatten_source_attributes(
+    values: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> dict[str, Any]:
+    """Flatten nested source data without losing the original leaf names."""
+    flattened: dict[str, Any] = {}
+
+    for key, value in values.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+
+        dotted_key = (
+            f"{prefix}.{key_text}"
+            if prefix
+            else key_text
+        )
+
+        if isinstance(value, dict):
+            nested = _flatten_source_attributes(
+                value,
+                prefix=dotted_key,
+            )
+            flattened.update(nested)
+            continue
+
+        flattened[dotted_key] = value
+        # Also expose the leaf key. This lets attributes such as
+        # attributes.employeeNumber match employeeNumber aliases.
+        flattened.setdefault(key_text, value)
+
+    return flattened
+
+
+def build_attribute_view(
+    account: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Build the detector's attribute view from both legacy fields and the
+    complete source payload. Legacy/model fields win when both are present.
+    """
+    source_values: dict[str, Any] = {}
+
+    raw_attributes = account.get("rawAttributes")
+    if isinstance(raw_attributes, dict):
+        source_values.update(
+            _flatten_source_attributes(raw_attributes)
+        )
+
+    raw_attributes_snake = account.get("raw_attributes")
+    if isinstance(raw_attributes_snake, dict):
+        source_values.update(
+            _flatten_source_attributes(raw_attributes_snake)
+        )
+
+    for key, value in account.items():
+        if key in {"rawAttributes", "raw_attributes"}:
+            continue
+        if value is not None and str(value).strip():
+            source_values[key] = value
+
+    return source_values
+
+
 def get_first_value(
     account: dict[str, Any],
     aliases: tuple[str, ...],
 ) -> Any:
+    # First preserve explicit/exact source naming.
     for alias in aliases:
         value = account.get(alias)
+        if value is not None and str(value).strip():
+            return value
 
+    # Then match schema attributes independent of punctuation/case/style,
+    # e.g. employee_number, employeeNumber and Employee Number.
+    normalized_values = {
+        _canonical_field_name(key): value
+        for key, value in account.items()
+        if value is not None
+        and str(value).strip()
+    }
+
+    for alias in aliases:
+        value = normalized_values.get(
+            _canonical_field_name(alias)
+        )
         if value is not None:
             return value
 
@@ -286,44 +400,46 @@ def derive_names(
 def normalize_account(
     account: dict[str, Any],
 ) -> NormalizedAccount:
+    attribute_view = build_attribute_view(account)
+
     account_id = normalize_identifier(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["account_id"],
         )
     )
 
     application = normalize_text(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["application"],
         )
     )
 
     username = normalize_identifier(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["username"],
         )
     )
 
     display_name = normalize_name(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["display_name"],
         )
     )
 
     first_name = normalize_name(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["first_name"],
         )
     )
 
     last_name = normalize_name(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["last_name"],
         )
     )
@@ -336,7 +452,7 @@ def normalize_account(
 
     email = normalize_identifier(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["email"],
         )
     )
@@ -347,55 +463,55 @@ def normalize_account(
 
     employee_id = normalize_identifier(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["employee_id"],
         )
     )
 
     department = normalize_text(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["department"],
         )
     )
 
     manager = normalize_name(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["manager"],
         )
     )
 
     job_title = normalize_text(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["job_title"],
         )
     )
 
     phone = normalize_phone(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["phone"],
         )
     )
 
     location = normalize_text(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["location"],
         )
     )
 
     status = normalize_status(
         get_first_value(
-            account,
+            attribute_view,
             FIELD_ALIASES["status"],
         )
     )
 
     created_value = get_first_value(
-        account,
+        attribute_view,
         FIELD_ALIASES["created_at"],
     )
 
