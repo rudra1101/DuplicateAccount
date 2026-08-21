@@ -1,0 +1,8 @@
+{
+  "service": {"key":"knowledge","name":"Knowledge Base","description":"Knowledge-base access and management","category":"Knowledge","route":"/knowledge","icon":"knowledge","enabled":true,"sortOrder":90},
+  "permissions": [
+    {"code":"knowledge.view","name":"View knowledge base"},
+    {"code":"knowledge.manage","name":"Manage knowledge base"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["knowledge.view"]}
+}
