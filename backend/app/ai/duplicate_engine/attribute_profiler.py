@@ -61,6 +61,17 @@ LEGACY_HANDLED_FIELDS = {
 }
 LEGACY_HANDLED_CANONICAL = {_canonical_name(value) for value in LEGACY_HANDLED_FIELDS}
 
+_BOOLEAN_VALUES = {
+    "true", "false", "0", "1", "yes", "no", "y", "n", "enabled", "disabled",
+}
+
+_ISO_DATE_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}(?:[t\s].*)?$",
+    re.IGNORECASE,
+)
+
+_EPOCH_PATTERN = re.compile(r"^\d{10,13}$")
+
 
 def _is_scalar(value: Any) -> bool:
     return isinstance(value, (str, int, float, bool))
@@ -73,7 +84,13 @@ def _clean_value(value: Any) -> str:
 
 
 def classify_attribute(name: str) -> AttributeCategory:
+    """Classify from field semantics before looking at value shape.
+
+    Ordering matters: lifecycleState.stateName should be STATUS, not NAME,
+    and lastRefresh should be DATE rather than UNKNOWN.
+    """
     key = _canonical_name(name.split(".")[-1])
+    full_key = _canonical_name(name)
 
     source_keys = {
         "id", "accountid", "nativeidentity", "objectid", "uuid", "guid",
@@ -86,41 +103,72 @@ def classify_attribute(name: str) -> AttributeCategory:
         "accountname", "uid", "upn",
     )
     contact_tokens = ("email", "mail", "phone", "mobile", "telephone")
-    name_tokens = (
-        "displayname", "fullname", "firstname", "lastname", "givenname",
-        "surname", "commonname", "preferredname", "name",
+    status_tokens = (
+        "status", "state", "enabled", "active", "inactive", "lifecycle",
+        "disabled", "locked", "managerflag", "ismanager",
+    )
+    date_tokens = (
+        "created", "updated", "modified", "timestamp", "date", "time",
+        "lastlogin", "lastlogon", "whencreated", "whenchanged", "refresh",
+        "synced", "sync", "lastseen", "lastaccess", "lastupdate",
+    )
+    technical_tokens = (
+        "dn", "distinguishedname", "objectclass", "etag", "hash", "checksum",
+        "version", "schema", "metadata", "tenant", "sourceid", "requestid",
     )
     org_tokens = (
         "department", "manager", "title", "designation", "location",
         "office", "businessunit", "orgunit", "costcenter", "company",
     )
-    status_tokens = ("status", "state", "enabled", "active", "lifecycle")
-    date_tokens = (
-        "created", "updated", "modified", "timestamp", "date", "time",
-        "lastlogin", "lastlogon", "whencreated", "whenchanged",
-    )
-    technical_tokens = (
-        "dn", "distinguishedname", "objectclass", "etag", "hash", "checksum",
-        "version", "schema", "metadata", "tenant", "sourceid",
+    name_tokens = (
+        "displayname", "fullname", "firstname", "lastname", "givenname",
+        "surname", "commonname", "preferredname", "name",
     )
 
     if key in source_keys or key.endswith("guid") or key.endswith("uuid"):
         return AttributeCategory.SOURCE_KEY
+    if any(token in full_key for token in technical_tokens):
+        return AttributeCategory.TECHNICAL
+    if any(token in full_key for token in date_tokens):
+        return AttributeCategory.DATE
+    if any(token in full_key for token in status_tokens):
+        return AttributeCategory.STATUS
     if any(token in key for token in contact_tokens):
         return AttributeCategory.CONTACT
     if any(token in key for token in identifier_tokens):
         return AttributeCategory.IDENTIFIER
-    if any(token == key or key.endswith(token) for token in name_tokens):
-        return AttributeCategory.NAME
     if any(token in key for token in org_tokens):
         return AttributeCategory.ORGANIZATIONAL
-    if any(token in key for token in status_tokens):
-        return AttributeCategory.STATUS
-    if any(token in key for token in date_tokens):
-        return AttributeCategory.DATE
-    if any(token in key for token in technical_tokens):
-        return AttributeCategory.TECHNICAL
+    if any(token == key or key.endswith(token) for token in name_tokens):
+        return AttributeCategory.NAME
     return AttributeCategory.UNKNOWN
+
+
+def _refine_category_from_values(
+    category: AttributeCategory,
+    values: list[str],
+) -> AttributeCategory:
+    """Reject common false-positive identity attributes using value shape."""
+    if not values:
+        return category
+
+    sampled = values[:100]
+    lowered = [value.strip().lower() for value in sampled if value.strip()]
+    if not lowered:
+        return category
+
+    boolean_ratio = sum(value in _BOOLEAN_VALUES for value in lowered) / len(lowered)
+    if boolean_ratio >= 0.95:
+        return AttributeCategory.STATUS
+
+    date_ratio = sum(
+        bool(_ISO_DATE_PATTERN.match(value) or _EPOCH_PATTERN.match(value))
+        for value in lowered
+    ) / len(lowered)
+    if date_ratio >= 0.90:
+        return AttributeCategory.DATE
+
+    return category
 
 
 def _category_factor(category: AttributeCategory) -> float:
@@ -129,9 +177,9 @@ def _category_factor(category: AttributeCategory) -> float:
         AttributeCategory.CONTACT: 0.95,
         AttributeCategory.NAME: 0.82,
         AttributeCategory.ORGANIZATIONAL: 0.45,
-        AttributeCategory.UNKNOWN: 0.30,
-        AttributeCategory.STATUS: 0.08,
-        AttributeCategory.DATE: 0.03,
+        AttributeCategory.UNKNOWN: 0.22,
+        AttributeCategory.STATUS: 0.05,
+        AttributeCategory.DATE: 0.0,
         AttributeCategory.SOURCE_KEY: 0.0,
         AttributeCategory.TECHNICAL: 0.0,
     }[category]
@@ -162,7 +210,10 @@ def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[At
         cardinality = len(counts)
         coverage = non_empty_count / total_accounts
         uniqueness = cardinality / non_empty_count
-        category = classify_attribute(name)
+        category = _refine_category_from_values(
+            classify_attribute(name),
+            values,
+        )
         leaf_canonical = _canonical_name(name.split(".")[-1])
 
         selectivity = max(0.0, min(1.0, uniqueness))
@@ -175,21 +226,37 @@ def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[At
         )
 
         repeated_values = sum(1 for count in counts.values() if count > 1)
+        largest_bucket = max(counts.values()) if counts else 0
+        largest_bucket_ratio = largest_bucket / non_empty_count if non_empty_count else 0.0
         already_handled = leaf_canonical in LEGACY_HANDLED_CANONICAL
+
+        # Low-cardinality flags/status fields and very broad buckets are poor
+        # blocking keys: they create many unrelated pairs and drown out useful
+        # identity evidence. UNKNOWN fields are accepted only with stronger
+        # selectivity because their semantics are not understood yet.
+        category_allowed = category in {
+            AttributeCategory.IDENTIFIER,
+            AttributeCategory.CONTACT,
+            AttributeCategory.NAME,
+            AttributeCategory.ORGANIZATIONAL,
+            AttributeCategory.UNKNOWN,
+        }
+        minimum_cardinality = 2 if category in {
+            AttributeCategory.IDENTIFIER,
+            AttributeCategory.CONTACT,
+            AttributeCategory.NAME,
+        } else 4
+        maximum_bucket_ratio = 0.35 if category == AttributeCategory.UNKNOWN else 0.50
+        minimum_usefulness = 18.0 if category == AttributeCategory.UNKNOWN else 12.0
+
         blocking_eligible = (
             not already_handled
-            and category
-            in {
-                AttributeCategory.IDENTIFIER,
-                AttributeCategory.CONTACT,
-                AttributeCategory.NAME,
-                AttributeCategory.ORGANIZATIONAL,
-                AttributeCategory.UNKNOWN,
-            }
+            and category_allowed
             and coverage >= 0.20
-            and cardinality >= 2
+            and cardinality >= minimum_cardinality
             and repeated_values > 0
-            and usefulness >= 12.0
+            and largest_bucket_ratio <= maximum_bucket_ratio
+            and usefulness >= minimum_usefulness
         )
 
         profiles.append(
