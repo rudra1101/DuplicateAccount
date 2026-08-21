@@ -57,18 +57,26 @@ def seed_rbac(db: Session) -> None:
     for manifest in manifests:
         service = existing_services.get(manifest.key)
         if service is None:
-            service = ServiceRecord(key=manifest.key)
+            service = ServiceRecord(
+                key=manifest.key,
+                name=manifest.name,
+                description=manifest.description,
+                category=manifest.category,
+                route=manifest.route,
+                icon=manifest.icon,
+                enabled=manifest.enabled,
+                sort_order=manifest.sort_order,
+            )
             db.add(service)
-            db.flush()
             existing_services[manifest.key] = service
-
-        service.name = manifest.name
-        service.description = manifest.description
-        service.category = manifest.category
-        service.route = manifest.route
-        service.icon = manifest.icon
-        service.enabled = manifest.enabled
-        service.sort_order = manifest.sort_order
+        else:
+            service.name = manifest.name
+            service.description = manifest.description
+            service.category = manifest.category
+            service.route = manifest.route
+            service.icon = manifest.icon
+            service.enabled = manifest.enabled
+            service.sort_order = manifest.sort_order
 
         for permission_manifest in manifest.permissions:
             permission = existing_permissions.get(permission_manifest.code)
@@ -127,8 +135,8 @@ def seed_rbac(db: Session) -> None:
         if role_name in newly_created_roles:
             codes_to_add = requested_codes
         else:
-            # Preserve admin changes. Only seed defaults for permissions that did
-            # not exist before this deployment.
+            # Preserve administrator changes. Only seed defaults for permissions
+            # that did not exist before this deployment.
             codes_to_add = requested_codes & newly_created_permission_codes
 
         for code in sorted(codes_to_add - current_codes):
