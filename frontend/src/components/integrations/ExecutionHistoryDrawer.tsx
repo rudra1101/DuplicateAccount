@@ -1,6 +1,7 @@
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Divider,
@@ -18,6 +19,7 @@ import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import WarningAmberOutlinedIcon from "@mui/icons-material/WarningAmberOutlined";
 import TimerOutlinedIcon from "@mui/icons-material/TimerOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 
 import {
   useEffect,
@@ -35,6 +37,7 @@ import {
 import {
   formatDateTime,
 } from "../../utils/dateTime";
+import ScanAccountsDrawer from "./ScanAccountsDrawer";
 
 interface Props {
   open: boolean;
@@ -129,11 +132,13 @@ function calculateDuration(
 interface ExecutionItemProps {
   execution: IntegrationExecution;
   timezone: string;
+  onViewAccounts: (scanId: number) => void;
 }
 
 const ExecutionItem = ({
   execution,
   timezone,
+  onViewAccounts,
 }: ExecutionItemProps) => {
   const duration = calculateDuration(
     execution.startedAt,
@@ -303,6 +308,18 @@ const ExecutionItem = ({
           </Stack>
         </Stack>
 
+        {execution.scanId && execution.status === "COMPLETED" && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<VisibilityOutlinedIcon />}
+            onClick={() => onViewAccounts(execution.scanId as number)}
+            sx={{ alignSelf: "flex-start" }}
+          >
+            View Scanned Accounts
+          </Button>
+        )}
+
         {execution.errorMessage && (
           <Alert severity="error">
             {execution.errorMessage}
@@ -360,6 +377,9 @@ const ExecutionHistoryDrawer = ({
 
   const [error, setError] =
     useState("");
+
+  const [selectedScanId, setSelectedScanId] =
+    useState<number | null>(null);
 
   const timezone =
     schedule?.timezone ||
@@ -442,180 +462,190 @@ const ExecutionHistoryDrawer = ({
     if (!open) {
       setExecutions([]);
       setError("");
+      setSelectedScanId(null);
     }
   }, [open, integration?.id]);
 
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={onClose}
-      slotProps={{
-        paper: {
-          sx: {
-            width: {
-              xs: "100%",
-              sm: 520,
+    <>
+      <Drawer
+        anchor="right"
+        open={open}
+        onClose={onClose}
+        slotProps={{
+          paper: {
+            sx: {
+              width: {
+                xs: "100%",
+                sm: 520,
+              },
             },
           },
-        },
-      }}
-    >
-      <Box
-        sx={{
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
         }}
       >
         <Box
           sx={{
-            px: 3,
-            py: 2.5,
-            borderBottom: 1,
-            borderColor: "divider",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          <Stack
-            direction="row"
-            justifyContent="space-between"
-            alignItems="flex-start"
-            spacing={2}
+          <Box
+            sx={{
+              px: 3,
+              py: 2.5,
+              borderBottom: 1,
+              borderColor: "divider",
+            }}
           >
-            <Box>
-              <Typography
-                variant="h6"
-                fontWeight={700}
-              >
-                Execution History
-              </Typography>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="flex-start"
+              spacing={2}
+            >
+              <Box>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  Execution History
+                </Typography>
 
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
-              >
-                {integration?.name ||
-                  "Integration"}
-              </Typography>
-            </Box>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 0.5 }}
+                >
+                  {integration?.name ||
+                    "Integration"}
+                </Typography>
+              </Box>
 
-            <Stack direction="row">
-              <Tooltip title="Refresh">
-                <span>
-                  <IconButton
-                    onClick={() =>
-                      loadExecutions(true)
-                    }
-                    disabled={
-                      loading || refreshing
-                    }
-                  >
-                    {refreshing ? (
-                      <CircularProgress
-                        size={20}
-                      />
-                    ) : (
-                      <RefreshIcon />
-                    )}
-                  </IconButton>
-                </span>
-              </Tooltip>
+              <Stack direction="row">
+                <Tooltip title="Refresh">
+                  <span>
+                    <IconButton
+                      onClick={() =>
+                        loadExecutions(true)
+                      }
+                      disabled={
+                        loading || refreshing
+                      }
+                    >
+                      {refreshing ? (
+                        <CircularProgress
+                          size={20}
+                        />
+                      ) : (
+                        <RefreshIcon />
+                      )}
+                    </IconButton>
+                  </span>
+                </Tooltip>
 
-              <IconButton onClick={onClose}>
-                <CloseIcon />
-              </IconButton>
+                <IconButton onClick={onClose}>
+                  <CloseIcon />
+                </IconButton>
+              </Stack>
             </Stack>
-          </Stack>
 
-          <Stack
-            direction="row"
-            spacing={1}
-            useFlexGap
-            flexWrap="wrap"
-            sx={{ mt: 2 }}
-          >
-            <Chip
-              size="small"
-              color="success"
-              variant="outlined"
-              label={`${summary.completed} completed`}
-            />
-
-            <Chip
-              size="small"
-              color="error"
-              variant="outlined"
-              label={`${summary.failed} failed`}
-            />
-
-            {summary.running > 0 && (
+            <Stack
+              direction="row"
+              spacing={1}
+              useFlexGap
+              flexWrap="wrap"
+              sx={{ mt: 2 }}
+            >
               <Chip
                 size="small"
-                color="info"
+                color="success"
                 variant="outlined"
-                label={`${summary.running} running`}
+                label={`${summary.completed} completed`}
               />
+
+              <Chip
+                size="small"
+                color="error"
+                variant="outlined"
+                label={`${summary.failed} failed`}
+              />
+
+              {summary.running > 0 && (
+                <Chip
+                  size="small"
+                  color="info"
+                  variant="outlined"
+                  label={`${summary.running} running`}
+                />
+              )}
+
+              <Chip
+                size="small"
+                variant="outlined"
+                label={timezone}
+              />
+            </Stack>
+          </Box>
+
+          <Box
+            sx={{
+              flex: 1,
+              overflowY: "auto",
+              p: 3,
+            }}
+          >
+            {error && (
+              <Alert
+                severity="error"
+                sx={{ mb: 2 }}
+              >
+                {error}
+              </Alert>
             )}
 
-            <Chip
-              size="small"
-              variant="outlined"
-              label={timezone}
-            />
-          </Stack>
+            {loading ? (
+              <Box
+                sx={{
+                  minHeight: 300,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <CircularProgress />
+              </Box>
+            ) : executions.length === 0 ? (
+              <Alert severity="info">
+                No executions are available for
+                this integration.
+              </Alert>
+            ) : (
+              <Stack spacing={2}>
+                {executions.map(
+                  (execution) => (
+                    <ExecutionItem
+                      key={
+                        execution.executionId
+                      }
+                      execution={execution}
+                      timezone={timezone}
+                      onViewAccounts={setSelectedScanId}
+                    />
+                  )
+                )}
+              </Stack>
+            )}
+          </Box>
         </Box>
+      </Drawer>
 
-        <Box
-          sx={{
-            flex: 1,
-            overflowY: "auto",
-            p: 3,
-          }}
-        >
-          {error && (
-            <Alert
-              severity="error"
-              sx={{ mb: 2 }}
-            >
-              {error}
-            </Alert>
-          )}
-
-          {loading ? (
-            <Box
-              sx={{
-                minHeight: 300,
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-              }}
-            >
-              <CircularProgress />
-            </Box>
-          ) : executions.length === 0 ? (
-            <Alert severity="info">
-              No executions are available for
-              this integration.
-            </Alert>
-          ) : (
-            <Stack spacing={2}>
-              {executions.map(
-                (execution) => (
-                  <ExecutionItem
-                    key={
-                      execution.executionId
-                    }
-                    execution={execution}
-                    timezone={timezone}
-                  />
-                )
-              )}
-            </Stack>
-          )}
-        </Box>
-      </Box>
-    </Drawer>
+      <ScanAccountsDrawer
+        open={selectedScanId !== null}
+        scanId={selectedScanId}
+        onClose={() => setSelectedScanId(null)}
+      />
+    </>
   );
 };
 
