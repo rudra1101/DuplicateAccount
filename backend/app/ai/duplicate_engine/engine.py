@@ -17,7 +17,11 @@ from app.ai.duplicate_engine.explanation_engine import build_explanation
 from app.ai.duplicate_engine.feature_extractor import extract_features
 from app.ai.duplicate_engine.hybrid_score import calculate_hybrid_score, classify_confidence
 from app.ai.duplicate_engine.normalizer import normalize_account
-from app.ai.duplicate_engine.types import DuplicatePrediction, NormalizedAccount
+from app.ai.duplicate_engine.types import (
+    DuplicatePrediction,
+    MatchReason,
+    NormalizedAccount,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -83,17 +87,7 @@ class DuplicateDetectionEngine:
 
         if features.dynamic_matched_attributes:
             reasons.append(
-                type(reasons[0])(
-                    field="dynamicSourceAttributes",
-                    message=(
-                        "Matching profiled source attributes: "
-                        + ", ".join(features.dynamic_matched_attributes[:5])
-                    ),
-                    impact="positive",
-                    similarity=1.0,
-                )
-                if reasons
-                else __import__("app.ai.duplicate_engine.types", fromlist=["MatchReason"]).MatchReason(
+                MatchReason(
                     field="dynamicSourceAttributes",
                     message=(
                         "Matching profiled source attributes: "
@@ -105,7 +99,7 @@ class DuplicateDetectionEngine:
             )
         if features.dynamic_conflicting_attributes:
             warnings.append(
-                __import__("app.ai.duplicate_engine.types", fromlist=["MatchReason"]).MatchReason(
+                MatchReason(
                     field="dynamicSourceAttributes",
                     message=(
                         "Conflicting strong source attributes: "
