@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class Account(BaseModel):
@@ -10,7 +12,7 @@ class Account(BaseModel):
 
     displayName: str = ""
 
-    email: str
+    email: str = ""
 
     employeeId: str | None = None
 
@@ -21,3 +23,7 @@ class Account(BaseModel):
     status: str | None = None
 
     created: str | None = None
+
+    # Preserve the original source payload so schema-driven/AI matching can
+    # evaluate attributes that are not part of the legacy account model.
+    rawAttributes: dict[str, Any] = Field(default_factory=dict)
