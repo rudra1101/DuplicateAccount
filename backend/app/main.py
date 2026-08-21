@@ -56,6 +56,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Authentication is registered first so CORSMiddleware becomes the outermost
+# middleware. This ensures even early 401/403 responses from authentication
+# include the required Access-Control-Allow-Origin header for the frontend.
+app.middleware("http")(authentication_middleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -66,8 +71,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.middleware("http")(authentication_middleware)
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
