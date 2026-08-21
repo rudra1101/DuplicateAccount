@@ -298,10 +298,10 @@ def build_explanation(
             MatchReason(
                 field="dataQuality",
                 message=(
-                    "Several comparison fields "
-                    "are missing, reducing confidence."
+                    "Several optional comparison fields are missing; "
+                    "the decision is based on the evidence that is available."
                 ),
-                impact="MEDIUM",
+                impact="INFO",
             )
         )
 
