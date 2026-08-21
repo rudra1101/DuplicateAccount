@@ -21,6 +21,7 @@ import PageContainer from "../../components/common/PageContainer";
 import IntegrationCard from "../../components/integrations/IntegrationCard";
 import ScheduleDialog from "../../components/integrations/ScheduleDialog";
 import ExecutionHistoryDrawer from "../../components/integrations/ExecutionHistoryDrawer";
+import ScanAccountsDrawer from "../../components/integrations/ScanAccountsDrawer";
 import {
   deleteIntegration,
   getIntegrationSchedule,
@@ -52,6 +53,7 @@ const Integrations = () => {
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<Integration | null>(null);
   const [historyTarget, setHistoryTarget] = useState<Integration | null>(null);
+  const [selectedScanId, setSelectedScanId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
@@ -119,6 +121,10 @@ const Integrations = () => {
           `${result.duplicateGroups.toLocaleString()} duplicate groups found.`,
       );
       setMessageType("success");
+
+      if (result.scanId) {
+        setSelectedScanId(result.scanId);
+      }
 
       if (canSchedule) {
         try {
@@ -231,6 +237,12 @@ const Integrations = () => {
           onClose={() => setHistoryTarget(null)}
         />
       )}
+
+      <ScanAccountsDrawer
+        open={selectedScanId !== null}
+        scanId={selectedScanId}
+        onClose={() => setSelectedScanId(null)}
+      />
 
       {canDelete && (
         <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
