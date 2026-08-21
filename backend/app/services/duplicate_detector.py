@@ -443,11 +443,14 @@ def get_grouping_rejection_reason(
     confidence = float(prediction.confidence)
     features = prediction.features
 
-    if confidence < GROUP_LINK_CONFIDENCE:
-        return "BELOW_GROUP_LINK_CONFIDENCE"
-
+    # Diagnostics should report the strongest semantic reason first. A major
+    # contradiction is more informative than the downstream confidence effect
+    # it caused, so do not hide it behind BELOW_GROUP_LINK_CONFIDENCE.
     if has_major_contradiction(prediction):
         return "MAJOR_CONTRADICTION"
+
+    if confidence < GROUP_LINK_CONFIDENCE:
+        return "BELOW_GROUP_LINK_CONFIDENCE"
 
     name_match = has_name_evidence(prediction)
     strong_username = (
@@ -904,7 +907,6 @@ def detect_duplicate_groups(
             str,
             int,
         ] = defaultdict(int)
-
         decision_counts: dict[
             str,
             int,
@@ -959,21 +961,16 @@ def detect_duplicate_groups(
             diagnostic = build_grouping_diagnostic(
                 prediction
             )
-
-            username_1 = str(
-                prediction.account_1.username
-                or prediction.account_1.original_id()
-                or key_1
+            decision_key = (
+                "ACCEPTED"
+                if diagnostic["result"] == "ACCEPTED"
+                else diagnostic["reason"]
             )
-            username_2 = str(
-                prediction.account_2.username
-                or prediction.account_2.original_id()
-                or key_2
-            )
+            decision_counts[decision_key] += 1
 
             print(
                 "[Grouping Decision] "
-                f"Pair={username_1} <-> {username_2}, "
+                f"Pair={key_1} <-> {key_2}, "
                 f"Confidence={diagnostic['confidence']}, "
                 f"Classification={diagnostic['classification']}, "
                 f"Result={diagnostic['result']}, "
@@ -981,20 +978,7 @@ def detect_duplicate_groups(
                 f"Evidence={diagnostic['evidence']}"
             )
 
-            if diagnostic[
-                "result"
-            ] == "ACCEPTED":
-                decision_counts[
-                    "ACCEPTED"
-                ] += 1
-            else:
-                decision_counts[
-                    str(diagnostic["reason"])
-                ] += 1
-
-            edge_reason = diagnostic[
-                "edgeReason"
-            ]
+            edge_reason = diagnostic["edgeReason"]
 
             if edge_reason is None:
                 continue
@@ -1005,7 +989,7 @@ def detect_duplicate_groups(
             )
 
             evidence_counts[
-                str(edge_reason)
+                edge_reason
             ] += 1
 
         print(
@@ -1016,7 +1000,6 @@ def detect_duplicate_groups(
             f"EvidenceCounts="
             f"{dict(evidence_counts)}"
         )
-
         print(
             "[Duplicate Detection] "
             f"Application={application}, "
