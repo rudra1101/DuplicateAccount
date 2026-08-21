@@ -38,13 +38,8 @@ class NormalizedAccount:
         include_raw: bool = False,
     ) -> dict[str, Any]:
         result = asdict(self)
-
         if not include_raw:
-            result.pop(
-                "raw",
-                None,
-            )
-
+            result.pop("raw", None)
         return result
 
     def original_id(self) -> str:
@@ -55,13 +50,10 @@ class NormalizedAccount:
             "nativeIdentity",
             "native_identity",
         )
-
         for key in possible_keys:
             value = self.raw.get(key)
-
             if value is not None:
                 return str(value)
-
         return self.account_id
 
 
@@ -95,9 +87,17 @@ class ComparisonFeatures:
     account_1_missing_fields: int
     account_2_missing_fields: int
 
-    def to_dict(
-        self,
-    ) -> dict[str, Any]:
+    # Evidence discovered from the application's actual source schema.
+    dynamic_identifier_matches: int = 0
+    dynamic_contact_matches: int = 0
+    dynamic_name_matches: int = 0
+    dynamic_org_matches: int = 0
+    dynamic_unknown_matches: int = 0
+    dynamic_identifier_conflicts: int = 0
+    dynamic_matched_attributes: tuple[str, ...] = ()
+    dynamic_conflicting_attributes: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -108,9 +108,7 @@ class MatchReason:
     impact: str
     similarity: float | None = None
 
-    def to_dict(
-        self,
-    ) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
@@ -118,31 +116,20 @@ class MatchReason:
 class DuplicatePrediction:
     account_1: NormalizedAccount
     account_2: NormalizedAccount
-
     confidence: float
     classification: str
-
     features: ComparisonFeatures
     reasons: list[MatchReason]
     warnings: list[MatchReason]
-
-    model_version: str = (
-        "hybrid-embedding-v2"
-    )
+    model_version: str = "hybrid-embedding-v2"
 
     @property
     def account_1_id(self) -> str:
-        return (
-            self.account_1
-            .original_id()
-        )
+        return self.account_1.original_id()
 
     @property
     def account_2_id(self) -> str:
-        return (
-            self.account_2
-            .original_id()
-        )
+        return self.account_2.original_id()
 
     def to_dict(
         self,
@@ -151,50 +138,17 @@ class DuplicatePrediction:
         include_raw_accounts: bool = False,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
-            "account1Id": (
-                self.account_1_id
-            ),
-            "account2Id": (
-                self.account_2_id
-            ),
-            "confidence": (
-                self.confidence
-            ),
-            "classification": (
-                self.classification
-            ),
-            "modelVersion": (
-                self.model_version
-            ),
-            "features": (
-                self.features.to_dict()
-            ),
-            "reasons": [
-                reason.to_dict()
-                for reason in self.reasons
-            ],
-            "warnings": [
-                warning.to_dict()
-                for warning
-                in self.warnings
-            ],
+            "account1Id": self.account_1_id,
+            "account2Id": self.account_2_id,
+            "confidence": self.confidence,
+            "classification": self.classification,
+            "modelVersion": self.model_version,
+            "features": self.features.to_dict(),
+            "reasons": [reason.to_dict() for reason in self.reasons],
+            "warnings": [warning.to_dict() for warning in self.warnings],
         }
 
         if include_accounts:
-            result["account1"] = (
-                self.account_1.to_dict(
-                    include_raw=(
-                        include_raw_accounts
-                    )
-                )
-            )
-
-            result["account2"] = (
-                self.account_2.to_dict(
-                    include_raw=(
-                        include_raw_accounts
-                    )
-                )
-            )
-
+            result["account1"] = self.account_1.to_dict(include_raw=include_raw_accounts)
+            result["account2"] = self.account_2.to_dict(include_raw=include_raw_accounts)
         return result
