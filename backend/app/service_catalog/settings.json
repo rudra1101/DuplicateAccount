@@ -1,0 +1,7 @@
+{
+  "service": {"key":"settings","name":"Settings","description":"Application settings","category":"Settings","route":"/settings","icon":"settings","enabled":true,"sortOrder":70},
+  "permissions": [
+    {"code":"settings.view","name":"View settings"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["settings.view"]}
+}
