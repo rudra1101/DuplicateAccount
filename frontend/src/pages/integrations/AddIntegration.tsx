@@ -32,6 +32,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SaveIcon from "@mui/icons-material/Save";
 import CableIcon from "@mui/icons-material/Cable";
+import KeyIcon from "@mui/icons-material/Key";
 import { useNavigate, useParams } from "react-router-dom";
 
 import PageContainer from "../../components/common/PageContainer";
@@ -42,6 +43,7 @@ import {
   getConnectorTypes,
   getIntegration,
   testIntegration,
+  testIntegrationAuthentication,
   updateIntegration,
   type ConnectorField,
   type ConnectorType,
@@ -80,6 +82,28 @@ const emptyApplication = (): ApplicationInput => ({
   attributes: [],
 });
 
+const AUTH_FIELDS = [
+  "username",
+  "password",
+  "apiToken",
+  "apiTokenHeader",
+  "bearerToken",
+  "oauthGrantType",
+  "tokenUrl",
+  "clientId",
+  "clientSecret",
+  "oauthUsername",
+  "oauthPassword",
+  "refreshToken",
+  "oauthAssertion",
+  "oauthScope",
+  "oauthAdvanced",
+  "oauthHeadersJson",
+  "oauthParametersJson",
+  "customAuthHeader",
+  "customAuthValue",
+];
+
 const AddIntegration = () => {
   const navigate = useNavigate();
   const { integrationId } = useParams<{ integrationId: string }>();
@@ -98,10 +122,12 @@ const AddIntegration = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingConnection, setSavingConnection] = useState(false);
+  const [testingAuthentication, setTestingAuthentication] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionId, setConnectionId] = useState<number | null>(integrationId ? Number(integrationId) : null);
   const [connectionDirty, setConnectionDirty] = useState(!editing);
   const [connectionMessage, setConnectionMessage] = useState("");
+  const [authResult, setAuthResult] = useState<IntegrationTestResult | null>(null);
   const [testResult, setTestResult] = useState<IntegrationTestResult | null>(null);
   const [detectingSchema, setDetectingSchema] = useState(false);
   const [schemaDetectionMessage, setSchemaDetectionMessage] = useState("");
@@ -113,6 +139,7 @@ const AddIntegration = () => {
   );
 
   const selectedApplication = applications[selectedApplicationIndex] ?? null;
+  const isWebService = connectorType === "WEB_SERVICE";
 
   useEffect(() => {
     const loadPage = async () => {
@@ -181,6 +208,7 @@ const AddIntegration = () => {
   const markConnectionDirty = () => {
     setConnectionDirty(true);
     setConnectionMessage("");
+    setAuthResult(null);
     setTestResult(null);
   };
 
@@ -200,11 +228,41 @@ const AddIntegration = () => {
     markConnectionDirty();
   };
 
+  const handleConnectorFieldChange = (fieldName: string, value: unknown) => {
+    setConfiguration((current) => {
+      const next = { ...current };
+
+      if (fieldName === "authType") {
+        AUTH_FIELDS.forEach((key) => delete next[key]);
+        next.authType = value;
+        if (value === "OAUTH2") {
+          next.oauthGrantType = "CLIENT_CREDENTIALS";
+          next.oauthAdvanced = false;
+        }
+        if (value === "API_TOKEN") next.apiTokenHeader = "Authorization";
+      } else if (fieldName === "oauthGrantType") {
+        ["oauthUsername", "oauthPassword", "refreshToken", "oauthAssertion"].forEach((key) => delete next[key]);
+        next.oauthGrantType = value;
+        if (value === "JWT_BEARER" || value === "SAML_BEARER") {
+          delete next.clientId;
+          delete next.clientSecret;
+        }
+      } else {
+        next[fieldName] = value;
+      }
+
+      return next;
+    });
+    markConnectionDirty();
+  };
+
   const isFieldVisible = (field: ConnectorField): boolean => {
     if (!field.visibleWhen) return true;
-    return Object.entries(field.visibleWhen).every(([dependency, allowedValues]) =>
-      allowedValues.map(String).includes(String(configuration[dependency] ?? "")),
-    );
+    return Object.entries(field.visibleWhen).every(([dependency, allowedValues]) => {
+      const dependencyField = selectedConnector?.configurationSchema.fields.find((item) => item.name === dependency);
+      const currentValue = configuration[dependency] ?? dependencyField?.default ?? "";
+      return allowedValues.map(String).includes(String(currentValue));
+    });
   };
 
   const updateApplication = (index: number, patch: Partial<ApplicationInput>) => {
@@ -285,7 +343,7 @@ const AddIntegration = () => {
 
     selectedConnector?.configurationSchema.fields.forEach((field) => {
       if (!isFieldVisible(field)) return;
-      const value = configuration[field.name];
+      const value = configuration[field.name] ?? field.default;
       if (field.required && (value === undefined || value === null || value === "")) {
         errors[field.name] = `${field.label} is required.`;
       }
@@ -325,14 +383,34 @@ const AddIntegration = () => {
       }
 
       setConnectionDirty(false);
+      setAuthResult(null);
       setTestResult(null);
-      setConnectionMessage("Connection saved successfully. You can test it before continuing.");
+      setConnectionMessage("Connection saved successfully. Test authentication and the endpoint before continuing.");
       return savedId;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save connection.");
       return null;
     } finally {
       setSavingConnection(false);
+    }
+  };
+
+  const handleTestAuthentication = async () => {
+    if (!connectionId || connectionDirty) {
+      setError("Save the latest connection configuration before testing authentication.");
+      return;
+    }
+
+    try {
+      setTestingAuthentication(true);
+      setError("");
+      setAuthResult(null);
+      const result = await testIntegrationAuthentication(connectionId);
+      setAuthResult(result);
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : "Authentication test failed.");
+    } finally {
+      setTestingAuthentication(false);
     }
   };
 
@@ -394,18 +472,15 @@ const AddIntegration = () => {
       setError("At least one application is required.");
       return false;
     }
-
     const names = applications.map((item) => item.name.trim()).filter(Boolean);
     if (names.length !== applications.length) {
       setError("Every application requires a name.");
       return false;
     }
-
     if (new Set(names.map((item) => item.toLowerCase())).size !== names.length) {
       setError("Application names must be unique within the integration.");
       return false;
     }
-
     return true;
   };
 
@@ -415,25 +490,21 @@ const AddIntegration = () => {
         setError(`${applicationItem.name} requires at least one schema attribute.`);
         return false;
       }
-
       const names = applicationItem.attributes.map((item) => item.name.trim()).filter(Boolean);
       if (names.length !== applicationItem.attributes.length) {
         setError(`${applicationItem.name} contains an unnamed schema attribute.`);
         return false;
       }
-
       if (new Set(names.map((item) => item.toLowerCase())).size !== names.length) {
         setError(`${applicationItem.name} contains duplicate schema attribute names.`);
         return false;
       }
     }
-
     return true;
   };
 
   const goNext = () => {
     setError("");
-
     if (activeStep === 0) {
       if (!validateConnection()) return;
       if (!connectionId || connectionDirty) {
@@ -443,7 +514,6 @@ const AddIntegration = () => {
     }
     if (activeStep === 1 && !validateApplications()) return;
     if (activeStep === 2 && !validateSchemas()) return;
-
     setActiveStep((current) => Math.min(current + 1, steps.length - 1));
   };
 
@@ -458,7 +528,6 @@ const AddIntegration = () => {
     try {
       setSaving(true);
       setError("");
-
       await saveIntegrationApplications(
         connectionId,
         applications.map((applicationItem) => ({
@@ -478,7 +547,6 @@ const AddIntegration = () => {
           })),
         })),
       );
-
       navigate("/integrations");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save integration.");
@@ -497,27 +565,23 @@ const AddIntegration = () => {
     );
   }
 
+  const busy = savingConnection || testingAuthentication || testingConnection;
+
   return (
     <PageContainer title={editing ? "Edit Integration" : "Add Integration"}>
       <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2, flexWrap: "wrap", mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            {editing ? "Edit Integration" : "Create Integration"}
-          </Typography>
+          <Typography variant="h5" fontWeight={700}>{editing ? "Edit Integration" : "Create Integration"}</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
             Save and test the source connection first, then configure applications and schema.
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>
-          Back
-        </Button>
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>Back</Button>
       </Box>
 
       <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 3, mb: 3 }}>
         <Stepper activeStep={activeStep} alternativeLabel>
-          {steps.map((label) => (
-            <Step key={label}><StepLabel>{label}</StepLabel></Step>
-          ))}
+          {steps.map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
         </Stepper>
       </Paper>
 
@@ -534,19 +598,11 @@ const AddIntegration = () => {
               helperText={fieldErrors.name}
               onChange={(event) => { setName(event.target.value); markConnectionDirty(); }}
             />
-            <TextField
-              multiline
-              minRows={2}
-              label="Description"
-              value={description}
-              onChange={(event) => { setDescription(event.target.value); markConnectionDirty(); }}
-            />
+            <TextField multiline minRows={2} label="Description" value={description} onChange={(event) => { setDescription(event.target.value); markConnectionDirty(); }} />
             <FormControl disabled={Boolean(connectionId)} error={Boolean(fieldErrors.connectorType)}>
               <InputLabel>Connector Type</InputLabel>
               <Select label="Connector Type" value={connectorType} onChange={(event) => handleConnectorTypeChange(event.target.value)}>
-                {connectorTypes.map((connector) => (
-                  <MenuItem key={connector.type} value={connector.type}>{connector.displayName}</MenuItem>
-                ))}
+                {connectorTypes.map((connector) => <MenuItem key={connector.type} value={connector.type}>{connector.displayName}</MenuItem>)}
               </Select>
             </FormControl>
             {selectedConnector && (
@@ -556,28 +612,19 @@ const AddIntegration = () => {
                   connector={selectedConnector}
                   values={configuration}
                   errors={fieldErrors}
-                  onChange={(fieldName, value) => {
-                    setConfiguration((current) => ({ ...current, [fieldName]: value }));
-                    markConnectionDirty();
-                  }}
+                  onChange={handleConnectorFieldChange}
                 />
               </>
             )}
-            <FormControlLabel
-              control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />}
-              label="Enable integration"
-            />
+            <FormControlLabel control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />} label="Enable integration" />
 
             {connectionMessage && <Alert severity="success">{connectionMessage}</Alert>}
-            {connectionDirty && connectionId && (
-              <Alert severity="warning">Connection settings have changed. Save them again before testing or continuing.</Alert>
-            )}
+            {connectionDirty && connectionId && <Alert severity="warning">Connection settings have changed. Save them again before testing or continuing.</Alert>}
+            {authResult && <Alert severity={authResult.success ? "success" : "error"}>{authResult.message}</Alert>}
             {testResult && (
               <Alert severity={testResult.success ? "success" : "error"}>
                 {testResult.message}
-                {testResult.success && testResult.details?.recordCount !== undefined
-                  ? ` Records returned: ${String(testResult.details.recordCount)}.`
-                  : ""}
+                {testResult.success && testResult.details?.recordCount !== undefined ? ` Records returned: ${String(testResult.details.recordCount)}.` : ""}
               </Alert>
             )}
 
@@ -585,18 +632,28 @@ const AddIntegration = () => {
               <Button
                 variant="contained"
                 startIcon={savingConnection ? <CircularProgress size={17} /> : <SaveIcon />}
-                disabled={savingConnection || testingConnection}
+                disabled={busy}
                 onClick={() => void saveConnection()}
               >
                 {savingConnection ? "Saving Connection..." : connectionId ? "Save Connection Changes" : "Save Connection"}
               </Button>
+              {isWebService && (
+                <Button
+                  variant="outlined"
+                  startIcon={testingAuthentication ? <CircularProgress size={17} /> : <KeyIcon />}
+                  disabled={!connectionId || connectionDirty || busy}
+                  onClick={() => void handleTestAuthentication()}
+                >
+                  {testingAuthentication ? "Testing Authentication..." : "Test Authentication"}
+                </Button>
+              )}
               <Button
                 variant="outlined"
                 startIcon={testingConnection ? <CircularProgress size={17} /> : <CableIcon />}
-                disabled={!connectionId || connectionDirty || testingConnection || savingConnection}
+                disabled={!connectionId || connectionDirty || busy}
                 onClick={() => void handleTestConnection()}
               >
-                {testingConnection ? "Testing..." : "Test Connection"}
+                {testingConnection ? "Testing Connection..." : "Test Connection"}
               </Button>
             </Stack>
           </Stack>
@@ -606,9 +663,7 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Applications</Typography>
-              <Typography color="text.secondary" variant="body2">
-                Define each account population independently. Accounts are compared only within the same application.
-              </Typography>
+              <Typography color="text.secondary" variant="body2">Define each account population independently. Accounts are compared only within the same application.</Typography>
             </Box>
             {applications.map((applicationItem, index) => (
               <Paper key={index} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
@@ -617,18 +672,11 @@ const AddIntegration = () => {
                   <TextField label="Display Name" value={applicationItem.displayName ?? ""} sx={{ flex: 1 }} onChange={(event) => updateApplication(index, { displayName: event.target.value })} />
                   <TextField label="Object Type" value={applicationItem.objectType ?? "account"} sx={{ width: 180 }} onChange={(event) => updateApplication(index, { objectType: event.target.value })} />
                   <FormControlLabel control={<Switch checked={applicationItem.enabled} onChange={(event) => updateApplication(index, { enabled: event.target.checked })} />} label="Enabled" />
-                  <IconButton disabled={applications.length === 1} color="error" onClick={() => {
-                    setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index));
-                    setSelectedApplicationIndex(0);
-                  }}>
-                    <DeleteOutlineIcon />
-                  </IconButton>
+                  <IconButton disabled={applications.length === 1} color="error" onClick={() => { setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index)); setSelectedApplicationIndex(0); }}><DeleteOutlineIcon /></IconButton>
                 </Stack>
               </Paper>
             ))}
-            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => setApplications((current) => [...current, emptyApplication()])} sx={{ alignSelf: "flex-start" }}>
-              Add Application
-            </Button>
+            <Button startIcon={<AddIcon />} variant="outlined" onClick={() => setApplications((current) => [...current, emptyApplication()])} sx={{ alignSelf: "flex-start" }}>Add Application</Button>
           </Stack>
         )}
 
@@ -636,73 +684,37 @@ const AddIntegration = () => {
           <Stack spacing={2.5}>
             <Box>
               <Typography variant="h6" fontWeight={700}>Application Schema</Typography>
-              <Typography color="text.secondary" variant="body2">
-                Detect attributes from the saved source connection, upload a JSON schema, or define attributes manually.
-              </Typography>
+              <Typography color="text.secondary" variant="body2">Detect attributes from the saved source connection, upload a JSON schema, or define attributes manually.</Typography>
             </Box>
-
             <FormControl sx={{ maxWidth: 360 }}>
               <InputLabel>Application</InputLabel>
-              <Select label="Application" value={selectedApplicationIndex} onChange={(event) => {
-                setSelectedApplicationIndex(Number(event.target.value));
-                setSchemaDetectionMessage("");
-              }}>
-                {applications.map((item, index) => (
-                  <MenuItem key={`${item.name}-${index}`} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>
-                ))}
+              <Select label="Application" value={selectedApplicationIndex} onChange={(event) => { setSelectedApplicationIndex(Number(event.target.value)); setSchemaDetectionMessage(""); }}>
+                {applications.map((item, index) => <MenuItem key={`${item.name}-${index}`} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>)}
               </Select>
             </FormControl>
-
             {schemaDetectionMessage && <Alert severity="success">{schemaDetectionMessage}</Alert>}
-
             {selectedApplication && (
               <>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
                   <TextField label="Schema Name" value={selectedApplication.schemaName ?? ""} onChange={(event) => updateApplication(selectedApplicationIndex, { schemaName: event.target.value })} sx={{ minWidth: 260 }} />
-                  <Button variant="outlined" disabled={detectingSchema} onClick={() => void detectSchemaFromSource()}>
-                    {detectingSchema ? "Detecting..." : "Detect Schema"}
-                  </Button>
+                  <Button variant="outlined" disabled={detectingSchema} onClick={() => void detectSchemaFromSource()}>{detectingSchema ? "Detecting..." : "Detect Schema"}</Button>
                   <Button component="label" variant="outlined" startIcon={<UploadFileIcon />}>
                     Upload JSON Schema
-                    <input hidden type="file" accept="application/json,.json" onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) void uploadSchema(file);
-                      event.target.value = "";
-                    }} />
+                    <input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSchema(file); event.target.value = ""; }} />
                   </Button>
                   <Button variant="contained" startIcon={<AddIcon />} onClick={addAttribute}>Add Attribute</Button>
                 </Stack>
-
                 <TableContainer variant="outlined" component={Paper}>
                   <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ backgroundColor: "#f8fafc" }}>
-                        <TableCell>Attribute</TableCell>
-                        <TableCell>Display Name</TableCell>
-                        <TableCell>Type</TableCell>
-                        <TableCell align="center">Required</TableCell>
-                        <TableCell align="center">Multi-valued</TableCell>
-                        <TableCell />
-                      </TableRow>
-                    </TableHead>
+                    <TableHead><TableRow sx={{ backgroundColor: "#f8fafc" }}><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell align="center">Required</TableCell><TableCell align="center">Multi-valued</TableCell><TableCell /></TableRow></TableHead>
                     <TableBody>
                       {selectedApplication.attributes.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
-                            <Typography color="text.secondary">No attributes yet. Detect the schema, upload JSON, or add attributes manually.</Typography>
-                          </TableCell>
-                        </TableRow>
+                        <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><Typography color="text.secondary">No attributes yet. Detect the schema, upload JSON, or add attributes manually.</Typography></TableCell></TableRow>
                       ) : selectedApplication.attributes.map((attribute, index) => (
                         <TableRow key={index}>
                           <TableCell><TextField size="small" value={attribute.name} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { name: event.target.value })} /></TableCell>
                           <TableCell><TextField size="small" value={attribute.displayName ?? ""} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { displayName: event.target.value })} /></TableCell>
-                          <TableCell>
-                            <Select size="small" value={attribute.dataType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { dataType: event.target.value })}>
-                              {['string', 'number', 'boolean', 'date', 'datetime', 'array', 'object'].map((type) => (
-                                <MenuItem key={type} value={type}>{type}</MenuItem>
-                              ))}
-                            </Select>
-                          </TableCell>
+                          <TableCell><Select size="small" value={attribute.dataType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { dataType: event.target.value })}>{['string', 'number', 'boolean', 'date', 'datetime', 'array', 'object'].map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}</Select></TableCell>
                           <TableCell align="center"><Checkbox checked={attribute.required} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { required: event.target.checked })} /></TableCell>
                           <TableCell align="center"><Checkbox checked={attribute.multiValued} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { multiValued: event.target.checked })} /></TableCell>
                           <TableCell align="right"><IconButton color="error" onClick={() => removeAttribute(index)}><DeleteOutlineIcon /></IconButton></TableCell>
@@ -718,53 +730,26 @@ const AddIntegration = () => {
 
         {activeStep === 3 && (
           <Stack spacing={3}>
-            <Box>
-              <Typography variant="h6" fontWeight={700}>Review Configuration</Typography>
-              <Typography color="text.secondary" variant="body2">
-                Confirm the saved connection and application schemas. Duplicate scoring and attribute weighting are calculated internally.
-              </Typography>
-            </Box>
-
-            <Paper variant="outlined" sx={{ p: 2.5 }}>
-              <Typography fontWeight={700}>{name}</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Connector: {selectedConnector?.displayName ?? connectorType} · Connection saved · {enabled ? "Enabled" : "Disabled"}
-              </Typography>
-            </Paper>
-
+            <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography color="text.secondary" variant="body2">Confirm the saved connection and application schemas. Duplicate scoring and attribute weighting are calculated internally.</Typography></Box>
+            <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{name}</Typography><Typography variant="body2" color="text.secondary">Connector: {selectedConnector?.displayName ?? connectorType} · Connection saved · {enabled ? "Enabled" : "Disabled"}</Typography></Paper>
             {applications.map((applicationItem, index) => (
               <Paper key={`${applicationItem.name}-${index}`} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
                 <Typography fontWeight={700}>{applicationItem.name}</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  {applicationItem.attributes.length} schema attributes · {applicationItem.enabled ? "Enabled" : "Disabled"}
-                </Typography>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                  {applicationItem.attributes.map((attribute) => (
-                    <Box key={attribute.name} sx={{ px: 1.25, py: 0.6, border: 1, borderColor: "divider", borderRadius: 2, fontSize: 13 }}>
-                      {attribute.name} · {attribute.dataType}
-                    </Box>
-                  ))}
-                </Stack>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>{applicationItem.attributes.length} schema attributes · {applicationItem.enabled ? "Enabled" : "Disabled"}</Typography>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">{applicationItem.attributes.map((attribute) => <Box key={attribute.name} sx={{ px: 1.25, py: 0.6, border: 1, borderColor: "divider", borderRadius: 2, fontSize: 13 }}>{attribute.name} · {attribute.dataType}</Box>)}</Stack>
               </Paper>
             ))}
           </Stack>
         )}
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          <Button disabled={activeStep === 0 || saving || detectingSchema || savingConnection || testingConnection} onClick={() => {
-            setError("");
-            setActiveStep((current) => Math.max(0, current - 1));
-          }}>
-            Back
-          </Button>
+          <Button disabled={activeStep === 0 || saving || detectingSchema || busy} onClick={() => { setError(""); setActiveStep((current) => Math.max(0, current - 1)); }}>Back</Button>
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" disabled={saving || detectingSchema || savingConnection || testingConnection} onClick={() => navigate("/integrations")}>Cancel</Button>
+            <Button variant="outlined" disabled={saving || detectingSchema || busy} onClick={() => navigate("/integrations")}>Cancel</Button>
             {activeStep < steps.length - 1 ? (
-              <Button variant="contained" disabled={detectingSchema || savingConnection || testingConnection} onClick={goNext}>Next</Button>
+              <Button variant="contained" disabled={detectingSchema || busy} onClick={goNext}>Next</Button>
             ) : (
-              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || detectingSchema} onClick={() => void handleSave()}>
-                {saving ? "Saving..." : editing ? "Update Integration" : "Finish Integration"}
-              </Button>
+              <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || detectingSchema} onClick={() => void handleSave()}>{saving ? "Saving..." : editing ? "Update Integration" : "Finish Integration"}</Button>
             )}
           </Stack>
         </Box>
