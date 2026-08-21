@@ -1,0 +1,8 @@
+{
+  "service": {"key":"ml","name":"ML Training","description":"Machine-learning model training and inspection","category":"Machine Learning","route":"/ml-training","icon":"ml","enabled":true,"sortOrder":80},
+  "permissions": [
+    {"code":"ml.view","name":"View ML training"},
+    {"code":"ml.train","name":"Run ML training"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
+}
