@@ -3,13 +3,11 @@ from __future__ import annotations
 import csv
 import io
 import json
-import ssl
 from base64 import b64encode
 from datetime import datetime
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+
+import httpx
 
 from app.connectors.base import BaseFileConnector, ConnectionTestResult, ConnectorFile
 from app.connectors.exceptions import ConnectorConfigurationError, ConnectorError
@@ -81,7 +79,6 @@ class WebServiceConnector(BaseFileConnector):
                 "type": "password",
                 "required": False,
                 "visibleWhen": {"authType": ["API_TOKEN"]},
-                "helpText": "Token value. Bearer is used by default unless a token prefix is supplied.",
             },
             {
                 "name": "apiTokenHeader",
@@ -118,22 +115,28 @@ class WebServiceConnector(BaseFileConnector):
                 "label": "Token URL",
                 "type": "text",
                 "required": False,
-                "placeholder": "https://login.example.com/oauth2/token",
                 "visibleWhen": {"authType": ["OAUTH2"]},
+                "placeholder": "https://login.example.com/oauth2/token",
             },
             {
                 "name": "clientId",
                 "label": "Client ID",
                 "type": "text",
                 "required": False,
-                "visibleWhen": {"authType": ["OAUTH2"]},
+                "visibleWhen": {
+                    "authType": ["OAUTH2"],
+                    "oauthGrantType": ["CLIENT_CREDENTIALS", "PASSWORD", "REFRESH_TOKEN"],
+                },
             },
             {
                 "name": "clientSecret",
                 "label": "Client Secret",
                 "type": "password",
                 "required": False,
-                "visibleWhen": {"authType": ["OAUTH2"]},
+                "visibleWhen": {
+                    "authType": ["OAUTH2"],
+                    "oauthGrantType": ["CLIENT_CREDENTIALS", "PASSWORD", "REFRESH_TOKEN"],
+                },
             },
             {
                 "name": "oauthUsername",
@@ -162,7 +165,6 @@ class WebServiceConnector(BaseFileConnector):
                 "type": "password",
                 "required": False,
                 "visibleWhen": {"authType": ["OAUTH2"], "oauthGrantType": ["JWT_BEARER", "SAML_BEARER"]},
-                "helpText": "Signed assertion supplied by the target application's authentication setup.",
             },
             {
                 "name": "oauthScope",
@@ -173,19 +175,28 @@ class WebServiceConnector(BaseFileConnector):
                 "placeholder": "accounts.read",
             },
             {
+                "name": "oauthAdvanced",
+                "label": "Show advanced OAuth options",
+                "type": "boolean",
+                "required": False,
+                "default": False,
+                "visibleWhen": {"authType": ["OAUTH2"]},
+            },
+            {
                 "name": "oauthHeadersJson",
                 "label": "OAuth Token Headers (JSON)",
                 "type": "text",
                 "required": False,
-                "visibleWhen": {"authType": ["OAUTH2"]},
-                "placeholder": "{\"Accept\":\"application/json\"}",
+                "visibleWhen": {"authType": ["OAUTH2"], "oauthAdvanced": [True]},
+                "placeholder": "{\"X-Custom-Header\":\"value\"}",
+                "helpText": "Optional custom token headers. Accept and Content-Type are added automatically.",
             },
             {
                 "name": "oauthParametersJson",
                 "label": "Additional OAuth Parameters (JSON)",
                 "type": "text",
                 "required": False,
-                "visibleWhen": {"authType": ["OAUTH2"]},
+                "visibleWhen": {"authType": ["OAUTH2"], "oauthAdvanced": [True]},
                 "placeholder": "{\"resource\":\"https://api.example.com\"}",
             },
             {
@@ -254,8 +265,7 @@ class WebServiceConnector(BaseFileConnector):
             raise ConnectorConfigurationError("Only GET and POST are supported.")
 
         auth_type = str(self.configuration.get("authType", "NONE")).upper()
-        allowed = {"NONE", "BASIC", "API_TOKEN", "BEARER", "OAUTH2", "CUSTOM_HEADER"}
-        if auth_type not in allowed:
+        if auth_type not in {"NONE", "BASIC", "API_TOKEN", "BEARER", "OAUTH2", "CUSTOM_HEADER"}:
             raise ConnectorConfigurationError("Unsupported authentication type.")
 
         if auth_type == "BASIC":
@@ -273,11 +283,11 @@ class WebServiceConnector(BaseFileConnector):
         elif auth_type == "OAUTH2":
             self._validate_oauth()
 
-        self._parse_json_object("headersJson", default={})
-        self._parse_json_object("oauthHeadersJson", default={})
-        self._parse_json_object("oauthParametersJson", default={})
+        self._parse_json_object("headersJson", {})
+        self._parse_json_object("oauthHeadersJson", {})
+        self._parse_json_object("oauthParametersJson", {})
         if self.configuration.get("requestBodyJson"):
-            self._parse_json_object("requestBodyJson", default={})
+            self._parse_json_object("requestBodyJson", {})
 
     def _validate_oauth(self) -> None:
         token_url = str(self.configuration.get("tokenUrl") or "").strip()
@@ -303,9 +313,9 @@ class WebServiceConnector(BaseFileConnector):
     def _parse_json_object(self, key: str, default: dict[str, Any]) -> dict[str, Any]:
         raw = self.configuration.get(key)
         if raw in (None, ""):
-            return default
+            return dict(default)
         if isinstance(raw, dict):
-            return raw
+            return dict(raw)
         try:
             value = json.loads(str(raw))
         except json.JSONDecodeError as exc:
@@ -314,13 +324,26 @@ class WebServiceConnector(BaseFileConnector):
             raise ConnectorConfigurationError(f"{key} must contain a JSON object.")
         return value
 
-    def _ssl_context(self):
-        return None if bool(self.configuration.get("verifySsl", True)) else ssl._create_unverified_context()
+    def _timeout(self) -> float:
+        return float(max(1, int(self.configuration.get("timeoutSeconds", 30))))
 
-    def _oauth_access_token(self) -> str:
-        token_url = str(self.configuration.get("tokenUrl") or "").strip()
+    def _verify_ssl(self) -> bool:
+        return bool(self.configuration.get("verifySsl", True))
+
+    def _client(self) -> httpx.Client:
+        return httpx.Client(
+            timeout=self._timeout(),
+            verify=self._verify_ssl(),
+            follow_redirects=True,
+            headers={
+                "User-Agent": "DuplicateAccount-WebServiceConnector/1.0",
+                "Accept": "application/json",
+            },
+        )
+
+    def _oauth_parameters(self) -> dict[str, Any]:
         grant = str(self.configuration.get("oauthGrantType", "CLIENT_CREDENTIALS")).upper()
-        params: dict[str, Any] = self._parse_json_object("oauthParametersJson", {})
+        params = self._parse_json_object("oauthParametersJson", {})
 
         if grant == "CLIENT_CREDENTIALS":
             params.setdefault("grant_type", "client_credentials")
@@ -338,44 +361,89 @@ class WebServiceConnector(BaseFileConnector):
             params.setdefault("grant_type", "urn:ietf:params:oauth:grant-type:saml2-bearer")
             params.setdefault("assertion", str(self.configuration.get("oauthAssertion") or ""))
 
-        client_id = str(self.configuration.get("clientId") or "")
-        client_secret = str(self.configuration.get("clientSecret") or "")
-        if client_id:
-            params.setdefault("client_id", client_id)
-        if client_secret:
-            params.setdefault("client_secret", client_secret)
+        if grant in {"CLIENT_CREDENTIALS", "PASSWORD", "REFRESH_TOKEN"}:
+            params.setdefault("client_id", str(self.configuration.get("clientId") or ""))
+            params.setdefault("client_secret", str(self.configuration.get("clientSecret") or ""))
 
         scope = str(self.configuration.get("oauthScope") or "").strip()
         if scope:
             params.setdefault("scope", scope)
 
-        headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
-        headers.update({str(k): str(v) for k, v in self._parse_json_object("oauthHeadersJson", {}).items()})
-        request = Request(token_url, data=urlencode(params).encode("utf-8"), headers=headers, method="POST")
-        timeout = max(1, int(self.configuration.get("timeoutSeconds", 30)))
+        return params
+
+    def _oauth_access_token(self) -> tuple[str, dict[str, Any]]:
+        self._validate_oauth()
+        token_url = str(self.configuration.get("tokenUrl") or "").strip()
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        custom_headers = self._parse_json_object("oauthHeadersJson", {})
+        for key, value in custom_headers.items():
+            if str(key).lower() == "content-type":
+                continue
+            headers[str(key)] = str(value)
 
         try:
-            with urlopen(request, timeout=timeout, context=self._ssl_context()) as response:
-                body = response.read()
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:500]
-            raise ConnectorError(f"OAuth token endpoint returned HTTP {exc.code}: {detail}") from exc
-        except URLError as exc:
-            raise ConnectorError(f"Unable to connect to OAuth token endpoint: {exc.reason}") from exc
+            with self._client() as client:
+                response = client.post(
+                    token_url,
+                    data=self._oauth_parameters(),
+                    headers=headers,
+                )
+        except httpx.HTTPError as exc:
+            raise ConnectorError(f"Unable to connect to OAuth token endpoint: {exc}") from exc
+
+        if response.status_code < 200 or response.status_code >= 300:
+            detail = response.text[:700]
+            raise ConnectorError(
+                f"OAuth token endpoint returned HTTP {response.status_code}: {detail}"
+            )
 
         try:
-            payload = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            payload = response.json()
+        except ValueError as exc:
             raise ConnectorError("OAuth token endpoint did not return valid JSON.") from exc
 
         token = payload.get("access_token") if isinstance(payload, dict) else None
         if not token:
             raise ConnectorError("OAuth token response does not contain access_token.")
-        return str(token)
 
-    def _build_request(self) -> Request:
-        endpoint = str(self.configuration["endpointUrl"]).strip()
-        method = str(self.configuration.get("method", "GET")).upper()
+        safe_details = {
+            "statusCode": response.status_code,
+            "tokenType": payload.get("token_type") if isinstance(payload, dict) else None,
+            "expiresIn": payload.get("expires_in") if isinstance(payload, dict) else None,
+            "scope": payload.get("scope") if isinstance(payload, dict) else None,
+            "grantType": str(self.configuration.get("oauthGrantType", "CLIENT_CREDENTIALS")).upper(),
+        }
+        return str(token), safe_details
+
+    def test_authentication(self) -> ConnectionTestResult:
+        self.validate_configuration()
+        auth_type = str(self.configuration.get("authType", "NONE")).upper()
+
+        if auth_type == "OAUTH2":
+            _token, details = self._oauth_access_token()
+            return ConnectionTestResult(
+                success=True,
+                message="OAuth authentication succeeded and an access token was issued.",
+                details={"authenticationType": auth_type, **details},
+            )
+
+        if auth_type == "NONE":
+            return ConnectionTestResult(
+                success=True,
+                message="No authentication is configured for this connection.",
+                details={"authenticationType": auth_type},
+            )
+
+        return ConnectionTestResult(
+            success=True,
+            message=f"{auth_type.replace('_', ' ').title()} authentication configuration is valid.",
+            details={"authenticationType": auth_type},
+        )
+
+    def _request_headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
         headers.update({str(k): str(v) for k, v in self._parse_json_object("headersJson", {}).items()})
 
@@ -393,43 +461,45 @@ class WebServiceConnector(BaseFileConnector):
                 token = f"Bearer {token}"
             headers[header_name] = token
         elif auth_type == "OAUTH2":
-            headers["Authorization"] = f"Bearer {self._oauth_access_token()}"
+            token, _details = self._oauth_access_token()
+            headers["Authorization"] = f"Bearer {token}"
         elif auth_type == "CUSTOM_HEADER":
             headers[str(self.configuration.get("customAuthHeader") or "X-Custom-Auth")] = str(
                 self.configuration.get("customAuthValue") or ""
             )
 
-        body: bytes | None = None
-        if method == "POST":
-            payload = self._parse_json_object("requestBodyJson", {})
-            body = json.dumps(payload).encode("utf-8")
-            headers.setdefault("Content-Type", "application/json")
-
-        return Request(endpoint, data=body, headers=headers, method=method)
+        return headers
 
     def _request_json(self) -> Any:
         self.validate_configuration()
-        timeout = max(1, int(self.configuration.get("timeoutSeconds", 30)))
+        endpoint = str(self.configuration["endpointUrl"]).strip()
+        method = str(self.configuration.get("method", "GET")).upper()
+        body = None
+        if method == "POST":
+            body = self._parse_json_object("requestBodyJson", {})
 
         try:
-            with urlopen(self._build_request(), timeout=timeout, context=self._ssl_context()) as response:
-                status_code = int(getattr(response, "status", 200))
-                content_type = str(response.headers.get("Content-Type", ""))
-                body = response.read()
-        except HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")[:500]
-            raise ConnectorError(f"Web service returned HTTP {exc.code}: {detail}") from exc
-        except URLError as exc:
-            raise ConnectorError(f"Unable to connect to web service: {exc.reason}") from exc
+            with self._client() as client:
+                response = client.request(
+                    method,
+                    endpoint,
+                    headers=self._request_headers(),
+                    json=body if method == "POST" else None,
+                )
+        except httpx.HTTPError as exc:
+            raise ConnectorError(f"Unable to connect to web service: {exc}") from exc
 
-        if status_code < 200 or status_code >= 300:
-            raise ConnectorError(f"Web service returned HTTP {status_code}.")
-
-        try:
-            return json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        if response.status_code < 200 or response.status_code >= 300:
             raise ConnectorError(
-                f"Web service response is not valid JSON (Content-Type: {content_type or 'unknown'})."
+                f"Web service returned HTTP {response.status_code}: {response.text[:700]}"
+            )
+
+        try:
+            return response.json()
+        except ValueError as exc:
+            content_type = response.headers.get("Content-Type", "unknown")
+            raise ConnectorError(
+                f"Web service response is not valid JSON (Content-Type: {content_type})."
             ) from exc
 
     def _extract_records(self, payload: Any) -> list[dict[str, Any]]:
