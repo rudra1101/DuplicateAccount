@@ -1,0 +1,7 @@
+{
+  "service": {"key":"upload","name":"Upload Accounts","description":"Manual account-data upload","category":"Data","route":"/upload","icon":"upload","enabled":true,"sortOrder":50},
+  "permissions": [
+    {"code":"upload.manage","name":"Upload account data"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
+}
