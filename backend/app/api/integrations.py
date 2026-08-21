@@ -22,6 +22,7 @@ from app.services.integration_service import (
     list_connector_types,
     run_integration,
     test_integration,
+    test_integration_authentication,
     update_integration,
 )
 from app.services.schema_detection_service import detect_delimited_schema
@@ -32,12 +33,7 @@ router = APIRouter(prefix="/integrations", tags=["Integrations"])
 @router.post("/detect-schema")
 def detect_schema(
     payload: SchemaDetectionRequest,
-    _user=Depends(
-        require_any_permission(
-            "integration.create",
-            "integration.edit",
-        )
-    ),
+    _user=Depends(require_any_permission("integration.create", "integration.edit")),
 ):
     try:
         return detect_delimited_schema(
@@ -49,10 +45,7 @@ def detect_schema(
     except (UnicodeError, csv.Error, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unable to detect schema: {exc}",
-        ) from exc
+        raise HTTPException(status_code=500, detail=f"Unable to detect schema: {exc}") from exc
 
 
 @router.post("/{integration_id}/run")
@@ -65,10 +58,7 @@ def run_now(
     if integration is None:
         raise HTTPException(status_code=404, detail="Integration not found.")
     if not integration.enabled:
-        raise HTTPException(
-            status_code=400,
-            detail="The integration is disabled. Enable it before running.",
-        )
+        raise HTTPException(status_code=400, detail="The integration is disabled. Enable it before running.")
     try:
         return run_integration(db=db, integration=integration)
     except ConnectorError as exc:
@@ -148,9 +138,7 @@ def update(
     if integration is None:
         raise HTTPException(status_code=404, detail="Integration not found.")
     try:
-        return integration_to_dict(
-            update_integration(db=db, integration=integration, payload=payload)
-        )
+        return integration_to_dict(update_integration(db=db, integration=integration, payload=payload))
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="An integration with this name already exists.") from exc
@@ -170,6 +158,23 @@ def delete(
         raise HTTPException(status_code=404, detail="Integration not found.")
     delete_integration(db=db, integration=integration)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{integration_id}/test-authentication")
+def test_authentication(
+    integration_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("integration.test")),
+):
+    integration = get_integration(db, integration_id)
+    if integration is None:
+        raise HTTPException(status_code=404, detail="Integration not found.")
+    try:
+        return test_integration_authentication(integration)
+    except ConnectorError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=500, detail="Unable to test authentication.") from exc
 
 
 @router.post("/{integration_id}/test")
