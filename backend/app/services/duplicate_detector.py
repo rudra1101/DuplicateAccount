@@ -216,6 +216,7 @@ def has_name_evidence(
             and features.last_name_similarity
             >= 0.85
         )
+        or features.dynamic_name_matches > 0
     )
 
 
@@ -233,6 +234,7 @@ def has_strong_name_evidence(
             and features.last_name_similarity
             >= 0.92
         )
+        or features.dynamic_name_matches >= 2
     )
 
 
@@ -243,6 +245,7 @@ def has_major_contradiction(
 
     return any(
         (
+            features.dynamic_identifier_conflicts > 0,
             (
                 features.email_similarity > 0
                 and features.email_similarity
@@ -311,7 +314,42 @@ def get_grouping_edge_reason(
     organizational_support = (
         features.department_exact
         or features.manager_exact
+        or features.dynamic_org_matches > 0
     )
+
+    dynamic_identity_support = (
+        name_match
+        or strong_username
+        or strong_email_local
+        or features.dynamic_contact_matches > 0
+    )
+
+    if (
+        features.dynamic_identifier_matches >= 2
+        and confidence >= 70.0
+    ):
+        return "MULTIPLE_DYNAMIC_IDENTIFIERS"
+
+    if (
+        features.dynamic_identifier_matches >= 1
+        and dynamic_identity_support
+        and confidence >= 60.0
+    ):
+        return "DYNAMIC_IDENTIFIER_WITH_IDENTITY_SUPPORT"
+
+    if (
+        features.dynamic_contact_matches >= 1
+        and name_match
+        and confidence >= 65.0
+    ):
+        return "DYNAMIC_CONTACT_WITH_NAME_SUPPORT"
+
+    if (
+        features.dynamic_name_matches >= 1
+        and strong_username
+        and confidence >= 60.0
+    ):
+        return "DYNAMIC_NAME_WITH_USERNAME_SUPPORT"
 
     if (
         features.employee_id_exact
@@ -957,8 +995,6 @@ def detect_duplicate_groups(
                     )
                 )
 
-                # Never invent a direct primary/candidate relationship
-                # from a transitive graph path.
                 if prediction is None:
                     continue
 
