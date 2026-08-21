@@ -27,7 +27,13 @@ engine = create_engine(
 
 @event.listens_for(Engine, "connect")
 def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
-    """Configure SQLite for concurrent API reads and background scan writes."""
+    """Configure connection-local SQLite settings safely.
+
+    Do not execute PRAGMA journal_mode=WAL here. Changing journal mode is a
+    database-wide operation that can itself require an exclusive lock. Running
+    it for every pooled connection can therefore prevent the application from
+    starting when another process has the database open.
+    """
     del connection_record
 
     # This listener can also receive non-SQLite DBAPI connections if the
@@ -38,10 +44,7 @@ def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
 
     cursor = dbapi_connection.cursor()
     try:
-        # WAL allows readers (for example /api/auth/me) to continue while a
-        # scan/integration transaction is writing account and result rows.
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        # These settings are safe to apply per connection.
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA busy_timeout=30000")
     finally:
