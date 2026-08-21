@@ -20,6 +20,11 @@ from app.ai.duplicate_engine.attribute_profiler import (
     dynamic_blocking_profiles,
 )
 from app.ai.duplicate_engine.normalizer import build_attribute_view
+from app.ai.duplicate_engine.similarity import (
+    similarity_ratio,
+    token_similarity,
+    username_similarity,
+)
 
 
 @dataclass(slots=True)
@@ -34,6 +39,18 @@ class BlockingCandidate:
 
 
 class BlockingCandidateGenerator:
+    """Generate plausible same-application account pairs.
+
+    Primary candidate generation uses deterministic blocking keys. When that
+    produces unusually few pairs for a small/medium application, a conservative
+    fuzzy-neighbour expansion adds only pairs supported by multiple weak-to-
+    strong identity signals. Fuzzy expansion never decides that two accounts
+    are duplicates; it only decides which pairs reach the hybrid scorer.
+    """
+
+    FUZZY_EXHAUSTIVE_LIMIT = 750
+    FUZZY_NEIGHBORS_PER_ACCOUNT = 5
+
     def __init__(
         self,
         *,
@@ -183,6 +200,157 @@ class BlockingCandidateGenerator:
         else:
             print("[Attribute Profiling] No dynamic blocking attributes selected.")
 
+    @staticmethod
+    def _value(account: Any, field_name: str) -> str:
+        return str(get_account_value(account, field_name) or "").strip()
+
+    def _fuzzy_pair_evidence(
+        self,
+        account_1: Any,
+        account_2: Any,
+    ) -> tuple[float, list[str]] | None:
+        """Return conservative fuzzy-neighbour evidence for candidate recall.
+
+        A pair must have at least two mutually supporting identity signals.
+        No single fuzzy field can create a candidate by itself.
+        """
+        username_1 = self._value(account_1, "username")
+        username_2 = self._value(account_2, "username")
+        display_1 = self._value(account_1, "display_name")
+        display_2 = self._value(account_2, "display_name")
+        first_1 = self._value(account_1, "first_name")
+        first_2 = self._value(account_2, "first_name")
+        last_1 = self._value(account_1, "last_name")
+        last_2 = self._value(account_2, "last_name")
+        email_local_1 = self._value(account_1, "email_local_part")
+        email_local_2 = self._value(account_2, "email_local_part")
+
+        username_score = username_similarity(username_1, username_2)
+        name_score = token_similarity(display_1, display_2)
+        first_score = similarity_ratio(first_1, first_2)
+        last_score = similarity_ratio(last_1, last_2)
+        email_local_score = username_similarity(email_local_1, email_local_2)
+
+        strong_first_last = first_score >= 0.88 and last_score >= 0.90
+        name_with_support = (
+            name_score >= 0.84
+            and (username_score >= 0.66 or email_local_score >= 0.66)
+        )
+        username_email_support = (
+            username_score >= 0.86
+            and email_local_score >= 0.76
+        )
+        first_last_with_support = (
+            strong_first_last
+            and (username_score >= 0.62 or email_local_score >= 0.62)
+        )
+
+        if not (
+            name_with_support
+            or username_email_support
+            or first_last_with_support
+        ):
+            return None
+
+        evidence: list[tuple[str, float, float]] = []
+        if username_score >= 0.66:
+            evidence.append(("Similar username", username_score, 2.3))
+        if email_local_score >= 0.66:
+            evidence.append(("Similar email local part", email_local_score, 2.5))
+        if name_score >= 0.80:
+            evidence.append(("Similar display name", name_score, 3.0))
+        if strong_first_last:
+            evidence.append(("Strong first and last name similarity", min(first_score, last_score), 3.0))
+
+        if len(evidence) < 2:
+            return None
+
+        weighted_quality = sum(score * weight for _, score, weight in evidence)
+        total_weight = sum(weight for _, _, weight in evidence)
+        quality = weighted_quality / total_weight if total_weight else 0.0
+
+        # Keep fuzzy candidates above the configured blocking threshold while
+        # still ranking stronger fuzzy neighbours ahead of weaker ones.
+        blocking_score = max(
+            self.minimum_blocking_score,
+            round(4.0 + max(0.0, quality - 0.65) * 12.0, 2),
+        )
+        reasons = [label for label, _, _ in evidence]
+        return blocking_score, reasons
+
+    def _should_expand_fuzzy(self, account_count: int, primary_pair_count: int) -> bool:
+        if account_count < 2 or account_count > self.FUZZY_EXHAUSTIVE_LIMIT:
+            return False
+
+        # If deterministic blocking already produces a healthy candidate
+        # neighbourhood, avoid spending CPU on exhaustive fuzzy expansion.
+        healthy_pair_floor = max(20, account_count // 2)
+        return primary_pair_count < healthy_pair_floor
+
+    def _expand_fuzzy_candidates(
+        self,
+        accounts: list[Any],
+        existing_pairs: set[tuple[int, int]],
+    ) -> list[BlockingCandidate]:
+        if not self._should_expand_fuzzy(len(accounts), len(existing_pairs)):
+            return []
+
+        per_account: dict[int, list[tuple[float, int, list[str]]]] = defaultdict(list)
+        evaluated_pairs = 0
+
+        for index_1, index_2 in combinations(range(len(accounts)), 2):
+            pair_key = (index_1, index_2)
+            if pair_key in existing_pairs:
+                continue
+            if not self._allowed(accounts[index_1], accounts[index_2], index_1, index_2):
+                continue
+
+            evaluated_pairs += 1
+            evidence = self._fuzzy_pair_evidence(accounts[index_1], accounts[index_2])
+            if evidence is None:
+                continue
+
+            score, reasons = evidence
+            per_account[index_1].append((score, index_2, reasons))
+            per_account[index_2].append((score, index_1, reasons))
+
+        selected_pairs: dict[tuple[int, int], tuple[float, list[str]]] = {}
+        neighbour_limit = min(
+            self.FUZZY_NEIGHBORS_PER_ACCOUNT,
+            max(1, self.max_candidates_per_account // 2),
+        )
+
+        for account_index, neighbours in per_account.items():
+            neighbours.sort(key=lambda item: (-item[0], item[1]))
+            for score, other_index, reasons in neighbours[:neighbour_limit]:
+                pair_key = tuple(sorted((account_index, other_index)))
+                existing = selected_pairs.get(pair_key)
+                if existing is None or score > existing[0]:
+                    selected_pairs[pair_key] = (score, reasons)
+
+        fuzzy_candidates = [
+            BlockingCandidate(
+                account_1_index=index_1,
+                account_2_index=index_2,
+                account_1=accounts[index_1],
+                account_2=accounts[index_2],
+                shared_block_keys=["fuzzy:adaptive-neighbour"],
+                blocking_score=round(score, 2),
+                reasons=["Adaptive fuzzy candidate"] + reasons,
+            )
+            for (index_1, index_2), (score, reasons) in selected_pairs.items()
+        ]
+
+        print(
+            "[Candidate Expansion] "
+            f"PrimaryPairs={len(existing_pairs)}, "
+            f"EvaluatedFuzzyPairs={evaluated_pairs}, "
+            f"FuzzyPairsAdded={len(fuzzy_candidates)}, "
+            f"NeighborLimit={neighbour_limit}"
+        )
+
+        return fuzzy_candidates
+
     def generate(self, accounts: list[Any]) -> list[BlockingCandidate]:
         if len(accounts) < 2:
             return []
@@ -220,6 +388,12 @@ class BlockingCandidateGenerator:
                 )
             )
 
+        primary_pairs = {
+            (candidate.account_1_index, candidate.account_2_index)
+            for candidate in candidates
+        }
+        candidates.extend(self._expand_fuzzy_candidates(accounts, primary_pairs))
+
         candidates.sort(
             key=lambda candidate: (
                 -candidate.blocking_score,
@@ -230,12 +404,18 @@ class BlockingCandidateGenerator:
 
         selected: list[BlockingCandidate] = []
         counts: dict[int, int] = defaultdict(int)
+        seen_pairs: set[tuple[int, int]] = set()
+
         for candidate in candidates:
             left = candidate.account_1_index
             right = candidate.account_2_index
+            pair_key = tuple(sorted((left, right)))
+            if pair_key in seen_pairs:
+                continue
             if counts[left] >= self.max_candidates_per_account or counts[right] >= self.max_candidates_per_account:
                 continue
             selected.append(candidate)
+            seen_pairs.add(pair_key)
             counts[left] += 1
             counts[right] += 1
 
