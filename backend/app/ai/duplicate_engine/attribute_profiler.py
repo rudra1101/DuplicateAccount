@@ -60,8 +60,9 @@ def classify_attribute(name: str) -> AttributeCategory:
     }
     identifier_tokens = (
         "employeeid", "employeenumber", "workernumber", "workerid",
-        "personnumber", "personid", "staffid", "login", "username",
-        "samaccountname", "accountname", "uid", "upn",
+        "personnumber", "personid", "staffid", "payrollnumber", "payrollid",
+        "badgeid", "personnelnumber", "login", "username", "samaccountname",
+        "accountname", "uid", "upn",
     )
     contact_tokens = (
         "email", "mail", "phone", "mobile", "telephone",
@@ -149,8 +150,8 @@ def profile_application_attributes(
         uniqueness = cardinality / non_empty_count
         category = classify_attribute(name)
 
-        # Useful duplicate indicators need good coverage and enough selectivity,
-        # but should still be able to repeat for genuine duplicate accounts.
+        # Use both data quality and semantic role. High uniqueness alone does
+        # not make GUIDs/timestamps useful duplicate evidence.
         selectivity = max(0.0, min(1.0, uniqueness))
         coverage_factor = max(0.0, min(1.0, coverage))
         usefulness = (
