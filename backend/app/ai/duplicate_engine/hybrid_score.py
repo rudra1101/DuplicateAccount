@@ -32,11 +32,7 @@ class ScoreBreakdown:
             "missingDataPenalty": round(self.missing_data_penalty, 2),
             "rawScore": round(self.raw_score, 2),
             "finalScore": round(self.final_score, 2),
-            "confidenceCap": (
-                round(self.confidence_cap, 2)
-                if self.confidence_cap is not None
-                else None
-            ),
+            "confidenceCap": round(self.confidence_cap, 2) if self.confidence_cap is not None else None,
         }
 
 
@@ -44,13 +40,7 @@ def _clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
     return max(minimum, min(value, maximum))
 
 
-def _ramp(
-    value: float,
-    *,
-    start: float,
-    end: float,
-    points: float,
-) -> float:
+def _ramp(value: float, *, start: float, end: float, points: float) -> float:
     if value <= start:
         return 0.0
     if value >= end:
@@ -63,20 +53,16 @@ def _ramp(
 def _has_name_evidence(features: ComparisonFeatures) -> bool:
     return (
         features.display_name_similarity >= 0.80
-        or (
-            features.first_name_similarity >= 0.80
-            and features.last_name_similarity >= 0.85
-        )
+        or (features.first_name_similarity >= 0.80 and features.last_name_similarity >= 0.85)
+        or features.dynamic_name_matches > 0
     )
 
 
 def _has_strong_name_evidence(features: ComparisonFeatures) -> bool:
     return (
         features.display_name_similarity >= 0.92
-        or (
-            features.first_name_similarity >= 0.90
-            and features.last_name_similarity >= 0.92
-        )
+        or (features.first_name_similarity >= 0.90 and features.last_name_similarity >= 0.92)
+        or features.dynamic_name_matches >= 2
     )
 
 
@@ -85,12 +71,12 @@ def _has_authoritative_identifier(features: ComparisonFeatures) -> bool:
         features.employee_id_exact
         or features.email_exact
         or features.phone_exact
+        or features.dynamic_identifier_matches > 0
     )
 
 
 def _count_independent_evidence(features: ComparisonFeatures) -> int:
     count = 0
-
     if features.employee_id_exact:
         count += 1
     if features.email_exact or features.email_similarity >= 0.92:
@@ -105,199 +91,115 @@ def _count_independent_evidence(features: ComparisonFeatures) -> int:
         count += 1
     if features.department_exact:
         count += 1
-
+    count += min(features.dynamic_identifier_matches, 2)
+    count += min(features.dynamic_contact_matches, 1)
+    count += min(features.dynamic_org_matches, 1)
     return count
 
 
 def _calculate_authoritative_score(features: ComparisonFeatures) -> float:
     score = 0.0
-
     if features.employee_id_exact:
         score += 46.0
     if features.email_exact:
         score += 24.0
     if features.phone_exact:
         score += 16.0
-
+    score += min(50.0, features.dynamic_identifier_matches * 40.0)
+    score += min(24.0, features.dynamic_contact_matches * 18.0)
     return score
 
 
 def _calculate_identity_score(features: ComparisonFeatures) -> float:
     score = 0.0
-
     if features.username_exact:
         score += 10.0
     else:
-        score += _ramp(
-            features.username_similarity,
-            start=0.75,
-            end=0.98,
-            points=9.0,
-        )
+        score += _ramp(features.username_similarity, start=0.75, end=0.98, points=9.0)
 
-    score += _ramp(
-        features.display_name_similarity,
-        start=0.68,
-        end=0.98,
-        points=14.0,
-    )
-    score += _ramp(
-        features.first_name_similarity,
-        start=0.72,
-        end=0.98,
-        points=5.0,
-    )
-    score += _ramp(
-        features.last_name_similarity,
-        start=0.75,
-        end=0.98,
-        points=7.0,
-    )
+    score += _ramp(features.display_name_similarity, start=0.68, end=0.98, points=14.0)
+    score += _ramp(features.first_name_similarity, start=0.72, end=0.98, points=5.0)
+    score += _ramp(features.last_name_similarity, start=0.75, end=0.98, points=7.0)
 
     if not features.email_exact:
-        score += _ramp(
-            features.email_similarity,
-            start=0.78,
-            end=0.99,
-            points=8.0,
-        )
-        score += _ramp(
-            features.email_local_similarity,
-            start=0.78,
-            end=0.98,
-            points=5.0,
-        )
+        score += _ramp(features.email_similarity, start=0.78, end=0.99, points=8.0)
+        score += _ramp(features.email_local_similarity, start=0.78, end=0.98, points=5.0)
 
     if not features.phone_exact:
-        score += _ramp(
-            features.phone_similarity,
-            start=0.86,
-            end=1.00,
-            points=3.0,
-        )
+        score += _ramp(features.phone_similarity, start=0.86, end=1.00, points=3.0)
 
+    score += min(14.0, features.dynamic_name_matches * 8.0)
+    score += min(4.0, features.dynamic_unknown_matches * 2.0)
     return score
 
 
 def _calculate_organizational_score(features: ComparisonFeatures) -> float:
     score = 0.0
-
     if features.manager_exact:
         score += 4.0
     else:
-        score += _ramp(
-            features.manager_similarity,
-            start=0.82,
-            end=1.00,
-            points=2.5,
-        )
+        score += _ramp(features.manager_similarity, start=0.82, end=1.00, points=2.5)
 
     if features.department_exact:
         score += 2.5
     else:
-        score += _ramp(
-            features.department_similarity,
-            start=0.85,
-            end=1.00,
-            points=1.0,
-        )
+        score += _ramp(features.department_similarity, start=0.85, end=1.00, points=1.0)
 
     if features.status_exact:
         score += 0.5
-
-    score += _ramp(
-        features.title_similarity,
-        start=0.84,
-        end=1.00,
-        points=2.0,
-    )
-    score += _ramp(
-        features.location_similarity,
-        start=0.88,
-        end=1.00,
-        points=1.0,
-    )
-
+    score += _ramp(features.title_similarity, start=0.84, end=1.00, points=2.0)
+    score += _ramp(features.location_similarity, start=0.88, end=1.00, points=1.0)
+    score += min(6.0, features.dynamic_org_matches * 2.0)
     return score
 
 
 def _calculate_semantic_score(features: ComparisonFeatures) -> float:
     return (
-        _ramp(
-            features.identity_embedding_similarity,
-            start=0.89,
-            end=0.99,
-            points=3.0,
-        )
-        + _ramp(
-            features.name_embedding_similarity,
-            start=0.91,
-            end=0.99,
-            points=2.0,
-        )
-        + _ramp(
-            features.organization_embedding_similarity,
-            start=0.93,
-            end=0.99,
-            points=1.0,
-        )
+        _ramp(features.identity_embedding_similarity, start=0.89, end=0.99, points=3.0)
+        + _ramp(features.name_embedding_similarity, start=0.91, end=0.99, points=2.0)
+        + _ramp(features.organization_embedding_similarity, start=0.93, end=0.99, points=1.0)
     )
 
 
 def _calculate_contradictions(features: ComparisonFeatures) -> float:
-    """Penalize actual contradictory values, never missing optional data."""
     penalty = 0.0
-
     if 0 < features.email_similarity < 0.45:
         penalty += 20.0
     elif 0 < features.email_similarity < 0.65:
         penalty += 10.0
-
     if 0 < features.username_similarity < 0.40:
         penalty += 10.0
     elif 0 < features.username_similarity < 0.60:
         penalty += 5.0
-
     if 0 < features.first_name_similarity < 0.40:
         penalty += 12.0
     elif 0 < features.first_name_similarity < 0.65:
         penalty += 5.0
-
     if 0 < features.last_name_similarity < 0.40:
         penalty += 14.0
     elif 0 < features.last_name_similarity < 0.65:
         penalty += 6.0
-
     if 0 < features.display_name_similarity < 0.40:
         penalty += 16.0
     elif 0 < features.display_name_similarity < 0.65:
         penalty += 7.0
-
     if 0 < features.department_similarity < 0.35:
         penalty += 3.0
     if 0 < features.manager_similarity < 0.35:
         penalty += 3.0
-
-    # Same-application matching is the product's intended mode. Being in the
-    # same application is therefore neither a contradiction nor a penalty.
+    penalty += min(45.0, features.dynamic_identifier_conflicts * 25.0)
     return penalty
 
 
 def _calculate_missing_penalty(features: ComparisonFeatures) -> float:
-    # Missing optional attributes mean "unknown", not "different". Keeping
-    # this at zero prevents sparse application schemas from being punished.
-    # Evidence-count caps below still prevent one weak field from becoming a
-    # high-confidence duplicate.
     return 0.0
 
 
 def _determine_confidence_cap(features: ComparisonFeatures) -> float | None:
-    """Cap weak evidence combinations without depending on schema sparsity."""
     evidence_count = _count_independent_evidence(features)
     authoritative = _has_authoritative_identifier(features)
     name_evidence = _has_name_evidence(features)
     strong_name = _has_strong_name_evidence(features)
-
     cap: float | None = None
 
     def apply_cap(value: float) -> None:
@@ -306,27 +208,16 @@ def _determine_confidence_cap(features: ComparisonFeatures) -> float | None:
 
     if not authoritative and evidence_count == 0:
         apply_cap(24.0)
-
-    if (
-        not authoritative
-        and not name_evidence
-        and (
-            features.username_exact
-            or features.username_similarity >= 0.75
-        )
+    if not authoritative and not name_evidence and (
+        features.username_exact or features.username_similarity >= 0.75
     ):
         apply_cap(44.0)
-
     if not authoritative and evidence_count <= 1:
         apply_cap(44.0)
-
-    if (
-        not authoritative
-        and evidence_count == 2
-        and not strong_name
-    ):
+    if not authoritative and evidence_count == 2 and not strong_name:
         apply_cap(52.0)
-
+    if features.dynamic_identifier_conflicts > 0 and not features.employee_id_exact:
+        apply_cap(55.0)
     return cap
 
 
@@ -342,24 +233,13 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
     semantic = _calculate_semantic_score(features)
     contradictions = _calculate_contradictions(features)
     missing_penalty = _calculate_missing_penalty(features)
-
-    raw_score = (
-        authoritative
-        + identity
-        + organizational
-        + semantic
-        - contradictions
-        - missing_penalty
-    )
-
+    raw_score = authoritative + identity + organizational + semantic - contradictions - missing_penalty
     confidence_cap = _determine_confidence_cap(features)
     final_score = _calibrate_raw_score(raw_score)
 
     if confidence_cap is not None:
         final_score = min(final_score, confidence_cap)
 
-    # Strong deterministic combinations remain authoritative even for sparse
-    # source schemas because missing fields are not negative evidence.
     if (
         features.employee_id_exact
         and features.email_exact
@@ -369,28 +249,24 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
         final_score = max(final_score, 97.0)
     elif (
         features.employee_id_exact
-        and (
-            features.email_exact
-            or _has_name_evidence(features)
-        )
+        and (features.email_exact or _has_name_evidence(features))
         and contradictions < 15.0
     ):
         final_score = max(final_score, 91.0)
-    elif (
-        features.email_exact
-        and _has_strong_name_evidence(features)
-        and contradictions < 15.0
-    ):
+    elif features.email_exact and _has_strong_name_evidence(features) and contradictions < 15.0:
         final_score = max(final_score, 87.0)
-    elif (
-        features.phone_exact
-        and _has_strong_name_evidence(features)
-        and contradictions < 15.0
-    ):
+    elif features.phone_exact and _has_strong_name_evidence(features) and contradictions < 15.0:
         final_score = max(final_score, 82.0)
+    elif features.dynamic_identifier_matches >= 2 and features.dynamic_identifier_conflicts == 0:
+        final_score = max(final_score, 90.0)
+    elif (
+        features.dynamic_identifier_matches >= 1
+        and (features.dynamic_name_matches > 0 or features.dynamic_contact_matches > 0)
+        and features.dynamic_identifier_conflicts == 0
+    ):
+        final_score = max(final_score, 86.0)
 
     final_score = _clamp(min(final_score, 99.5))
-
     return ScoreBreakdown(
         authoritative=authoritative,
         identity=identity,
