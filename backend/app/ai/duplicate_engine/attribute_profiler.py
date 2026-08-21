@@ -41,6 +41,27 @@ def _canonical_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
 
+# These are already handled by the legacy semantic feature extractor. Dynamic
+# profiling must not count the same evidence a second time.
+LEGACY_HANDLED_FIELDS = {
+    "username", "userName", "user_name", "accountName", "account_name",
+    "samAccountName", "sAMAccountName", "uid", "upn",
+    "email", "mail", "emailAddress", "email_address", "userPrincipalName",
+    "employeeId", "employeeID", "employee_id", "employeeNumber",
+    "workerId", "worker_id", "personNumber", "person_number",
+    "displayName", "display_name", "fullName", "full_name", "name",
+    "firstName", "first_name", "givenName", "given_name",
+    "lastName", "last_name", "surname", "sn",
+    "department", "departmentName", "department_name",
+    "manager", "managerName", "manager_name", "managerId", "manager_id",
+    "jobTitle", "job_title", "title", "designation",
+    "phone", "mobile", "telephone", "telephoneNumber", "mobilePhone",
+    "location", "office", "officeLocation", "office_location", "city",
+    "status", "accountStatus", "account_status", "enabled", "active",
+}
+LEGACY_HANDLED_CANONICAL = {_canonical_name(value) for value in LEGACY_HANDLED_FIELDS}
+
+
 def _is_scalar(value: Any) -> bool:
     return isinstance(value, (str, int, float, bool))
 
@@ -64,9 +85,7 @@ def classify_attribute(name: str) -> AttributeCategory:
         "badgeid", "personnelnumber", "login", "username", "samaccountname",
         "accountname", "uid", "upn",
     )
-    contact_tokens = (
-        "email", "mail", "phone", "mobile", "telephone",
-    )
+    contact_tokens = ("email", "mail", "phone", "mobile", "telephone")
     name_tokens = (
         "displayname", "fullname", "firstname", "lastname", "givenname",
         "surname", "commonname", "preferredname", "name",
@@ -75,9 +94,7 @@ def classify_attribute(name: str) -> AttributeCategory:
         "department", "manager", "title", "designation", "location",
         "office", "businessunit", "orgunit", "costcenter", "company",
     )
-    status_tokens = (
-        "status", "state", "enabled", "active", "lifecycle",
-    )
+    status_tokens = ("status", "state", "enabled", "active", "lifecycle")
     date_tokens = (
         "created", "updated", "modified", "timestamp", "date", "time",
         "lastlogin", "lastlogon", "whencreated", "whenchanged",
@@ -120,14 +137,11 @@ def _category_factor(category: AttributeCategory) -> float:
     }[category]
 
 
-def profile_application_attributes(
-    accounts: list[NormalizedAccount],
-) -> list[AttributeProfile]:
+def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[AttributeProfile]:
     if not accounts:
         return []
 
     values_by_attribute: dict[str, list[str]] = {}
-
     for account in accounts:
         view = build_attribute_view(account.raw)
         for name, value in view.items():
@@ -149,9 +163,8 @@ def profile_application_attributes(
         coverage = non_empty_count / total_accounts
         uniqueness = cardinality / non_empty_count
         category = classify_attribute(name)
+        leaf_canonical = _canonical_name(name.split(".")[-1])
 
-        # Use both data quality and semantic role. High uniqueness alone does
-        # not make GUIDs/timestamps useful duplicate evidence.
         selectivity = max(0.0, min(1.0, uniqueness))
         coverage_factor = max(0.0, min(1.0, coverage))
         usefulness = (
@@ -162,8 +175,10 @@ def profile_application_attributes(
         )
 
         repeated_values = sum(1 for count in counts.values() if count > 1)
+        already_handled = leaf_canonical in LEGACY_HANDLED_CANONICAL
         blocking_eligible = (
-            category
+            not already_handled
+            and category
             in {
                 AttributeCategory.IDENTIFIER,
                 AttributeCategory.CONTACT,
