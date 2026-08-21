@@ -17,6 +17,7 @@ from app.db_models.chat_feedback import ChatFeedbackRecord
 from app.db_models.permission import PermissionRecord
 from app.db_models.role import RoleRecord
 from app.db_models.role_permission import RolePermissionRecord
+from app.db_models.service import ServiceRecord
 from app.db_models.user import UserRecord
 
 __all__ = [
@@ -39,5 +40,6 @@ __all__ = [
     "PermissionRecord",
     "RoleRecord",
     "RolePermissionRecord",
+    "ServiceRecord",
     "UserRecord",
 ]
