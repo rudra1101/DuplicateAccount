@@ -1,4 +1,5 @@
 from collections.abc import Generator
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -8,8 +9,32 @@ from sqlalchemy.orm import Session, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-DATABASE_PATH = BASE_DIR / "duplicate_accounts.db"
 
+def _resolve_database_path() -> Path:
+    """Resolve the SQLite runtime path.
+
+    IDENTITYAI_DATABASE_PATH can point to a database outside the repository
+    (recommended when the project lives in OneDrive/Dropbox/other synced
+    folders). If it is not set, preserve the existing repository-local path so
+    current installations continue to work unchanged.
+    """
+    configured_path = str(
+        os.getenv("IDENTITYAI_DATABASE_PATH", "")
+        or ""
+    ).strip()
+
+    if configured_path:
+        path = Path(configured_path).expanduser()
+        if not path.is_absolute():
+            path = (BASE_DIR / path).resolve()
+    else:
+        path = BASE_DIR / "duplicate_accounts.db"
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+DATABASE_PATH = _resolve_database_path()
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 
@@ -36,15 +61,12 @@ def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
     """
     del connection_record
 
-    # This listener can also receive non-SQLite DBAPI connections if the
-    # application changes database engines in the future.
     module_name = dbapi_connection.__class__.__module__.lower()
     if "sqlite" not in module_name:
         return
 
     cursor = dbapi_connection.cursor()
     try:
-        # These settings are safe to apply per connection.
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA busy_timeout=30000")
     finally:
@@ -60,13 +82,7 @@ SessionLocal = sessionmaker(
 
 
 def get_db() -> Generator[Session, None, None]:
-    """
-    FastAPI database dependency.
-
-    Opens one SQLAlchemy session for the request and closes
-    it automatically after the request finishes.
-    """
-
+    """FastAPI database dependency."""
     db = SessionLocal()
 
     try:
