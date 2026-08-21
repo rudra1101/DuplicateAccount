@@ -23,12 +23,19 @@ interface Props {
 }
 
 const DynamicConnectorForm = ({ connector, values, errors, onChange }: Props) => {
+  const resolvedValue = (fieldName: string): unknown => {
+    if (values[fieldName] !== undefined && values[fieldName] !== null) {
+      return values[fieldName];
+    }
+    return connector.configurationSchema.fields.find((item) => item.name === fieldName)?.default ?? "";
+  };
+
   const isVisible = (field: ConnectorField): boolean => {
     if (!field.visibleWhen) return true;
 
     return Object.entries(field.visibleWhen).every(([dependency, allowedValues]) => {
-      const current = values[dependency];
-      return allowedValues.map(String).includes(String(current ?? ""));
+      const current = resolvedValue(dependency);
+      return allowedValues.map(String).includes(String(current));
     });
   };
 
