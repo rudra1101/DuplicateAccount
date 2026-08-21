@@ -185,6 +185,39 @@ def _category_factor(category: AttributeCategory) -> float:
     }[category]
 
 
+def _bucket_is_reasonable(
+    *,
+    category: AttributeCategory,
+    largest_bucket: int,
+    non_empty_count: int,
+) -> bool:
+    """Prevent broad low-value buckets without suppressing real identifiers.
+
+    A repeated identifier value is exactly what duplicate detection is looking
+    for, so a tiny test/application sample such as 2 of 3 accounts sharing a
+    payroll number must remain eligible. Broad UNKNOWN/organizational values
+    are still restricted aggressively because they create noisy candidate sets.
+    Candidate generation separately enforces max_block_size for absolute scale.
+    """
+    if non_empty_count <= 0:
+        return False
+
+    ratio = largest_bucket / non_empty_count
+
+    if category == AttributeCategory.IDENTIFIER:
+        return largest_bucket <= 100
+    if category == AttributeCategory.CONTACT:
+        return largest_bucket <= 50 and (non_empty_count < 10 or ratio <= 0.60)
+    if category == AttributeCategory.NAME:
+        return largest_bucket <= 50 and (non_empty_count < 10 or ratio <= 0.50)
+    if category == AttributeCategory.ORGANIZATIONAL:
+        return largest_bucket <= 50 and ratio <= 0.30
+    if category == AttributeCategory.UNKNOWN:
+        return largest_bucket <= 25 and ratio <= 0.20
+
+    return False
+
+
 def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[AttributeProfile]:
     if not accounts:
         return []
@@ -227,13 +260,8 @@ def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[At
 
         repeated_values = sum(1 for count in counts.values() if count > 1)
         largest_bucket = max(counts.values()) if counts else 0
-        largest_bucket_ratio = largest_bucket / non_empty_count if non_empty_count else 0.0
         already_handled = leaf_canonical in LEGACY_HANDLED_CANONICAL
 
-        # Low-cardinality flags/status fields and very broad buckets are poor
-        # blocking keys: they create many unrelated pairs and drown out useful
-        # identity evidence. UNKNOWN fields are accepted only with stronger
-        # selectivity because their semantics are not understood yet.
         category_allowed = category in {
             AttributeCategory.IDENTIFIER,
             AttributeCategory.CONTACT,
@@ -246,7 +274,6 @@ def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[At
             AttributeCategory.CONTACT,
             AttributeCategory.NAME,
         } else 4
-        maximum_bucket_ratio = 0.35 if category == AttributeCategory.UNKNOWN else 0.50
         minimum_usefulness = 18.0 if category == AttributeCategory.UNKNOWN else 12.0
 
         blocking_eligible = (
@@ -255,7 +282,11 @@ def profile_application_attributes(accounts: list[NormalizedAccount]) -> list[At
             and coverage >= 0.20
             and cardinality >= minimum_cardinality
             and repeated_values > 0
-            and largest_bucket_ratio <= maximum_bucket_ratio
+            and _bucket_is_reasonable(
+                category=category,
+                largest_bucket=largest_bucket,
+                non_empty_count=non_empty_count,
+            )
             and usefulness >= minimum_usefulness
         )
 
