@@ -265,6 +265,16 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
         and features.dynamic_identifier_conflicts == 0
     ):
         final_score = max(final_score, 86.0)
+    elif (
+        features.dynamic_identifier_matches == 1
+        and features.dynamic_identifier_conflicts == 0
+    ):
+        # A source-specific identifier discovered by the application profiler
+        # is authoritative enough to enter the review band on its own. A
+        # differing username is not treated as a veto because duplicate
+        # accounts commonly have different logins by definition. Additional
+        # name/contact evidence is still required for high-confidence scores.
+        final_score = max(final_score, 52.0)
 
     final_score = _clamp(min(final_score, 99.5))
     return ScoreBreakdown(
