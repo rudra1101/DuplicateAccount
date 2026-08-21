@@ -1,0 +1,7 @@
+{
+  "roles": [
+    {"name": "OWNER", "description": "System owner with unrestricted access. OWNER is protected from modification or deletion."},
+    {"name": "ADMIN", "description": "Application administrator with user, integration, role, and permission management capabilities."},
+    {"name": "USER", "description": "Standard operational user with run and schedule capabilities."}
+  ]
+}
