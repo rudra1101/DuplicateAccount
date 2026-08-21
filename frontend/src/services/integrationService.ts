@@ -199,6 +199,16 @@ export async function deleteIntegration(integrationId: number): Promise<void> {
   if (!response.ok) throw new Error((await response.text()) || "Unable to delete integration.");
 }
 
+export async function testIntegrationAuthentication(
+  integrationId: number,
+): Promise<IntegrationTestResult> {
+  const response = await fetch(
+    `${API_URL}/integrations/${integrationId}/test-authentication`,
+    { method: "POST" },
+  );
+  return parseResponse<IntegrationTestResult>(response, "Unable to test authentication.");
+}
+
 export async function testIntegration(integrationId: number): Promise<IntegrationTestResult> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}/test`, { method: "POST" });
   return parseResponse<IntegrationTestResult>(response, "Unable to test integration.");
