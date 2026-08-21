@@ -1,99 +1,140 @@
+from __future__ import annotations
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db_models.permission import PermissionRecord
 from app.db_models.role import RoleRecord
+from app.db_models.service import ServiceRecord
+from app.services.service_catalog_loader import (
+    ServiceManifest,
+    load_service_manifests,
+    load_system_roles,
+)
 
-PERMISSIONS = [
-    ("dashboard.view", "View dashboard", "Dashboard"),
-    ("duplicate.view", "View duplicate detection", "Duplicates"),
-    ("duplicate.review", "Review duplicate accounts", "Duplicates"),
-    ("report.view", "View reports", "Reports"),
-    ("integration.view", "View integrations", "Integrations"),
-    ("integration.run", "Run integrations", "Integrations"),
-    ("integration.schedule", "Manage integration schedules", "Integrations"),
-    ("integration.create", "Create integrations", "Integrations"),
-    ("integration.edit", "Edit integrations", "Integrations"),
-    ("integration.delete", "Delete integrations", "Integrations"),
-    ("integration.test", "Test integrations", "Integrations"),
-    ("upload.manage", "Upload account data", "Data"),
-    ("operations.view", "View operations", "Operations"),
-    ("settings.view", "View settings", "Settings"),
-    ("ml.view", "View ML training", "Machine Learning"),
-    ("ml.train", "Run ML training", "Machine Learning"),
-    ("knowledge.view", "View knowledge base", "Knowledge"),
-    ("knowledge.manage", "Manage knowledge base", "Knowledge"),
-    ("user.view", "View users", "Administration"),
-    ("user.create", "Create users", "Administration"),
-    ("user.edit", "Edit users", "Administration"),
-    ("user.disable", "Disable users", "Administration"),
-    ("user.assign_role", "Assign roles to users", "Administration"),
-    ("role.view", "View roles and permissions", "Administration"),
-    ("role.create", "Create roles", "Administration"),
-    ("role.edit", "Edit roles", "Administration"),
-    ("role.delete", "Delete roles", "Administration"),
-    ("role.manage_permissions", "Manage role permissions", "Administration"),
-]
 
-DEFAULT_ROLE_PERMISSIONS = {
-    "OWNER": "ALL",
-    "ADMIN": "ALL",
-    "USER": {
-        "dashboard.view",
-        "duplicate.view",
-        "report.view",
-        "integration.view",
-        "integration.run",
-        "integration.schedule",
-        "operations.view",
-        "settings.view",
-        "knowledge.view",
-    },
-}
-
-ROLE_DESCRIPTIONS = {
-    "OWNER": "System owner with unrestricted access. OWNER is protected from modification or deletion.",
-    "ADMIN": "Application administrator with user, integration, role, and permission management capabilities.",
-    "USER": "Standard operational user with run and schedule capabilities.",
-}
+def _requested_permissions_for_role(
+    manifest: ServiceManifest,
+    role_name: str,
+) -> set[str]:
+    requested = manifest.default_roles.get(role_name.upper())
+    if requested is None:
+        return set()
+    if requested == "ALL":
+        return {permission.code for permission in manifest.permissions}
+    return set(requested)
 
 
 def seed_rbac(db: Session) -> None:
+    """
+    Synchronize deploy-time service manifests into the database.
+
+    Runtime authorization reads permissions and role assignments from the DB.
+    Manifests are only an additive/bootstrap source:
+    - new services are inserted;
+    - service metadata is refreshed;
+    - new permissions are inserted;
+    - permission metadata is refreshed;
+    - existing role assignments are preserved;
+    - newly introduced permissions receive their manifest defaults;
+    - permissions removed from a manifest are NOT deleted from the DB.
+    """
+
+    manifests = load_service_manifests()
+    system_roles = load_system_roles()
+
+    existing_services = {
+        item.key: item
+        for item in db.scalars(select(ServiceRecord)).all()
+    }
     existing_permissions = {
-        item.code: item for item in db.scalars(select(PermissionRecord)).all()
+        item.code: item
+        for item in db.scalars(select(PermissionRecord)).all()
     }
 
-    for code, name, category in PERMISSIONS:
-        if code not in existing_permissions:
-            item = PermissionRecord(code=code, name=name, description=name, category=category)
-            db.add(item)
+    newly_created_permission_codes: set[str] = set()
+
+    for manifest in manifests:
+        service = existing_services.get(manifest.key)
+        if service is None:
+            service = ServiceRecord(key=manifest.key)
+            db.add(service)
             db.flush()
-            existing_permissions[code] = item
+            existing_services[manifest.key] = service
+
+        service.name = manifest.name
+        service.description = manifest.description
+        service.category = manifest.category
+        service.route = manifest.route
+        service.icon = manifest.icon
+        service.enabled = manifest.enabled
+        service.sort_order = manifest.sort_order
+
+        for permission_manifest in manifest.permissions:
+            permission = existing_permissions.get(permission_manifest.code)
+            if permission is None:
+                permission = PermissionRecord(
+                    code=permission_manifest.code,
+                    name=permission_manifest.name,
+                    description=permission_manifest.description,
+                    category=manifest.category,
+                )
+                db.add(permission)
+                db.flush()
+                existing_permissions[permission_manifest.code] = permission
+                newly_created_permission_codes.add(permission_manifest.code)
+            else:
+                permission.name = permission_manifest.name
+                permission.description = permission_manifest.description
+                permission.category = manifest.category
 
     existing_roles = {
-        item.name: item for item in db.scalars(select(RoleRecord)).all()
+        item.name.upper(): item
+        for item in db.scalars(select(RoleRecord)).all()
     }
 
-    for role_name in ("OWNER", "ADMIN", "USER"):
+    newly_created_roles: set[str] = set()
+
+    for role_manifest in system_roles:
+        role_name = role_manifest.name.upper()
         role = existing_roles.get(role_name)
         if role is None:
             role = RoleRecord(
                 name=role_name,
-                description=ROLE_DESCRIPTIONS[role_name],
+                description=role_manifest.description,
                 is_system=True,
             )
             db.add(role)
             db.flush()
             existing_roles[role_name] = role
+            newly_created_roles.add(role_name)
+        else:
+            role.is_system = True
+            if not role.description:
+                role.description = role_manifest.description
 
-        # Seed defaults only when a system role has no permissions yet so later
-        # permission changes are not overwritten at every application startup.
-        if not role.permissions:
-            requested = DEFAULT_ROLE_PERMISSIONS[role_name]
-            if requested == "ALL":
-                role.permissions = list(existing_permissions.values())
-            else:
-                role.permissions = [existing_permissions[code] for code in requested]
+    for role_manifest in system_roles:
+        role_name = role_manifest.name.upper()
+        role = existing_roles[role_name]
+        current_codes = {permission.code for permission in role.permissions}
+
+        requested_codes: set[str] = set()
+        for manifest in manifests:
+            requested_codes.update(
+                _requested_permissions_for_role(manifest, role_name)
+            )
+
+        if role_name in newly_created_roles:
+            codes_to_add = requested_codes
+        else:
+            # Preserve admin changes. Only seed defaults for permissions that did
+            # not exist before this deployment.
+            codes_to_add = requested_codes & newly_created_permission_codes
+
+        for code in sorted(codes_to_add - current_codes):
+            permission = existing_permissions.get(code)
+            if permission is not None:
+                role.permissions.append(permission)
 
     db.commit()
 
@@ -101,6 +142,4 @@ def seed_rbac(db: Session) -> None:
 def permission_codes_for_role(role: RoleRecord | None) -> list[str]:
     if role is None:
         return []
-    if role.name == "OWNER":
-        return sorted(code for code, _, _ in PERMISSIONS)
     return sorted(permission.code for permission in role.permissions)
