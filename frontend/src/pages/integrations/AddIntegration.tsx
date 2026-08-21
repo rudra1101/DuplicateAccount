@@ -31,6 +31,7 @@ import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import SaveIcon from "@mui/icons-material/Save";
+import CableIcon from "@mui/icons-material/Cable";
 import { useNavigate, useParams } from "react-router-dom";
 
 import PageContainer from "../../components/common/PageContainer";
@@ -40,8 +41,11 @@ import {
   detectIntegrationSchema,
   getConnectorTypes,
   getIntegration,
+  testIntegration,
   updateIntegration,
+  type ConnectorField,
   type ConnectorType,
+  type IntegrationTestResult,
 } from "../../services/integrationService";
 import {
   getIntegrationApplications,
@@ -93,6 +97,12 @@ const AddIntegration = () => {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingConnection, setSavingConnection] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionId, setConnectionId] = useState<number | null>(integrationId ? Number(integrationId) : null);
+  const [connectionDirty, setConnectionDirty] = useState(!editing);
+  const [connectionMessage, setConnectionMessage] = useState("");
+  const [testResult, setTestResult] = useState<IntegrationTestResult | null>(null);
   const [detectingSchema, setDetectingSchema] = useState(false);
   const [schemaDetectionMessage, setSchemaDetectionMessage] = useState("");
   const [error, setError] = useState("");
@@ -119,6 +129,9 @@ const AddIntegration = () => {
           setConnectorType(integration.connectorType);
           setConfiguration(integration.configuration);
           setEnabled(integration.enabled);
+          setConnectionId(integration.id);
+          setConnectionDirty(false);
+          setConnectionMessage("Connection configuration is saved.");
 
           const existingApplications = await getIntegrationApplications(Number(integrationId));
           if (existingApplications.length > 0) {
@@ -136,8 +149,6 @@ const AddIntegration = () => {
                   required: attribute.required,
                   multiValued: attribute.multiValued,
                   position: index,
-                  // These fields remain in the transport contract for backend
-                  // compatibility, but are not exposed or controlled by the UI.
                   useForMatching: false,
                   matchType: "NONE" as MatchType,
                   matchWeight: 0,
@@ -167,6 +178,12 @@ const AddIntegration = () => {
     void loadPage();
   }, [editing, integrationId]);
 
+  const markConnectionDirty = () => {
+    setConnectionDirty(true);
+    setConnectionMessage("");
+    setTestResult(null);
+  };
+
   const handleConnectorTypeChange = (nextConnectorType: string) => {
     setConnectorType(nextConnectorType);
     const connector = connectorTypes.find((item) => item.type === nextConnectorType);
@@ -180,6 +197,14 @@ const AddIntegration = () => {
     setConfiguration(defaults);
     setFieldErrors({});
     setSchemaDetectionMessage("");
+    markConnectionDirty();
+  };
+
+  const isFieldVisible = (field: ConnectorField): boolean => {
+    if (!field.visibleWhen) return true;
+    return Object.entries(field.visibleWhen).every(([dependency, allowedValues]) =>
+      allowedValues.map(String).includes(String(configuration[dependency] ?? "")),
+    );
   };
 
   const updateApplication = (index: number, patch: Partial<ApplicationInput>) => {
@@ -207,10 +232,7 @@ const AddIntegration = () => {
   const addAttribute = () => {
     if (!selectedApplication) return;
     updateApplication(selectedApplicationIndex, {
-      attributes: [
-        ...selectedApplication.attributes,
-        emptyAttribute(selectedApplication.attributes.length),
-      ],
+      attributes: [...selectedApplication.attributes, emptyAttribute(selectedApplication.attributes.length)],
     });
   };
 
@@ -262,6 +284,7 @@ const AddIntegration = () => {
     if (!connectorType) errors.connectorType = "Connector type is required.";
 
     selectedConnector?.configurationSchema.fields.forEach((field) => {
+      if (!isFieldVisible(field)) return;
       const value = configuration[field.name];
       if (field.required && (value === undefined || value === null || value === "")) {
         errors[field.name] = `${field.label} is required.`;
@@ -272,10 +295,70 @@ const AddIntegration = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const detectSchemaFromCsv = async () => {
+  const saveConnection = async (): Promise<number | null> => {
+    if (!validateConnection()) return null;
+
+    try {
+      setSavingConnection(true);
+      setError("");
+      setConnectionMessage("");
+
+      let savedId: number;
+      if (connectionId) {
+        const updated = await updateIntegration(connectionId, {
+          name: name.trim(),
+          description: description.trim() || null,
+          configuration,
+          enabled,
+        });
+        savedId = updated.id;
+      } else {
+        const created = await createIntegration({
+          name: name.trim(),
+          connectorType,
+          description: description.trim() || null,
+          configuration,
+          enabled,
+        });
+        savedId = created.id;
+        setConnectionId(created.id);
+      }
+
+      setConnectionDirty(false);
+      setTestResult(null);
+      setConnectionMessage("Connection saved successfully. You can test it before continuing.");
+      return savedId;
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save connection.");
+      return null;
+    } finally {
+      setSavingConnection(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!connectionId || connectionDirty) {
+      setError("Save the latest connection configuration before testing it.");
+      return;
+    }
+
+    try {
+      setTestingConnection(true);
+      setError("");
+      setTestResult(null);
+      const result = await testIntegration(connectionId);
+      setTestResult(result);
+    } catch (testError) {
+      setError(testError instanceof Error ? testError.message : "Connection test failed.");
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const detectSchemaFromSource = async () => {
     if (!selectedApplication) return;
-    if (!validateConnection()) {
-      setError("Complete the connector configuration before detecting the CSV schema.");
+    if (!connectionId || connectionDirty) {
+      setError("Save the connection before detecting the source schema.");
       return;
     }
 
@@ -300,11 +383,7 @@ const AddIntegration = () => {
         `Detected ${attributes.length} attributes from ${result.filename} using ${result.sampledRows} sample row${result.sampledRows === 1 ? "" : "s"}.`,
       );
     } catch (detectError) {
-      setError(
-        detectError instanceof Error
-          ? detectError.message
-          : "Unable to detect schema from the configured CSV source.",
-      );
+      setError(detectError instanceof Error ? detectError.message : "Unable to detect source schema.");
     } finally {
       setDetectingSchema(false);
     }
@@ -355,7 +434,13 @@ const AddIntegration = () => {
   const goNext = () => {
     setError("");
 
-    if (activeStep === 0 && !validateConnection()) return;
+    if (activeStep === 0) {
+      if (!validateConnection()) return;
+      if (!connectionId || connectionDirty) {
+        setError("Save the connection before continuing to Applications.");
+        return;
+      }
+    }
     if (activeStep === 1 && !validateApplications()) return;
     if (activeStep === 2 && !validateSchemas()) return;
 
@@ -363,34 +448,19 @@ const AddIntegration = () => {
   };
 
   const handleSave = async () => {
-    if (!validateConnection() || !validateApplications() || !validateSchemas()) return;
+    if (!connectionId || connectionDirty) {
+      setError("Save the connection before saving the integration configuration.");
+      setActiveStep(0);
+      return;
+    }
+    if (!validateApplications() || !validateSchemas()) return;
 
     try {
       setSaving(true);
       setError("");
-      let savedIntegrationId: number;
-
-      if (editing && integrationId) {
-        const updated = await updateIntegration(Number(integrationId), {
-          name: name.trim(),
-          description: description.trim() || null,
-          configuration,
-          enabled,
-        });
-        savedIntegrationId = updated.id;
-      } else {
-        const created = await createIntegration({
-          name: name.trim(),
-          connectorType,
-          description: description.trim() || null,
-          configuration,
-          enabled,
-        });
-        savedIntegrationId = created.id;
-      }
 
       await saveIntegrationApplications(
-        savedIntegrationId,
+        connectionId,
         applications.map((applicationItem) => ({
           ...applicationItem,
           name: applicationItem.name.trim(),
@@ -401,8 +471,6 @@ const AddIntegration = () => {
             name: attribute.name.trim(),
             displayName: attribute.displayName?.trim() || null,
             position: index,
-            // Backend intentionally ignores these client-side matching fields
-            // and calculates its own internal strategy.
             useForMatching: false,
             matchType: "NONE",
             matchWeight: 0,
@@ -437,7 +505,7 @@ const AddIntegration = () => {
             {editing ? "Edit Integration" : "Create Integration"}
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Configure the source and application schema. Duplicate scoring is handled automatically by the backend.
+            Save and test the source connection first, then configure applications and schema.
           </Typography>
         </Box>
         <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>
@@ -458,9 +526,22 @@ const AddIntegration = () => {
       <Paper variant="outlined" sx={{ p: { xs: 2, md: 4 }, borderRadius: 3 }}>
         {activeStep === 0 && (
           <Stack spacing={3}>
-            <TextField label="Integration Name" value={name} required error={Boolean(fieldErrors.name)} helperText={fieldErrors.name} onChange={(event) => setName(event.target.value)} />
-            <TextField multiline minRows={2} label="Description" value={description} onChange={(event) => setDescription(event.target.value)} />
-            <FormControl disabled={editing} error={Boolean(fieldErrors.connectorType)}>
+            <TextField
+              label="Integration Name"
+              value={name}
+              required
+              error={Boolean(fieldErrors.name)}
+              helperText={fieldErrors.name}
+              onChange={(event) => { setName(event.target.value); markConnectionDirty(); }}
+            />
+            <TextField
+              multiline
+              minRows={2}
+              label="Description"
+              value={description}
+              onChange={(event) => { setDescription(event.target.value); markConnectionDirty(); }}
+            />
+            <FormControl disabled={Boolean(connectionId)} error={Boolean(fieldErrors.connectorType)}>
               <InputLabel>Connector Type</InputLabel>
               <Select label="Connector Type" value={connectorType} onChange={(event) => handleConnectorTypeChange(event.target.value)}>
                 {connectorTypes.map((connector) => (
@@ -475,11 +556,49 @@ const AddIntegration = () => {
                   connector={selectedConnector}
                   values={configuration}
                   errors={fieldErrors}
-                  onChange={(fieldName, value) => setConfiguration((current) => ({ ...current, [fieldName]: value }))}
+                  onChange={(fieldName, value) => {
+                    setConfiguration((current) => ({ ...current, [fieldName]: value }));
+                    markConnectionDirty();
+                  }}
                 />
               </>
             )}
-            <FormControlLabel control={<Switch checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />} label="Enable integration" />
+            <FormControlLabel
+              control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />}
+              label="Enable integration"
+            />
+
+            {connectionMessage && <Alert severity="success">{connectionMessage}</Alert>}
+            {connectionDirty && connectionId && (
+              <Alert severity="warning">Connection settings have changed. Save them again before testing or continuing.</Alert>
+            )}
+            {testResult && (
+              <Alert severity={testResult.success ? "success" : "error"}>
+                {testResult.message}
+                {testResult.success && testResult.details?.recordCount !== undefined
+                  ? ` Records returned: ${String(testResult.details.recordCount)}.`
+                  : ""}
+              </Alert>
+            )}
+
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              <Button
+                variant="contained"
+                startIcon={savingConnection ? <CircularProgress size={17} /> : <SaveIcon />}
+                disabled={savingConnection || testingConnection}
+                onClick={() => void saveConnection()}
+              >
+                {savingConnection ? "Saving Connection..." : connectionId ? "Save Connection Changes" : "Save Connection"}
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={testingConnection ? <CircularProgress size={17} /> : <CableIcon />}
+                disabled={!connectionId || connectionDirty || testingConnection || savingConnection}
+                onClick={() => void handleTestConnection()}
+              >
+                {testingConnection ? "Testing..." : "Test Connection"}
+              </Button>
+            </Stack>
           </Stack>
         )}
 
@@ -494,7 +613,7 @@ const AddIntegration = () => {
             {applications.map((applicationItem, index) => (
               <Paper key={index} variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
                 <Stack direction={{ xs: "column", md: "row" }} spacing={2} alignItems={{ md: "center" }}>
-                  <TextField label="Application Name" value={applicationItem.name} required sx={{ flex: 1 }} onChange={(event) => updateApplication(index, { name: event.target.value })} placeholder="e.g. AD US" />
+                  <TextField label="Application Name" value={applicationItem.name} required sx={{ flex: 1 }} onChange={(event) => updateApplication(index, { name: event.target.value })} placeholder="e.g. HR Accounts" />
                   <TextField label="Display Name" value={applicationItem.displayName ?? ""} sx={{ flex: 1 }} onChange={(event) => updateApplication(index, { displayName: event.target.value })} />
                   <TextField label="Object Type" value={applicationItem.objectType ?? "account"} sx={{ width: 180 }} onChange={(event) => updateApplication(index, { objectType: event.target.value })} />
                   <FormControlLabel control={<Switch checked={applicationItem.enabled} onChange={(event) => updateApplication(index, { enabled: event.target.checked })} />} label="Enabled" />
@@ -518,7 +637,7 @@ const AddIntegration = () => {
             <Box>
               <Typography variant="h6" fontWeight={700}>Application Schema</Typography>
               <Typography color="text.secondary" variant="body2">
-                Detect attributes from the configured CSV source, upload a JSON schema, or define attributes manually.
+                Detect attributes from the saved source connection, upload a JSON schema, or define attributes manually.
               </Typography>
             </Box>
 
@@ -540,12 +659,8 @@ const AddIntegration = () => {
               <>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
                   <TextField label="Schema Name" value={selectedApplication.schemaName ?? ""} onChange={(event) => updateApplication(selectedApplicationIndex, { schemaName: event.target.value })} sx={{ minWidth: 260 }} />
-                  <Button
-                    variant="outlined"
-                    disabled={detectingSchema}
-                    onClick={() => void detectSchemaFromCsv()}
-                  >
-                    {detectingSchema ? "Detecting..." : "Detect CSV Schema"}
+                  <Button variant="outlined" disabled={detectingSchema} onClick={() => void detectSchemaFromSource()}>
+                    {detectingSchema ? "Detecting..." : "Detect Schema"}
                   </Button>
                   <Button component="label" variant="outlined" startIcon={<UploadFileIcon />}>
                     Upload JSON Schema
@@ -574,7 +689,7 @@ const AddIntegration = () => {
                       {selectedApplication.attributes.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
-                            <Typography color="text.secondary">No attributes yet. Detect the CSV schema, upload JSON, or add attributes manually.</Typography>
+                            <Typography color="text.secondary">No attributes yet. Detect the schema, upload JSON, or add attributes manually.</Typography>
                           </TableCell>
                         </TableRow>
                       ) : selectedApplication.attributes.map((attribute, index) => (
@@ -606,14 +721,14 @@ const AddIntegration = () => {
             <Box>
               <Typography variant="h6" fontWeight={700}>Review Configuration</Typography>
               <Typography color="text.secondary" variant="body2">
-                Confirm the integration and application schemas. Duplicate scoring and attribute weighting are calculated internally.
+                Confirm the saved connection and application schemas. Duplicate scoring and attribute weighting are calculated internally.
               </Typography>
             </Box>
 
             <Paper variant="outlined" sx={{ p: 2.5 }}>
               <Typography fontWeight={700}>{name}</Typography>
               <Typography variant="body2" color="text.secondary">
-                Connector: {selectedConnector?.displayName ?? connectorType} · {enabled ? "Enabled" : "Disabled"}
+                Connector: {selectedConnector?.displayName ?? connectorType} · Connection saved · {enabled ? "Enabled" : "Disabled"}
               </Typography>
             </Paper>
 
@@ -632,27 +747,23 @@ const AddIntegration = () => {
                 </Stack>
               </Paper>
             ))}
-
-            <Alert severity="info">
-              After the integration is saved, the backend determines which attributes are useful for duplicate detection and calculates the internal scoring model automatically. Those internal weights are not part of the integrator workflow.
-            </Alert>
           </Stack>
         )}
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
-          <Button disabled={activeStep === 0 || saving || detectingSchema} onClick={() => {
+          <Button disabled={activeStep === 0 || saving || detectingSchema || savingConnection || testingConnection} onClick={() => {
             setError("");
             setActiveStep((current) => Math.max(0, current - 1));
           }}>
             Back
           </Button>
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" disabled={saving || detectingSchema} onClick={() => navigate("/integrations")}>Cancel</Button>
+            <Button variant="outlined" disabled={saving || detectingSchema || savingConnection || testingConnection} onClick={() => navigate("/integrations")}>Cancel</Button>
             {activeStep < steps.length - 1 ? (
-              <Button variant="contained" disabled={detectingSchema} onClick={goNext}>Next</Button>
+              <Button variant="contained" disabled={detectingSchema || savingConnection || testingConnection} onClick={goNext}>Next</Button>
             ) : (
               <Button variant="contained" startIcon={<SaveIcon />} disabled={saving || detectingSchema} onClick={() => void handleSave()}>
-                {saving ? "Saving..." : editing ? "Update Integration" : "Create Integration"}
+                {saving ? "Saving..." : editing ? "Update Integration" : "Finish Integration"}
               </Button>
             )}
           </Stack>
