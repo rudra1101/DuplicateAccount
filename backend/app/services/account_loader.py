@@ -6,303 +6,179 @@ from typing import BinaryIO
 from app.models.account import Account
 
 
-def load_uploaded_accounts(file: BinaryIO) -> list[Account]:
-    """
-    Load accounts from a FastAPI uploaded CSV file.
-    """
+APPLICATION_ALIASES = ("application", "source", "system", "app")
+USERNAME_ALIASES = (
+    "username",
+    "samaccountname",
+    "userprincipalname",
+    "upn",
+    "uid",
+    "accountname",
+    "login",
+    "loginname",
+    "name",
+)
+EMAIL_ALIASES = ("email", "mail", "emailaddress", "workemail", "primaryemail")
+DISPLAY_NAME_ALIASES = ("displayname", "fullname", "commonname", "cn")
+EMPLOYEE_ID_ALIASES = (
+    "employeeid",
+    "employeenumber",
+    "workerid",
+    "workernumber",
+    "personid",
+    "personnumber",
+)
+DEPARTMENT_ALIASES = ("department", "departmentname", "businessunit", "orgunit")
+MANAGER_ALIASES = ("manager", "managername", "managerid")
+STATUS_ALIASES = ("status", "accountstatus", "state", "enabled")
+CREATED_ALIASES = ("created", "createdat", "createddate", "whencreated")
+ID_ALIASES = ("id", "accountid", "nativeidentity", "objectid", "uuid")
 
-    raw_content = file.read()
 
-    if not raw_content:
-        raise ValueError("The uploaded CSV file is empty.")
-
-    return _parse_csv_content(raw_content)
+def _normalize_header(value: str) -> str:
+    return "".join(ch for ch in str(value or "").strip().lower() if ch.isalnum())
 
 
-def load_accounts(file_path: str | Path) -> list[Account]:
-    """
-    Load accounts from a CSV file stored on disk.
+def _row_value(row: dict[str, str | None], aliases: tuple[str, ...]) -> str | None:
+    normalized = {_normalize_header(key): value for key, value in row.items() if key}
+    for alias in aliases:
+        value = normalized.get(_normalize_header(alias))
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
 
-    This function is retained because detect.py currently imports it.
-    """
 
-    path = Path(file_path)
-
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Account CSV file was not found: {path}"
-        )
-
-    if not path.is_file():
-        raise ValueError(
-            f"The provided account path is not a file: {path}"
-        )
-
-    raw_content = path.read_bytes()
-
-    if not raw_content:
-        raise ValueError(
-            f"The account CSV file is empty: {path}"
-        )
-
-    return _parse_csv_content(raw_content)
+def _clean_optional_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip()
+    return cleaned or None
 
 
 def _parse_csv_content(
     raw_content: bytes,
-) -> list[Account]:
-    """
-    Parse CSV bytes and return validated Account objects.
-    """
-
-    try:
-        text_content = raw_content.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:
-        raise ValueError(
-            "Unable to read the CSV file. "
-            "Please use UTF-8 encoding."
-        ) from exc
-
-    reader = csv.DictReader(
-        io.StringIO(text_content)
-    )
-
-    if reader.fieldnames is None:
-        raise ValueError(
-            "The CSV file does not contain a valid header row."
-        )
-
-    normalized_headers = {
-        header.strip()
-        for header in reader.fieldnames
-        if header
-    }
-
-    required_headers = {
-        "application",
-        "username",
-    }
-
-    missing_headers = (
-        required_headers
-        - normalized_headers
-    )
-
-    if missing_headers:
-        raise ValueError(
-            "Missing required CSV columns: "
-            + ", ".join(
-                sorted(missing_headers)
-            )
-        )
-
-    accounts: list[Account] = []
-
-    for row_number, row in enumerate(
-        reader,
-        start=2,
-    ):
-        application = _clean_value(
-            row.get("application")
-        )
-
-        username = _clean_value(
-            row.get("username")
-        )
-
-        if not application:
-            raise ValueError(
-                f"Missing application at CSV row {row_number}."
-            )
-
-        if not username:
-            raise ValueError(
-                f"Missing username at CSV row {row_number}."
-            )
-
-        account = Account(
-            id=_clean_optional_value(
-                row.get("id")
-            ),
-            application=application,
-            username=username,
-            displayName=_clean_value(
-                row.get("displayName")
-            ),
-            email=_clean_value(
-                row.get("email")
-            ),
-            employeeId=_clean_optional_value(
-                row.get("employeeId")
-            ),
-            department=_clean_optional_value(
-                row.get("department")
-            ),
-            manager=_clean_optional_value(
-                row.get("manager")
-            ),
-            status=_clean_optional_value(
-                row.get("status")
-            ),
-            created=_clean_optional_value(
-                row.get("created")
-            ),
-        )
-
-        accounts.append(account)
-
-    if not accounts:
-        raise ValueError(
-            "The CSV file does not contain any account records."
-        )
-
-    return accounts
-
-
-def _clean_value(
-    value: str | None,
-) -> str:
-    if value is None:
-        return ""
-
-    return value.strip()
-
-
-def _clean_optional_value(
-    value: str | None,
-) -> str | None:
-    if value is None:
-        return None
-
-    cleaned_value = value.strip()
-
-    return cleaned_value or None
-
-def load_uploaded_accounts(
-    file,
     *,
     delimiter: str = ",",
     encoding: str = "utf-8-sig",
+    default_application: str | None = None,
+    allow_dynamic_schema: bool = False,
 ) -> list[Account]:
-    """
-    Load account records from an uploaded or connector-provided
-    delimited file.
-    """
-
-    raw_content = file.read()
-
-    if not raw_content:
-        raise ValueError(
-            "The account file is empty."
-        )
-
     try:
-        text_content = raw_content.decode(
-            encoding
-        )
+        text_content = raw_content.decode(encoding)
     except LookupError as exc:
-        raise ValueError(
-            f"Unsupported file encoding: {encoding}"
-        ) from exc
+        raise ValueError(f"Unsupported file encoding: {encoding}") from exc
     except UnicodeDecodeError as exc:
-        raise ValueError(
-            f"Unable to decode the file using {encoding}."
-        ) from exc
+        raise ValueError(f"Unable to decode the file using {encoding}.") from exc
 
     if delimiter == "\\t":
         delimiter = "\t"
 
-    reader = csv.DictReader(
-        io.StringIO(text_content),
-        delimiter=delimiter,
-    )
-
+    reader = csv.DictReader(io.StringIO(text_content), delimiter=delimiter)
     if reader.fieldnames is None:
-        raise ValueError(
-            "The file does not contain a valid header row."
-        )
+        raise ValueError("The file does not contain a valid header row.")
 
     normalized_headers = {
-        header.strip()
+        _normalize_header(header)
         for header in reader.fieldnames
-        if header
+        if header and str(header).strip()
     }
 
-    required_headers = {
-        "application",
-        "username",
-    }
-
-    missing_headers = (
-        required_headers - normalized_headers
-    )
-
-    if missing_headers:
-        raise ValueError(
-            "Missing required columns: "
-            + ", ".join(
-                sorted(missing_headers)
-            )
-        )
+    # Manual CSV uploads retain the historical contract. Integration-driven
+    # ingestion can use arbitrary application schemas and derives the legacy
+    # fields needed by the current detector from common source aliases.
+    if not allow_dynamic_schema:
+        missing: list[str] = []
+        if _normalize_header("application") not in normalized_headers:
+            missing.append("application")
+        if _normalize_header("username") not in normalized_headers:
+            missing.append("username")
+        if missing:
+            raise ValueError("Missing required columns: " + ", ".join(missing))
 
     accounts: list[Account] = []
 
-    for row_number, row in enumerate(
-        reader,
-        start=2,
-    ):
-        application = _clean_value(
-            row.get("application")
-        )
+    for row_number, row in enumerate(reader, start=2):
+        raw_attributes = {
+            str(key).strip(): ("" if value is None else str(value).strip())
+            for key, value in row.items()
+            if key and str(key).strip()
+        }
 
-        username = _clean_value(
-            row.get("username")
-        )
-
+        application = _row_value(row, APPLICATION_ALIASES) or _clean_optional_value(default_application)
         if not application:
             raise ValueError(
-                f"Missing application at row {row_number}."
+                f"Unable to determine the application for row {row_number}. "
+                "Configure exactly one application for this integration or provide an application attribute."
             )
+
+        account_id = _row_value(row, ID_ALIASES)
+        username = _row_value(row, USERNAME_ALIASES)
+        email = _row_value(row, EMAIL_ALIASES) or ""
+
+        if not username and allow_dynamic_schema:
+            # Source schemas do not have to contain a literal username field.
+            # Prefer a stable account id, then email, only as the legacy
+            # identity key required by the current duplicate engine.
+            username = account_id or email
 
         if not username:
             raise ValueError(
-                f"Missing username at row {row_number}."
+                f"Unable to determine an account identifier for row {row_number}. "
+                "Expected a username/account-name style attribute, account id, or email."
             )
 
         accounts.append(
             Account(
-                id=_clean_optional_value(
-                    row.get("id")
-                ),
+                id=account_id,
                 application=application,
                 username=username,
-                displayName=_clean_value(
-                    row.get("displayName")
-                ),
-                email=_clean_value(
-                    row.get("email")
-                ),
-                employeeId=_clean_optional_value(
-                    row.get("employeeId")
-                ),
-                department=_clean_optional_value(
-                    row.get("department")
-                ),
-                manager=_clean_optional_value(
-                    row.get("manager")
-                ),
-                status=_clean_optional_value(
-                    row.get("status")
-                ),
-                created=_clean_optional_value(
-                    row.get("created")
-                ),
+                displayName=_row_value(row, DISPLAY_NAME_ALIASES) or "",
+                email=email,
+                employeeId=_row_value(row, EMPLOYEE_ID_ALIASES),
+                department=_row_value(row, DEPARTMENT_ALIASES),
+                manager=_row_value(row, MANAGER_ALIASES),
+                status=_row_value(row, STATUS_ALIASES),
+                created=_row_value(row, CREATED_ALIASES),
+                rawAttributes=raw_attributes,
             )
         )
 
     if not accounts:
-        raise ValueError(
-            "The file does not contain any account records."
-        )
+        raise ValueError("The file does not contain any account records.")
 
     return accounts
+
+
+def load_uploaded_accounts(
+    file: BinaryIO,
+    *,
+    delimiter: str = ",",
+    encoding: str = "utf-8-sig",
+    default_application: str | None = None,
+    allow_dynamic_schema: bool = False,
+) -> list[Account]:
+    raw_content = file.read()
+    if not raw_content:
+        raise ValueError("The account file is empty.")
+
+    return _parse_csv_content(
+        raw_content,
+        delimiter=delimiter,
+        encoding=encoding,
+        default_application=default_application,
+        allow_dynamic_schema=allow_dynamic_schema,
+    )
+
+
+def load_accounts(file_path: str | Path) -> list[Account]:
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Account CSV file was not found: {path}")
+    if not path.is_file():
+        raise ValueError(f"The provided account path is not a file: {path}")
+
+    raw_content = path.read_bytes()
+    if not raw_content:
+        raise ValueError(f"The account CSV file is empty: {path}")
+
+    return _parse_csv_content(raw_content)
