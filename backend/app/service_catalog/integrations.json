@@ -1,0 +1,13 @@
+{
+  "service": {"key":"integration","name":"Integrations","description":"Application and account-source integrations","category":"Integrations","route":"/integrations","icon":"integration","enabled":true,"sortOrder":40},
+  "permissions": [
+    {"code":"integration.view","name":"View integrations"},
+    {"code":"integration.run","name":"Run integrations"},
+    {"code":"integration.schedule","name":"Manage integration schedules"},
+    {"code":"integration.create","name":"Create integrations"},
+    {"code":"integration.edit","name":"Edit integrations"},
+    {"code":"integration.delete","name":"Delete integrations"},
+    {"code":"integration.test","name":"Test integrations"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["integration.view","integration.run","integration.schedule"]}
+}
