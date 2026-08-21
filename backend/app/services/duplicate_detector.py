@@ -437,6 +437,87 @@ def get_grouping_edge_reason(
     return None
 
 
+def get_grouping_rejection_reason(
+    prediction: DuplicatePrediction,
+) -> str:
+    confidence = float(prediction.confidence)
+    features = prediction.features
+
+    if confidence < GROUP_LINK_CONFIDENCE:
+        return "BELOW_GROUP_LINK_CONFIDENCE"
+
+    if has_major_contradiction(prediction):
+        return "MAJOR_CONTRADICTION"
+
+    name_match = has_name_evidence(prediction)
+    strong_username = (
+        features.username_exact
+        or features.username_similarity >= 0.90
+    )
+    strong_email_local = (
+        features.email_local_similarity >= 0.90
+    )
+    dynamic_identity_support = (
+        name_match
+        or strong_username
+        or strong_email_local
+        or features.dynamic_contact_matches > 0
+    )
+
+    if (
+        features.dynamic_identifier_matches >= 1
+        and dynamic_identity_support
+        and confidence < 60.0
+    ):
+        return "DYNAMIC_IDENTIFIER_BELOW_GROUP_THRESHOLD"
+
+    if confidence < NON_AUTHORITATIVE_LINK_CONFIDENCE:
+        return "BELOW_NON_AUTHORITATIVE_THRESHOLD"
+
+    return "INSUFFICIENT_INDEPENDENT_EVIDENCE"
+
+
+def build_grouping_diagnostic(
+    prediction: DuplicatePrediction,
+) -> dict[str, Any]:
+    features = prediction.features
+    edge_reason = get_grouping_edge_reason(prediction)
+    accepted = edge_reason is not None
+
+    return {
+        "result": "ACCEPTED" if accepted else "REJECTED",
+        "reason": (
+            edge_reason
+            if accepted
+            else get_grouping_rejection_reason(prediction)
+        ),
+        "edgeReason": edge_reason,
+        "confidence": round(float(prediction.confidence), 2),
+        "classification": prediction.classification,
+        "evidence": {
+            "employeeIdExact": features.employee_id_exact,
+            "emailExact": features.email_exact,
+            "phoneExact": features.phone_exact,
+            "usernameExact": features.username_exact,
+            "usernameSimilarity": round(float(features.username_similarity), 4),
+            "emailSimilarity": round(float(features.email_similarity), 4),
+            "emailLocalSimilarity": round(float(features.email_local_similarity), 4),
+            "displayNameSimilarity": round(float(features.display_name_similarity), 4),
+            "firstNameSimilarity": round(float(features.first_name_similarity), 4),
+            "lastNameSimilarity": round(float(features.last_name_similarity), 4),
+            "departmentExact": features.department_exact,
+            "managerExact": features.manager_exact,
+            "dynamicIdentifierMatches": features.dynamic_identifier_matches,
+            "dynamicIdentifierConflicts": features.dynamic_identifier_conflicts,
+            "dynamicContactMatches": features.dynamic_contact_matches,
+            "dynamicNameMatches": features.dynamic_name_matches,
+            "dynamicOrgMatches": features.dynamic_org_matches,
+            "dynamicMatchedAttributes": list(features.dynamic_matched_attributes),
+            "dynamicConflictingAttributes": list(features.dynamic_conflicting_attributes),
+        },
+    }
+
+
 def is_valid_grouping_edge(
     prediction: DuplicatePrediction,
 ) -> bool:
@@ -824,6 +905,11 @@ def detect_duplicate_groups(
             int,
         ] = defaultdict(int)
 
+        decision_counts: dict[
+            str,
+            int,
+        ] = defaultdict(int)
+
         for prediction in predictions:
             key_1 = (
                 prediction_account_key(
@@ -870,11 +956,45 @@ def detect_duplicate_groups(
                     pair_key
                 ] = prediction
 
-            edge_reason = (
-                get_grouping_edge_reason(
-                    prediction
-                )
+            diagnostic = build_grouping_diagnostic(
+                prediction
             )
+
+            username_1 = str(
+                prediction.account_1.username
+                or prediction.account_1.original_id()
+                or key_1
+            )
+            username_2 = str(
+                prediction.account_2.username
+                or prediction.account_2.original_id()
+                or key_2
+            )
+
+            print(
+                "[Grouping Decision] "
+                f"Pair={username_1} <-> {username_2}, "
+                f"Confidence={diagnostic['confidence']}, "
+                f"Classification={diagnostic['classification']}, "
+                f"Result={diagnostic['result']}, "
+                f"Reason={diagnostic['reason']}, "
+                f"Evidence={diagnostic['evidence']}"
+            )
+
+            if diagnostic[
+                "result"
+            ] == "ACCEPTED":
+                decision_counts[
+                    "ACCEPTED"
+                ] += 1
+            else:
+                decision_counts[
+                    str(diagnostic["reason"])
+                ] += 1
+
+            edge_reason = diagnostic[
+                "edgeReason"
+            ]
 
             if edge_reason is None:
                 continue
@@ -885,7 +1005,7 @@ def detect_duplicate_groups(
             )
 
             evidence_counts[
-                edge_reason
+                str(edge_reason)
             ] += 1
 
         print(
@@ -895,6 +1015,13 @@ def detect_duplicate_groups(
             f"{sum(evidence_counts.values())}, "
             f"EvidenceCounts="
             f"{dict(evidence_counts)}"
+        )
+
+        print(
+            "[Duplicate Detection] "
+            f"Application={application}, "
+            "GroupingDecisionSummary="
+            f"{dict(decision_counts)}"
         )
 
         components: dict[
