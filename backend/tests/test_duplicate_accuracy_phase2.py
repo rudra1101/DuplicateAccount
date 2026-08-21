@@ -1,4 +1,5 @@
 from app.ai.blocking import BlockingCandidateGenerator
+from app.ai.duplicate_engine import duplicate_detection_engine
 from app.ai.duplicate_engine.attribute_profiler import (
     AttributeCategory,
     profile_application_attributes,
@@ -61,6 +62,46 @@ def test_dynamic_profile_can_create_candidate_pair_without_legacy_similarity():
         if (candidate.account_1.account_id, candidate.account_2.account_id) == ("1", "2")
     )
     assert any("payrollNumber" in reason for reason in matched.reasons)
+
+
+def test_profiled_identifier_contributes_to_duplicate_prediction():
+    accounts = [
+        {
+            "id": "1",
+            "application": "ISC",
+            "username": "alpha.one",
+            "rawAttributes": {"payrollNumber": "P100", "customGuid": "g-1"},
+        },
+        {
+            "id": "2",
+            "application": "ISC",
+            "username": "totally.different",
+            "rawAttributes": {"payrollNumber": "P100", "customGuid": "g-2"},
+        },
+        {
+            "id": "3",
+            "application": "ISC",
+            "username": "third.account",
+            "rawAttributes": {"payrollNumber": "P200", "customGuid": "g-3"},
+        },
+    ]
+
+    predictions = duplicate_detection_engine.detect(
+        accounts,
+        minimum_confidence=20,
+        include_embeddings=False,
+        minimum_blocking_score=4.0,
+    )
+
+    match = next(
+        prediction
+        for prediction in predictions
+        if {prediction.account_1_id, prediction.account_2_id} == {"1", "2"}
+    )
+
+    assert match.features.dynamic_identifier_matches >= 1
+    assert "payrollNumber" in match.features.dynamic_matched_attributes
+    assert match.confidence >= 50
 
 
 def test_low_value_status_attribute_is_not_used_for_dynamic_blocking():
