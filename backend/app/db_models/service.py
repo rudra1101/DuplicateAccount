@@ -20,7 +20,6 @@ class ServiceRecord(Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False, default="General")
     route: Mapped[str | None] = mapped_column(String(255), nullable=True)
     icon: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    navigation_permissions: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
