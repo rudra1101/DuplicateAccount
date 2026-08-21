@@ -1,0 +1,7 @@
+{
+  "service": {"key":"operations","name":"Operations","description":"Operational monitoring","category":"Operations","route":"/operations","icon":"operations","enabled":true,"sortOrder":60},
+  "permissions": [
+    {"code":"operations.view","name":"View operations"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["operations.view"]}
+}
