@@ -1,0 +1,7 @@
+{
+  "service": {"key":"dashboard","name":"Dashboard","description":"Application dashboard","category":"Dashboard","route":"/","icon":"dashboard","enabled":true,"sortOrder":10},
+  "permissions": [
+    {"code":"dashboard.view","name":"View dashboard"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["dashboard.view"]}
+}
