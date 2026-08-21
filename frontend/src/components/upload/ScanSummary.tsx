@@ -14,7 +14,7 @@ import BadgeIcon from "@mui/icons-material/Badge";
 import VerifiedIcon from "@mui/icons-material/Verified";
 import TimerIcon from "@mui/icons-material/Timer";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import { formatIstDateTime } from "../../utils/dateTime";
+import { formatDateTime } from "../../utils/dateTime";
 
 export interface ScanSummaryData {
   accountsScanned: number;
@@ -197,7 +197,7 @@ const ScanSummary = ({
                 >
                   Last Scan:{" "}
                   {summary.lastScan
-                    ? formatDateTime(scan.createdAt)
+                    ? formatDateTime(summary.lastScan)
                     : "Not available"}
                 </Typography>
               </Box>
