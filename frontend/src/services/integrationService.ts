@@ -101,6 +101,30 @@ export interface IntegrationExecution {
   completedAt: string | null;
 }
 
+export interface ScanAccount {
+  id: number;
+  sourceAccountId: string | null;
+  application: string;
+  username: string;
+  displayName: string;
+  email: string;
+  employeeId: string | null;
+  department: string | null;
+  manager: string | null;
+  status: string | null;
+  created: string | null;
+  rawAttributes: Record<string, unknown>;
+}
+
+export interface ScanAccountsResponse {
+  scanId: number;
+  filename: string;
+  page: number;
+  pageSize: number;
+  total: number;
+  items: ScanAccount[];
+}
+
 export interface JobSchedule {
   id: number;
   integrationId: number;
@@ -225,6 +249,22 @@ export async function getIntegrationExecutions(
 ): Promise<IntegrationExecution[]> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}/executions?limit=${limit}`);
   return parseResponse<IntegrationExecution[]>(response, "Unable to load execution history.");
+}
+
+export async function getScanAccounts(
+  scanId: number,
+  page = 1,
+  pageSize = 25,
+  search = "",
+): Promise<ScanAccountsResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (search.trim()) params.set("search", search.trim());
+
+  const response = await fetch(`${API_URL}/scans/${scanId}/accounts?${params.toString()}`);
+  return parseResponse<ScanAccountsResponse>(response, "Unable to load scanned accounts.");
 }
 
 export async function getIntegrationSchedule(integrationId: number): Promise<JobSchedule | null> {
