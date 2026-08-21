@@ -17,6 +17,7 @@ export interface ConnectorField {
   placeholder?: string;
   helpText?: string;
   options?: ConnectorOption[];
+  visibleWhen?: Record<string, Array<string | number | boolean>>;
 }
 
 export interface ConnectorConfigurationSchema {
@@ -130,42 +131,24 @@ export interface UpdateSchedulePayload {
   enabled?: boolean;
 }
 
-async function parseResponse<T>(
-  response: Response,
-  fallbackMessage: string,
-): Promise<T> {
+async function parseResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
   if (!response.ok) {
     const responseBody = await response.text();
-
     let message = fallbackMessage;
-
     try {
-      const parsed = JSON.parse(responseBody) as {
-        detail?: string;
-      };
-
-      if (parsed.detail) {
-        message = parsed.detail;
-      }
+      const parsed = JSON.parse(responseBody) as { detail?: string };
+      if (parsed.detail) message = parsed.detail;
     } catch {
-      if (responseBody) {
-        message = responseBody;
-      }
+      if (responseBody) message = responseBody;
     }
-
     throw new Error(message);
   }
-
   return response.json() as Promise<T>;
 }
 
 export async function getConnectorTypes(): Promise<ConnectorType[]> {
   const response = await fetch(`${API_URL}/integrations/connector-types`);
-
-  return parseResponse<ConnectorType[]>(
-    response,
-    "Unable to load connector types.",
-  );
+  return parseResponse<ConnectorType[]>(response, "Unable to load connector types.");
 }
 
 export async function detectIntegrationSchema(
@@ -177,38 +160,25 @@ export async function detectIntegrationSchema(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ connectorType, configuration }),
   });
-
-  return parseResponse<SchemaDetectionResult>(
-    response,
-    "Unable to detect schema from the configured CSV source.",
-  );
+  return parseResponse<SchemaDetectionResult>(response, "Unable to detect source schema.");
 }
 
 export async function getIntegrations(): Promise<Integration[]> {
   const response = await fetch(`${API_URL}/integrations/`);
-
   return parseResponse<Integration[]>(response, "Unable to load integrations.");
 }
 
-export async function getIntegration(
-  integrationId: number,
-): Promise<Integration> {
+export async function getIntegration(integrationId: number): Promise<Integration> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}`);
-
   return parseResponse<Integration>(response, "Unable to load integration.");
 }
 
-export async function createIntegration(
-  payload: CreateIntegrationPayload,
-): Promise<Integration> {
+export async function createIntegration(payload: CreateIntegrationPayload): Promise<Integration> {
   const response = await fetch(`${API_URL}/integrations/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
   return parseResponse<Integration>(response, "Unable to create integration.");
 }
 
@@ -218,174 +188,76 @@ export async function updateIntegration(
 ): Promise<Integration> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
   return parseResponse<Integration>(response, "Unable to update integration.");
 }
 
 export async function deleteIntegration(integrationId: number): Promise<void> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok) {
-    const body = await response.text();
-
-    throw new Error(body || "Unable to delete integration.");
-  }
+  const response = await fetch(`${API_URL}/integrations/${integrationId}`, { method: "DELETE" });
+  if (!response.ok) throw new Error((await response.text()) || "Unable to delete integration.");
 }
 
-export async function testIntegration(
-  integrationId: number,
-): Promise<IntegrationTestResult> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/test`,
-    {
-      method: "POST",
-    },
-  );
-
-  return parseResponse<IntegrationTestResult>(
-    response,
-    "Unable to test integration.",
-  );
+export async function testIntegration(integrationId: number): Promise<IntegrationTestResult> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/test`, { method: "POST" });
+  return parseResponse<IntegrationTestResult>(response, "Unable to test integration.");
 }
 
-export async function runIntegration(
-  integrationId: number,
-): Promise<IntegrationExecution> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}/run`, {
-    method: "POST",
-  });
-
-  return parseResponse<IntegrationExecution>(
-    response,
-    "Unable to run integration.",
-  );
+export async function runIntegration(integrationId: number): Promise<IntegrationExecution> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/run`, { method: "POST" });
+  return parseResponse<IntegrationExecution>(response, "Unable to run integration.");
 }
 
 export async function getIntegrationExecutions(
   integrationId: number,
   limit = 20,
 ): Promise<IntegrationExecution[]> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/executions?limit=${limit}`,
-  );
-
-  return parseResponse<IntegrationExecution[]>(
-    response,
-    "Unable to load execution history.",
-  );
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/executions?limit=${limit}`);
+  return parseResponse<IntegrationExecution[]>(response, "Unable to load execution history.");
 }
 
-export async function getIntegrationSchedule(
-  integrationId: number,
-): Promise<JobSchedule | null> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule`,
-  );
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  return parseResponse<JobSchedule>(
-    response,
-    "Unable to load integration schedule.",
-  );
+export async function getIntegrationSchedule(integrationId: number): Promise<JobSchedule | null> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`);
+  if (response.status === 404) return null;
+  return parseResponse<JobSchedule>(response, "Unable to load integration schedule.");
 }
 
 export async function createIntegrationSchedule(
   integrationId: number,
   payload: CreateSchedulePayload,
 ): Promise<JobSchedule> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    },
-  );
-
-  return parseResponse<JobSchedule>(
-    response,
-    "Unable to create integration schedule.",
-  );
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseResponse<JobSchedule>(response, "Unable to create integration schedule.");
 }
 
 export async function updateIntegrationSchedule(
   integrationId: number,
   payload: UpdateSchedulePayload,
 ): Promise<JobSchedule> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule`,
-    {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    },
-  );
-
-  return parseResponse<JobSchedule>(
-    response,
-    "Unable to update integration schedule.",
-  );
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseResponse<JobSchedule>(response, "Unable to update integration schedule.");
 }
 
-export async function enableIntegrationSchedule(
-  integrationId: number,
-): Promise<JobSchedule> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule/enable`,
-    {
-      method: "POST",
-    },
-  );
-
-  return parseResponse<JobSchedule>(
-    response,
-    "Unable to enable integration schedule.",
-  );
+export async function enableIntegrationSchedule(integrationId: number): Promise<JobSchedule> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule/enable`, { method: "POST" });
+  return parseResponse<JobSchedule>(response, "Unable to enable integration schedule.");
 }
 
-export async function disableIntegrationSchedule(
-  integrationId: number,
-): Promise<JobSchedule> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule/disable`,
-    {
-      method: "POST",
-    },
-  );
-
-  return parseResponse<JobSchedule>(
-    response,
-    "Unable to disable integration schedule.",
-  );
+export async function disableIntegrationSchedule(integrationId: number): Promise<JobSchedule> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule/disable`, { method: "POST" });
+  return parseResponse<JobSchedule>(response, "Unable to disable integration schedule.");
 }
 
-export async function deleteIntegrationSchedule(
-  integrationId: number,
-): Promise<void> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/schedule`,
-    {
-      method: "DELETE",
-    },
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-
-    throw new Error(body || "Unable to delete integration schedule.");
-  }
+export async function deleteIntegrationSchedule(integrationId: number): Promise<void> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, { method: "DELETE" });
+  if (!response.ok) throw new Error((await response.text()) || "Unable to delete integration schedule.");
 }
