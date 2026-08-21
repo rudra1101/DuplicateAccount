@@ -1,0 +1,16 @@
+{
+  "service": {"key":"administration","name":"Administration","description":"User, role and permission administration","category":"Administration","route":"/admin","icon":"admin","enabled":true,"sortOrder":100},
+  "permissions": [
+    {"code":"user.view","name":"View users"},
+    {"code":"user.create","name":"Create users"},
+    {"code":"user.edit","name":"Edit users"},
+    {"code":"user.disable","name":"Disable users"},
+    {"code":"user.assign_role","name":"Assign roles to users"},
+    {"code":"role.view","name":"View roles and permissions"},
+    {"code":"role.create","name":"Create roles"},
+    {"code":"role.edit","name":"Edit roles"},
+    {"code":"role.delete","name":"Delete roles"},
+    {"code":"role.manage_permissions","name":"Manage role permissions"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
+}
