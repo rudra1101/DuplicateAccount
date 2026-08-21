@@ -1,0 +1,8 @@
+{
+  "service": {"key":"duplicate","name":"Duplicate Detection","description":"Duplicate detection and review workflows","category":"Duplicates","route":"/duplicates","icon":"duplicate","enabled":true,"sortOrder":20},
+  "permissions": [
+    {"code":"duplicate.view","name":"View duplicate detection"},
+    {"code":"duplicate.review","name":"Review duplicate accounts"}
+  ],
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["duplicate.view"]}
+}
