@@ -1,0 +1,18 @@
+{
+  "service": {
+    "key": "remediation",
+    "name": "Remediation",
+    "description": "Reviewer-confirmed duplicate remediation and decision history",
+    "category": "Governance",
+    "route": "/remediation",
+    "icon": "remediation",
+    "enabled": true,
+    "sortOrder": 35
+  },
+  "permissions": [
+    {"code": "remediation.view", "name": "View remediation queue"},
+    {"code": "remediation.history.view", "name": "View remediation decision history"},
+    {"code": "remediation.manage", "name": "Manage remediation status"}
+  ],
+  "defaultRoles": {"OWNER": "ALL", "ADMIN": "ALL", "USER": []}
+}
