@@ -63,6 +63,9 @@ export interface ReviewerFeedbackAnalytics {
   reviewCandidateAcceptanceRate: number | null;
   averageConfirmedConfidence: number | null;
   confidenceBands: ReviewerConfidenceBand[];
+}
+
+export interface EvidenceCalibrationAnalytics {
   evidencePerformance: EvidencePerformanceRow[];
   evidencePatterns: EvidencePerformanceRow[];
   evidenceFamilyPerformance: EvidencePerformanceRow[];
@@ -113,6 +116,14 @@ export async function getReviewerFeedbackAnalytics(): Promise<ReviewerFeedbackAn
   return parseResponse<ReviewerFeedbackAnalytics>(
     response,
     "Unable to load reviewer feedback analytics.",
+  );
+}
+
+export async function getEvidenceCalibrationAnalytics(): Promise<EvidenceCalibrationAnalytics> {
+  const response = await fetch(`${API_URL}/ml/analytics/evidence-calibration`);
+  return parseResponse<EvidenceCalibrationAnalytics>(
+    response,
+    "Unable to load evidence calibration analytics.",
   );
 }
 
