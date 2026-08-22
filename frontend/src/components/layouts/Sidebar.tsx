@@ -40,7 +40,7 @@ const menuItems = [
   { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.view"] },
   { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
   { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
-  { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view"] },
+  { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
 ];
 
