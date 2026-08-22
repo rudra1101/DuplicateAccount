@@ -12,6 +12,10 @@ from sqlalchemy.orm import Session
 from app.auth import require_permission
 from app.database.session import get_db
 from app.schemas.review import CandidateDecisionRequest
+from app.services.review_candidate_repository import (
+    list_review_candidates,
+    save_review_candidate_decision,
+)
 from app.services.review_service import (
     get_duplicate_group_details,
     get_duplicate_groups,
@@ -52,6 +56,58 @@ def review_scan_status(
         return get_scan_status(db=db, integration_id=integration_id)
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=500, detail="Unable to load review scan status.") from exc
+
+
+@router.get("/review-candidates")
+def standalone_review_candidates(
+    integration_id: int | None = Query(default=None, alias="integrationId", ge=1),
+    application: str | None = Query(default=None),
+    decision: str | None = Query(default="PENDING"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("duplicate.view")),
+):
+    try:
+        candidates = list_review_candidates(
+            db,
+            integration_id=integration_id,
+            application=application,
+            decision=decision,
+        )
+        return {
+            "count": len(candidates),
+            "candidates": candidates,
+        }
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load standalone review candidates.",
+        ) from exc
+
+
+@router.post("/review-candidates/{candidate_id}/decision")
+def submit_standalone_review_candidate_decision(
+    candidate_id: int,
+    payload: CandidateDecisionRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("duplicate.review")),
+):
+    try:
+        return save_review_candidate_decision(
+            db,
+            candidate_id=candidate_id,
+            decision=payload.decision,
+            comment=payload.comment,
+            reviewer_name=payload.reviewerName,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message.lower() else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to save standalone review decision.",
+        ) from exc
 
 
 @router.get("/details/{group_id}")
