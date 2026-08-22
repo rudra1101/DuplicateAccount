@@ -78,10 +78,10 @@ const AppRoutes = () => {
           <Route element={<PermissionRoute anyOf={["integration.edit"]} />}>
             <Route path="integrations/:integrationId/edit" element={<AddIntegration />} />
           </Route>
-        </Route>
 
-        <Route element={<PermissionRoute anyOf={["knowledge.view"]} />}>
-          <Route path="/knowledge" element={<KnowledgeBase />} />
+          <Route element={<PermissionRoute anyOf={["knowledge.view"]} />}>
+            <Route path="knowledge" element={<KnowledgeBase />} />
+          </Route>
         </Route>
       </Route>
     </Routes>
