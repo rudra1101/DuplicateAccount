@@ -28,7 +28,10 @@ def _confidence_band(value: float | None) -> str:
     if value is None:
         return "Not available"
     for minimum, maximum, label in CONFIDENCE_BANDS:
-        if minimum <= value <= maximum if maximum == 100.0 else minimum <= value < maximum:
+        if maximum == 100.0:
+            if minimum <= value <= maximum:
+                return label
+        elif minimum <= value < maximum:
             return label
     return "Not available"
 
