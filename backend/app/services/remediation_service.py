@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -18,6 +18,10 @@ VALID_REMEDIATION_STATUSES = {
     "IGNORED",
     "FAILED",
 }
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def record_review_decision(
@@ -85,11 +89,11 @@ def record_review_decision(
         existing.confidence = confidence
         existing.reviewer_name = (reviewer_name or "").strip() or None
         existing.review_comment = (comment or "").strip() or None
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = _utc_now()
     elif existing is not None and normalized_decision in {"NOT_DUPLICATE", "UNCERTAIN"}:
         existing.status = "IGNORED"
         existing.action_comment = f"Removed from active remediation after reviewer decision: {normalized_decision}."
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = _utc_now()
 
 
 def list_remediation_items(
@@ -193,7 +197,7 @@ def update_remediation_status(
     record.status = normalized
     record.action_comment = (action_comment or "").strip() or None
     record.actioned_by = (actioned_by or "").strip() or None
-    record.updated_at = datetime.utcnow()
+    record.updated_at = _utc_now()
     db.commit()
     db.refresh(record)
     return {
