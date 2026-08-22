@@ -12,6 +12,7 @@ import {
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import SearchIcon from "@mui/icons-material/ManageSearch";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
+import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import AssessmentIcon from "@mui/icons-material/Assessment";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -44,6 +45,12 @@ const menuItems = [
     icon: <FactCheckIcon />,
     path: "/review",
     permissions: ["duplicate.review"],
+  },
+  {
+    text: "Remediation",
+    icon: <TaskAltIcon />,
+    path: "/remediation",
+    permissions: ["report.view"],
   },
   {
     text: "Reports",
