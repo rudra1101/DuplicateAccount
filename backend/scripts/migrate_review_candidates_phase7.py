@@ -1,4 +1,5 @@
 from app.database.session import engine
+from app.db_models.scan import ScanRecord  # noqa: F401 - registers scans table metadata
 from app.db_models.review_candidate import ReviewCandidateRecord
 
 
