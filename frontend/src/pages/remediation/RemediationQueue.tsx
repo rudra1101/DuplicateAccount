@@ -24,6 +24,7 @@ import {
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
 
+import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
 import {
   type RemediationItem,
@@ -45,6 +46,14 @@ const valueOf = (account: Record<string, unknown>, key: string): string => {
     : String(value);
 };
 
+const accountName = (
+  account: Record<string, unknown>,
+  stableKey: string,
+): string => {
+  const username = valueOf(account, "username");
+  return username === "Not available" ? stableKey : username;
+};
+
 const decisionLabel = (value: string): string => {
   if (value === "DUPLICATE") return "Confirmed Duplicate";
   if (value === "NOT_DUPLICATE") return "Not Duplicate";
@@ -52,6 +61,7 @@ const decisionLabel = (value: string): string => {
 };
 
 const RemediationQueue = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<PageTab>("queue");
   const [statusFilter, setStatusFilter] = useState<QueueFilter>("PENDING_ACTION");
   const [items, setItems] = useState<RemediationItem[]>([]);
@@ -89,7 +99,12 @@ const RemediationQueue = () => {
     try {
       setUpdatingId(item.id);
       setError("");
-      await updateRemediationStatus(item.id, status, null, "Admin");
+      await updateRemediationStatus(
+        item.id,
+        status,
+        null,
+        user?.fullName || user?.username || null,
+      );
       await loadData();
     } catch (saveError) {
       setError(
@@ -164,7 +179,7 @@ const RemediationQueue = () => {
             </FormControl>
           </Box>
 
-          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+          <TableContainer component={Paper} sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider" }}>
             <Table>
               <TableHead>
                 <TableRow>
@@ -191,11 +206,11 @@ const RemediationQueue = () => {
                       <Typography variant="caption" color="text.secondary">{item.application}</Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography fontWeight={600}>{valueOf(item.account1, "username")}</Typography>
+                      <Typography fontWeight={600}>{accountName(item.account1, item.account1Key)}</Typography>
                       <Typography variant="caption" color="text.secondary">{valueOf(item.account1, "email")}</Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography fontWeight={600}>{valueOf(item.account2, "username")}</Typography>
+                      <Typography fontWeight={600}>{accountName(item.account2, item.account2Key)}</Typography>
                       <Typography variant="caption" color="text.secondary">{valueOf(item.account2, "email")}</Typography>
                     </TableCell>
                     <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
@@ -228,7 +243,7 @@ const RemediationQueue = () => {
           </TableContainer>
         </>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+        <TableContainer component={Paper} sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider" }}>
           <Table>
             <TableHead>
               <TableRow>
@@ -249,8 +264,8 @@ const RemediationQueue = () => {
                   <TableCell>{item.createdAt ? new Date(item.createdAt).toLocaleString() : "Not available"}</TableCell>
                   <TableCell>{item.application}</TableCell>
                   <TableCell>
-                    <Typography variant="body2">{valueOf(item.account1, "username")}</Typography>
-                    <Typography variant="caption" color="text.secondary">↔ {valueOf(item.account2, "username")}</Typography>
+                    <Typography variant="body2">{accountName(item.account1, item.account1Key)}</Typography>
+                    <Typography variant="caption" color="text.secondary">↔ {accountName(item.account2, item.account2Key)}</Typography>
                   </TableCell>
                   <TableCell><Chip size="small" label={decisionLabel(item.decision)} /></TableCell>
                   <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
