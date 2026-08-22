@@ -9,7 +9,11 @@ from app.db_models.account import AccountRecord
 from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.scan import ScanRecord
-from app.services.review_pair_feedback_service import upsert_pair_feedback
+from app.services.review_pair_feedback_service import (
+    load_pair_feedback,
+    normalize_pair_keys,
+    upsert_pair_feedback,
+)
 from app.services.review_service import save_candidate_decision
 
 
@@ -61,29 +65,11 @@ def _candidate_account_key(
     )
 
 
-def save_duplicate_group_candidate_decision(
+def _pair_context(
     db: Session,
     *,
     candidate_id: int,
-    decision: str,
-    comment: str | None = None,
-    reviewer_name: str | None = None,
-) -> dict[str, Any]:
-    """Save the existing group decision and persist it as pair feedback.
-
-    This gives candidates inside an automatically-created duplicate group the
-    same durable behavior as standalone review candidates. DUPLICATE and
-    NOT_DUPLICATE are remembered across later scans; UNCERTAIN clears any
-    durable pair override.
-    """
-    result = save_candidate_decision(
-        db=db,
-        candidate_id=candidate_id,
-        decision=decision,
-        comment=comment,
-        reviewer_name=reviewer_name,
-    )
-
+) -> tuple[DuplicateCandidateRecord, DuplicateGroupRecord, ScanRecord, str, str]:
     candidate = db.get(DuplicateCandidateRecord, candidate_id)
     if candidate is None:
         raise ValueError("Duplicate candidate was not found.")
@@ -95,11 +81,35 @@ def save_duplicate_group_candidate_decision(
     scan = db.get(ScanRecord, group.scan_id)
     if scan is None or scan.integration_id is None:
         raise ValueError(
-            "Duplicate group is not attached to an integration scan, so durable feedback cannot be saved."
+            "Duplicate group is not attached to an integration scan, so durable feedback cannot be resolved."
         )
 
     primary_key = _primary_account_key(db, group=group)
     candidate_key = _candidate_account_key(group=group, candidate=candidate)
+    return candidate, group, scan, primary_key, candidate_key
+
+
+def save_duplicate_group_candidate_decision(
+    db: Session,
+    *,
+    candidate_id: int,
+    decision: str,
+    comment: str | None = None,
+    reviewer_name: str | None = None,
+) -> dict[str, Any]:
+    """Save the existing group decision and persist it as pair feedback."""
+    result = save_candidate_decision(
+        db=db,
+        candidate_id=candidate_id,
+        decision=decision,
+        comment=comment,
+        reviewer_name=reviewer_name,
+    )
+
+    _candidate, group, scan, primary_key, candidate_key = _pair_context(
+        db,
+        candidate_id=candidate_id,
+    )
 
     upsert_pair_feedback(
         db,
@@ -124,3 +134,27 @@ def save_duplicate_group_candidate_decision(
     )
 
     return result
+
+
+def get_duplicate_group_candidate_durable_decision(
+    db: Session,
+    *,
+    candidate_id: int,
+) -> dict[str, Any]:
+    """Return the durable pair decision for a duplicate-group candidate."""
+    _candidate, group, scan, primary_key, candidate_key = _pair_context(
+        db,
+        candidate_id=candidate_id,
+    )
+    key_1, key_2 = normalize_pair_keys(primary_key, candidate_key)
+    feedback = load_pair_feedback(
+        db,
+        integration_id=int(scan.integration_id),
+    )
+    decision = feedback.get((group.application, key_1, key_2))
+    return {
+        "candidateId": candidate_id,
+        "decision": decision,
+        "account1Key": key_1,
+        "account2Key": key_2,
+    }
