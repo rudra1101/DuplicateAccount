@@ -10,7 +10,7 @@ from app.db_models.review_candidate import ReviewCandidateRecord
 from app.db_models.scan import ScanRecord
 
 
-VALID_REVIEW_DECISIONS = {"DUPLICATE", "NOT_DUPLICATE", "SKIP"}
+VALID_REVIEW_DECISIONS = {"DUPLICATE", "NOT_DUPLICATE", "UNCERTAIN"}
 
 
 def save_review_candidates(
@@ -19,7 +19,6 @@ def save_review_candidates(
     scan_id: int,
     candidates: list[dict[str, Any]],
 ) -> int:
-    """Persist standalone REVIEW decisions for a completed scan."""
     saved = 0
     for candidate in candidates:
         account_1 = candidate.get("account1") or {}
@@ -137,7 +136,7 @@ def save_review_candidate_decision(
     normalized = decision.strip().upper()
     if normalized not in VALID_REVIEW_DECISIONS:
         raise ValueError(
-            "Decision must be one of: DUPLICATE, NOT_DUPLICATE, SKIP."
+            "Decision must be one of: DUPLICATE, NOT_DUPLICATE, UNCERTAIN."
         )
 
     record.review_decision = normalized
