@@ -30,14 +30,10 @@ def seed_rbac(db: Session) -> None:
     Synchronize deploy-time service manifests into the database.
 
     Runtime authorization reads permissions and role assignments from the DB.
-    Manifests are only an additive/bootstrap source:
-    - new services are inserted;
-    - service metadata is refreshed;
-    - new permissions are inserted;
-    - permission metadata is refreshed;
-    - existing role assignments are preserved;
-    - newly introduced permissions receive their manifest defaults;
-    - permissions removed from a manifest are NOT deleted from the DB.
+    Manifests are only an additive/bootstrap source for normal roles. The
+    protected OWNER role is unrestricted at runtime, and the ADMIN role is
+    intentionally kept assigned to every permission declared by enabled
+    service manifests so administrators can configure all platform features.
     """
 
     manifests = load_service_manifests()
@@ -132,11 +128,15 @@ def seed_rbac(db: Session) -> None:
                 _requested_permissions_for_role(manifest, role_name)
             )
 
-        if role_name in newly_created_roles:
+        if role_name == "ADMIN":
+            # ADMIN is the platform administrator role and must always be able
+            # to configure every feature exposed by the service catalog.
+            codes_to_add = requested_codes
+        elif role_name in newly_created_roles:
             codes_to_add = requested_codes
         else:
-            # Preserve administrator changes. Only seed defaults for permissions
-            # that did not exist before this deployment.
+            # Preserve administrator changes for normal roles. Only seed
+            # defaults for permissions introduced by this deployment.
             codes_to_add = requested_codes & newly_created_permission_codes
 
         for code in sorted(codes_to_add - current_codes):
