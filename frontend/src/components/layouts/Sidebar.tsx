@@ -20,6 +20,7 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
+import AnalyticsOutlinedIcon from "@mui/icons-material/AnalyticsOutlined";
 import { MenuBookOutlined } from "@mui/icons-material";
 
 import { Link, useLocation } from "react-router-dom";
@@ -38,7 +39,8 @@ const menuItems = [
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.view"] },
   { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
-  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view", "ml.analytics.view"] },
+  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
+  { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
 ];
 
