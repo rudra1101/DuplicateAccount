@@ -75,26 +75,45 @@ def _has_authoritative_identifier(features: ComparisonFeatures) -> bool:
     )
 
 
-def _count_independent_evidence(features: ComparisonFeatures) -> int:
-    count = 0
-    if features.employee_id_exact:
-        count += 1
-    if features.email_exact or features.email_similarity >= 0.92:
-        count += 1
-    if features.phone_exact:
-        count += 1
+def _evidence_families(features: ComparisonFeatures) -> set[str]:
+    """Return independent evidence families instead of counting correlated fields.
+
+    Username, email-local and fuzzy email similarity are intentionally grouped
+    into ACCOUNT_HANDLE so they cannot masquerade as several independent
+    identity proofs. Name fields are similarly treated as one NAME family.
+    """
+    families: set[str] = set()
+
+    if features.employee_id_exact or features.dynamic_identifier_matches > 0:
+        families.add("AUTHORITATIVE_ID")
+
+    if features.email_exact or features.phone_exact or features.dynamic_contact_matches > 0:
+        families.add("CONTACT")
+
     if _has_name_evidence(features):
-        count += 1
-    if features.username_exact or features.username_similarity >= 0.90:
-        count += 1
-    if features.manager_exact or features.manager_similarity >= 0.90:
-        count += 1
-    if features.department_exact:
-        count += 1
-    count += min(features.dynamic_identifier_matches, 2)
-    count += min(features.dynamic_contact_matches, 1)
-    count += min(features.dynamic_org_matches, 1)
-    return count
+        families.add("NAME")
+
+    if (
+        features.username_exact
+        or features.username_similarity >= 0.90
+        or features.email_similarity >= 0.92
+        or features.email_local_similarity >= 0.90
+    ):
+        families.add("ACCOUNT_HANDLE")
+
+    if (
+        features.manager_exact
+        or features.manager_similarity >= 0.90
+        or features.department_exact
+        or features.dynamic_org_matches > 0
+    ):
+        families.add("ORGANIZATIONAL")
+
+    return families
+
+
+def _count_independent_evidence(features: ComparisonFeatures) -> int:
+    return len(_evidence_families(features))
 
 
 def _calculate_authoritative_score(features: ComparisonFeatures) -> float:
@@ -111,26 +130,71 @@ def _calculate_authoritative_score(features: ComparisonFeatures) -> float:
 
 
 def _calculate_identity_score(features: ComparisonFeatures) -> float:
-    score = 0.0
+    # NAME is one evidence family. Do not stack display/first/last-name scores
+    # as if they were independent observations of the person.
+    display_name_score = _ramp(
+        features.display_name_similarity,
+        start=0.68,
+        end=0.98,
+        points=14.0,
+    )
+    first_last_score = min(
+        14.0,
+        _ramp(features.first_name_similarity, start=0.72, end=0.98, points=6.0)
+        + _ramp(features.last_name_similarity, start=0.75, end=0.98, points=8.0),
+    )
+    dynamic_name_score = min(14.0, features.dynamic_name_matches * 8.0)
+    name_family_score = max(display_name_score, first_last_score, dynamic_name_score)
+
+    # ACCOUNT_HANDLE is another correlated family. Username, fuzzy email and
+    # email-local similarities often derive from the same login string. Keep
+    # only the strongest contribution rather than summing all of them.
     if features.username_exact:
-        score += 10.0
+        username_score = 10.0
     else:
-        score += _ramp(features.username_similarity, start=0.75, end=0.98, points=9.0)
+        username_score = _ramp(
+            features.username_similarity,
+            start=0.78,
+            end=0.98,
+            points=9.0,
+        )
 
-    score += _ramp(features.display_name_similarity, start=0.68, end=0.98, points=14.0)
-    score += _ramp(features.first_name_similarity, start=0.72, end=0.98, points=5.0)
-    score += _ramp(features.last_name_similarity, start=0.75, end=0.98, points=7.0)
-
+    email_similarity_score = 0.0
+    email_local_score = 0.0
     if not features.email_exact:
-        score += _ramp(features.email_similarity, start=0.78, end=0.99, points=8.0)
-        score += _ramp(features.email_local_similarity, start=0.78, end=0.98, points=5.0)
+        email_similarity_score = _ramp(
+            features.email_similarity,
+            start=0.86,
+            end=0.99,
+            points=5.0,
+        )
+        # Reviewer evidence currently shows email-local similarity is weak by
+        # itself, so it remains supporting evidence with a deliberately small
+        # ceiling and can never stack with username/email similarity.
+        email_local_score = _ramp(
+            features.email_local_similarity,
+            start=0.90,
+            end=0.99,
+            points=2.5,
+        )
 
+    account_handle_score = max(
+        username_score,
+        email_similarity_score,
+        email_local_score,
+    )
+
+    phone_similarity_score = 0.0
     if not features.phone_exact:
-        score += _ramp(features.phone_similarity, start=0.86, end=1.00, points=3.0)
+        phone_similarity_score = _ramp(
+            features.phone_similarity,
+            start=0.90,
+            end=1.00,
+            points=2.0,
+        )
 
-    score += min(14.0, features.dynamic_name_matches * 8.0)
-    score += min(4.0, features.dynamic_unknown_matches * 2.0)
-    return score
+    unknown_support = min(2.0, features.dynamic_unknown_matches * 1.0)
+    return name_family_score + account_handle_score + phone_similarity_score + unknown_support
 
 
 def _calculate_organizational_score(features: ComparisonFeatures) -> float:
@@ -150,14 +214,15 @@ def _calculate_organizational_score(features: ComparisonFeatures) -> float:
     score += _ramp(features.title_similarity, start=0.84, end=1.00, points=2.0)
     score += _ramp(features.location_similarity, start=0.88, end=1.00, points=1.0)
     score += min(6.0, features.dynamic_org_matches * 2.0)
-    return score
+    return min(score, 8.0)
 
 
 def _calculate_semantic_score(features: ComparisonFeatures) -> float:
-    return (
-        _ramp(features.identity_embedding_similarity, start=0.89, end=0.99, points=3.0)
-        + _ramp(features.name_embedding_similarity, start=0.91, end=0.99, points=2.0)
-        + _ramp(features.organization_embedding_similarity, start=0.93, end=0.99, points=1.0)
+    return min(
+        4.0,
+        _ramp(features.identity_embedding_similarity, start=0.89, end=0.99, points=2.0)
+        + _ramp(features.name_embedding_similarity, start=0.91, end=0.99, points=1.5)
+        + _ramp(features.organization_embedding_similarity, start=0.93, end=0.99, points=0.5),
     )
 
 
@@ -200,6 +265,7 @@ def _determine_confidence_cap(features: ComparisonFeatures) -> float | None:
     authoritative = _has_authoritative_identifier(features)
     name_evidence = _has_name_evidence(features)
     strong_name = _has_strong_name_evidence(features)
+    families = _evidence_families(features)
     cap: float | None = None
 
     def apply_cap(value: float) -> None:
@@ -208,14 +274,20 @@ def _determine_confidence_cap(features: ComparisonFeatures) -> float | None:
 
     if not authoritative and evidence_count == 0:
         apply_cap(24.0)
-    if not authoritative and not name_evidence and (
-        features.username_exact or features.username_similarity >= 0.75
-    ):
-        apply_cap(44.0)
+    if not authoritative and not name_evidence and "ACCOUNT_HANDLE" in families:
+        apply_cap(40.0)
     if not authoritative and evidence_count <= 1:
-        apply_cap(44.0)
+        apply_cap(40.0)
     if not authoritative and evidence_count == 2 and not strong_name:
-        apply_cap(52.0)
+        apply_cap(48.0)
+    if (
+        not authoritative
+        and families <= {"NAME", "ACCOUNT_HANDLE"}
+    ):
+        # This is the exact correlated fuzzy pattern that reviewer feedback has
+        # rejected most often. Keep it in review territory until another
+        # independent family supports the pair.
+        apply_cap(54.0)
     if features.dynamic_identifier_conflicts > 0 and not features.employee_id_exact:
         apply_cap(55.0)
     return cap
@@ -240,6 +312,7 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
     if confidence_cap is not None:
         final_score = min(final_score, confidence_cap)
 
+    # Preserve high-confidence floors only for strong independent evidence.
     if (
         features.employee_id_exact
         and features.email_exact
@@ -269,11 +342,6 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
         features.dynamic_identifier_matches == 1
         and features.dynamic_identifier_conflicts == 0
     ):
-        # A source-specific identifier discovered by the application profiler
-        # is authoritative enough to enter the review band on its own. A
-        # differing username is not treated as a veto because duplicate
-        # accounts commonly have different logins by definition. Additional
-        # name/contact evidence is still required for high-confidence scores.
         final_score = max(final_score, 52.0)
 
     final_score = _clamp(min(final_score, 99.5))
