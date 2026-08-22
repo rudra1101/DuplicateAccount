@@ -3,6 +3,7 @@
   "permissions": [
     {"code":"ml.view","name":"View ML training"},
     {"code":"ml.analytics.view","name":"View reviewer feedback analytics"},
+    {"code":"ml.calibration.view","name":"View evidence calibration analytics"},
     {"code":"ml.train","name":"Run ML training"}
   ],
   "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
