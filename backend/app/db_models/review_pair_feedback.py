@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
@@ -33,10 +33,12 @@ class ReviewPairFeedbackRecord(Base):
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_review_candidate_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
