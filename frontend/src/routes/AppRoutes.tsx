@@ -18,6 +18,7 @@ import Integrations from "../pages/integrations/Integrations";
 import AddIntegration from "../pages/integrations/AddIntegration";
 import Operations from "../pages/operations/Operations";
 import MlTrainingDashboard from "../pages/ml/MlTrainingDashboard";
+import ReviewerAnalytics from "../pages/ml/ReviewerAnalytics";
 import KnowledgeBase from "../pages/knowledge/KnowledgeBase";
 
 const AppRoutes = () => {
@@ -60,8 +61,12 @@ const AppRoutes = () => {
             <Route path="operations" element={<Operations />} />
           </Route>
 
-          <Route element={<PermissionRoute anyOf={["ml.view", "ml.analytics.view"]} />}>
+          <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
             <Route path="ml-training" element={<MlTrainingDashboard />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["ml.analytics.view"]} />}>
+            <Route path="ml-evaluation" element={<ReviewerAnalytics />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["integration.view"]} />}>
