@@ -1,4 +1,5 @@
 from app.db_models.review_candidate import ReviewCandidateRecord
+from app.db_models.scan import ScanRecord
 from app.services.review_candidate_repository import (
     save_review_candidate_decision,
     save_review_candidates,
@@ -6,10 +7,11 @@ from app.services.review_candidate_repository import (
 
 
 class FakeSession:
-    def __init__(self, record=None):
+    def __init__(self, record=None, scan=None):
         self.added = []
         self.commits = 0
         self.record = record
+        self.scan = scan
 
     def add(self, value):
         self.added.append(value)
@@ -17,10 +19,19 @@ class FakeSession:
     def commit(self):
         self.commits += 1
 
-    def get(self, model, candidate_id):
-        assert model is ReviewCandidateRecord
-        if self.record is not None and self.record.id == candidate_id:
-            return self.record
+    def get(self, model, record_id):
+        if model is ReviewCandidateRecord:
+            if self.record is not None and self.record.id == record_id:
+                return self.record
+            return None
+        if model is ScanRecord:
+            if self.scan is not None and self.scan.id == record_id:
+                return self.scan
+            return None
+        raise AssertionError(f"Unexpected model lookup: {model}")
+
+    def scalar(self, _statement):
+        # No existing remediation item in this focused persistence test.
         return None
 
     def refresh(self, value):
@@ -70,7 +81,14 @@ def test_standalone_review_candidate_accepts_existing_review_decisions():
         review_reason="MULTI_SIGNAL_IDENTITY_REVIEW",
     )
     record.id = 7
-    db = FakeSession(record=record)
+
+    scan = ScanRecord(
+        id=101,
+        integration_id=8,
+        filename="phase7-test",
+        status="COMPLETED",
+    )
+    db = FakeSession(record=record, scan=scan)
 
     result = save_review_candidate_decision(
         db,
