@@ -16,12 +16,14 @@ from app.services.review_candidate_repository import (
     list_review_candidates,
     save_review_candidate_decision,
 )
+from app.services.duplicate_group_feedback_service import (
+    save_duplicate_group_candidate_decision,
+)
 from app.services.review_service import (
     get_duplicate_group_details,
     get_duplicate_groups,
     get_review_summary,
     get_scan_status,
-    save_candidate_decision,
 )
 
 
@@ -146,7 +148,7 @@ def submit_candidate_decision(
     _user=Depends(require_permission("duplicate.review")),
 ):
     try:
-        return save_candidate_decision(
+        return save_duplicate_group_candidate_decision(
             db=db,
             candidate_id=candidate_id,
             decision=payload.decision,
