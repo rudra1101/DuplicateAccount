@@ -30,6 +30,28 @@ export interface MlDashboardResponse {
   model: MlModelSummary;
 }
 
+export interface ReviewerConfidenceBand {
+  band: string;
+  reviewed: number;
+  confirmedDuplicates: number;
+  notDuplicates: number;
+  uncertain: number;
+  confirmationRate: number | null;
+}
+
+export interface ReviewerFeedbackAnalytics {
+  reviewedPairs: number;
+  confirmedDuplicates: number;
+  notDuplicates: number;
+  uncertain: number;
+  usableDecisions: number;
+  reviewAcceptanceRate: number | null;
+  duplicateGroupPrecision: number | null;
+  reviewCandidateAcceptanceRate: number | null;
+  averageConfirmedConfidence: number | null;
+  confidenceBands: ReviewerConfidenceBand[];
+}
+
 export interface TrainModelMetadata {
   modelVersion: string;
   trainedAt: string;
@@ -49,21 +71,13 @@ async function parseResponse<T>(
 ): Promise<T> {
   if (!response.ok) {
     const responseBody = await response.text();
-
     let message = fallbackMessage;
 
     try {
-      const parsed = JSON.parse(responseBody) as {
-        detail?: string;
-      };
-
-      if (parsed.detail) {
-        message = parsed.detail;
-      }
+      const parsed = JSON.parse(responseBody) as { detail?: string };
+      if (parsed.detail) message = parsed.detail;
     } catch {
-      if (responseBody) {
-        message = responseBody;
-      }
+      if (responseBody) message = responseBody;
     }
 
     throw new Error(message);
@@ -74,22 +88,20 @@ async function parseResponse<T>(
 
 export async function getMlDashboard(): Promise<MlDashboardResponse> {
   const response = await fetch(`${API_URL}/ml/dashboard`);
+  return parseResponse<MlDashboardResponse>(response, "Unable to load ML dashboard.");
+}
 
-  return parseResponse<MlDashboardResponse>(
+export async function getReviewerFeedbackAnalytics(): Promise<ReviewerFeedbackAnalytics> {
+  const response = await fetch(`${API_URL}/ml/analytics/reviewer-feedback`);
+  return parseResponse<ReviewerFeedbackAnalytics>(
     response,
-    "Unable to load ML dashboard.",
+    "Unable to load reviewer feedback analytics.",
   );
 }
 
 export async function trainMlModel(): Promise<TrainModelResponse> {
-  const response = await fetch(`${API_URL}/ml/train`, {
-    method: "POST",
-  });
-
-  return parseResponse<TrainModelResponse>(
-    response,
-    "Unable to train the ML model.",
-  );
+  const response = await fetch(`${API_URL}/ml/train`, { method: "POST" });
+  return parseResponse<TrainModelResponse>(response, "Unable to train the ML model.");
 }
 
 export async function getMlCurrentModel(): Promise<{
@@ -97,23 +109,13 @@ export async function getMlCurrentModel(): Promise<{
   model: TrainModelMetadata | null;
 }> {
   const response = await fetch(`${API_URL}/ml/current`);
-
-  return parseResponse<{
-    available: boolean;
-    model: TrainModelMetadata | null;
-  }>(
+  return parseResponse<{ available: boolean; model: TrainModelMetadata | null }>(
     response,
     "Unable to load the current ML model.",
   );
 }
 
 export async function getMlLabelSummary(): Promise<MlLabelSummary> {
-  const response = await fetch(
-    `${API_URL}/ml/labels/summary`,
-  );
-
-  return parseResponse<MlLabelSummary>(
-    response,
-    "Unable to load ML label summary.",
-  );
+  const response = await fetch(`${API_URL}/ml/labels/summary`);
+  return parseResponse<MlLabelSummary>(response, "Unable to load ML label summary.");
 }
