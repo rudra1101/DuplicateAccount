@@ -9,6 +9,7 @@ from app.db_models.account import AccountRecord
 from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.scan import ScanRecord
+from app.services.remediation_service import record_review_decision
 from app.services.review_pair_feedback_service import (
     load_pair_feedback,
     normalize_pair_keys,
@@ -29,12 +30,12 @@ def _account_key(*, application: str, source_id: Any, username: Any) -> str:
     return f"{app}:username:{_normalize_key_part(username)}"
 
 
-def _primary_account_key(
+def _primary_account_record(
     db: Session,
     *,
     group: DuplicateGroupRecord,
-) -> str:
-    account = db.scalars(
+) -> AccountRecord | None:
+    return db.scalars(
         select(AccountRecord)
         .where(
             AccountRecord.scan_id == group.scan_id,
@@ -45,11 +46,35 @@ def _primary_account_key(
         .limit(1)
     ).first()
 
+
+def _primary_account_key(
+    db: Session,
+    *,
+    group: DuplicateGroupRecord,
+) -> str:
+    account = _primary_account_record(db, group=group)
     return _account_key(
         application=group.application,
         source_id=account.source_account_id if account is not None else None,
         username=group.primary_username,
     )
+
+
+def _primary_account_data(db: Session, *, group: DuplicateGroupRecord) -> dict[str, Any]:
+    account = _primary_account_record(db, group=group)
+    if account is None:
+        return {"application": group.application, "username": group.primary_username}
+    return {
+        "id": account.source_account_id,
+        "application": account.application,
+        "username": account.username,
+        "displayName": account.display_name,
+        "email": account.email,
+        "employeeId": account.employee_id,
+        "department": account.department,
+        "manager": account.manager,
+        "status": account.status,
+    }
 
 
 def _candidate_account_key(
@@ -97,7 +122,6 @@ def save_duplicate_group_candidate_decision(
     comment: str | None = None,
     reviewer_name: str | None = None,
 ) -> dict[str, Any]:
-    """Save the existing group decision and persist it as pair feedback."""
     result = save_candidate_decision(
         db=db,
         candidate_id=candidate_id,
@@ -106,10 +130,11 @@ def save_duplicate_group_candidate_decision(
         reviewer_name=reviewer_name,
     )
 
-    _candidate, group, scan, primary_key, candidate_key = _pair_context(
+    candidate, group, scan, primary_key, candidate_key = _pair_context(
         db,
         candidate_id=candidate_id,
     )
+    normalized_decision = str(result.get("decision") or decision).upper()
 
     upsert_pair_feedback(
         db,
@@ -117,10 +142,25 @@ def save_duplicate_group_candidate_decision(
         application=group.application,
         account_1_key=primary_key,
         account_2_key=candidate_key,
-        decision=str(result.get("decision") or decision),
+        decision=normalized_decision,
         comment=result.get("comment"),
         reviewer_name=result.get("reviewerName"),
         source_review_candidate_id=None,
+    )
+
+    record_review_decision(
+        db,
+        integration_id=int(scan.integration_id),
+        application=group.application,
+        account_1_key=primary_key,
+        account_2_key=candidate_key,
+        decision=normalized_decision,
+        confidence=float(candidate.confidence),
+        reviewer_name=result.get("reviewerName"),
+        comment=result.get("comment"),
+        source="DUPLICATE_GROUP",
+        account_1_data=_primary_account_data(db, group=group),
+        account_2_data=candidate.account_data or {},
     )
     db.commit()
 
@@ -129,7 +169,7 @@ def save_duplicate_group_candidate_decision(
         f"Integration={scan.integration_id}, "
         f"Application={group.application}, "
         f"Pair={primary_key} <-> {candidate_key}, "
-        f"Decision={str(result.get('decision') or decision).upper()}, "
+        f"Decision={normalized_decision}, "
         "Source=DUPLICATE_GROUP"
     )
 
@@ -141,7 +181,6 @@ def get_duplicate_group_candidate_durable_decision(
     *,
     candidate_id: int,
 ) -> dict[str, Any]:
-    """Return the durable pair decision for a duplicate-group candidate."""
     _candidate, group, scan, primary_key, candidate_key = _pair_context(
         db,
         candidate_id=candidate_id,
