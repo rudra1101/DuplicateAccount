@@ -79,11 +79,7 @@ const RemediationQueue = () => {
         getReviewDecisionHistory(),
       ]);
       setItems(queueItems);
-      setHistory(
-        historyItems.filter(
-          (item) => item.source !== "PHASE10_BACKFILL",
-        ),
-      );
+      setHistory(historyItems);
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -257,12 +253,11 @@ const RemediationQueue = () => {
                 <TableCell>Decision</TableCell>
                 <TableCell>AI Confidence</TableCell>
                 <TableCell>Reviewer</TableCell>
-                <TableCell>Source</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {history.length === 0 ? (
-                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 6 }}>No reviewer decision history yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>No reviewer decision history yet.</TableCell></TableRow>
               ) : history.map((item) => (
                 <TableRow key={item.id} hover>
                   <TableCell>{item.createdAt ? new Date(item.createdAt).toLocaleString() : "Not available"}</TableCell>
@@ -274,7 +269,6 @@ const RemediationQueue = () => {
                   <TableCell><Chip size="small" label={decisionLabel(item.decision)} /></TableCell>
                   <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
                   <TableCell>{item.reviewerName ?? "Not available"}</TableCell>
-                  <TableCell>{item.source.replaceAll("_", " ")}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
