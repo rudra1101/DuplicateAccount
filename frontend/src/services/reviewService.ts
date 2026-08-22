@@ -33,6 +33,7 @@ export interface Account {
   manager?: string | null;
   status?: string | null;
   created?: string | null;
+  rawAttributes?: Record<string, unknown>;
 }
 
 export type ReviewDecision =
@@ -101,6 +102,29 @@ export interface CandidateDecisionResponse {
   labelSummary: TrainingLabelSummary;
 }
 
+export interface StandaloneReviewCandidate {
+  id: number;
+  scanId: number;
+  application: string;
+  account1Key: string;
+  account2Key: string;
+  account1: Record<string, unknown>;
+  account2: Record<string, unknown>;
+  confidence: number;
+  classification: string | null;
+  reviewReason: string;
+  modelVersion: string | null;
+  matchedAttributes: string[];
+  conflictingAttributes: string[];
+  features: Record<string, unknown>;
+  reasons: ReviewReason[];
+  warnings: ReviewReason[];
+  reviewDecision: ReviewDecision | null;
+  reviewComment: string | null;
+  reviewerName: string | null;
+  reviewedAt: string | null;
+}
+
 export interface ReviewScanStatus {
   accounts: number;
   applications: number;
@@ -128,6 +152,39 @@ function buildIntegrationQuery(
   }
 
   return `?integrationId=${integrationId}`;
+}
+
+function buildReviewCandidateQuery(
+  integrationId?: number | null,
+  decision = "PENDING",
+): string {
+  const params = new URLSearchParams();
+
+  if (
+    integrationId !== null &&
+    integrationId !== undefined
+  ) {
+    if (
+      !Number.isInteger(integrationId) ||
+      integrationId <= 0
+    ) {
+      throw new Error(
+        `Invalid integration ID: ${integrationId}`,
+      );
+    }
+
+    params.set(
+      "integrationId",
+      String(integrationId),
+    );
+  }
+
+  if (decision) {
+    params.set("decision", decision);
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 async function parseResponse<T>(
@@ -270,5 +327,54 @@ export async function submitCandidateDecision(
   return parseResponse<CandidateDecisionResponse>(
     response,
     "Unable to save the reviewer decision.",
+  );
+}
+
+export async function getStandaloneReviewCandidates(
+  integrationId?: number | null,
+  decision = "PENDING",
+): Promise<StandaloneReviewCandidate[]> {
+  const query = buildReviewCandidateQuery(
+    integrationId,
+    decision,
+  );
+
+  const response = await fetch(
+    `${BASE_URL}/review/review-candidates${query}`,
+  );
+
+  return parseResponse<StandaloneReviewCandidate[]>(
+    response,
+    "Unable to load review candidates.",
+  );
+}
+
+export async function submitStandaloneReviewDecision(
+  candidateId: number,
+  payload: CandidateDecisionPayload,
+): Promise<StandaloneReviewCandidate> {
+  if (
+    !Number.isInteger(candidateId) ||
+    candidateId <= 0
+  ) {
+    throw new Error(
+      `Invalid review candidate ID: ${candidateId}`,
+    );
+  }
+
+  const response = await fetch(
+    `${BASE_URL}/review/review-candidates/${candidateId}/decision`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return parseResponse<StandaloneReviewCandidate>(
+    response,
+    "Unable to save the review-candidate decision.",
   );
 }
