@@ -49,15 +49,21 @@ def _reviewer_confirmed_entry(
             account=account,
             prediction=prediction,
         )
-        entry["confidence"] = 100.0
+        # Human confirmation changes the durable decision, not the model score.
+        # Preserve the current scan's model confidence so reviewer feedback can
+        # never manufacture a 100% AI confidence value.
         entry["recommendation"] = "MERGE"
         entry["classification"] = "REVIEWER_CONFIRMED"
         entry["groupingEvidence"] = "REVIEWER_CONFIRMED_DUPLICATE"
+        entry["reviewDecision"] = "DUPLICATE"
         return entry
 
+    # A durable reviewer decision may reconstruct a group even when blocking
+    # does not generate the pair in the current scan. In that case there is no
+    # current model confidence; do not invent one.
     return {
         "id": candidate_number,
-        "confidence": 100.0,
+        "confidence": 0.0,
         "recommendation": "MERGE",
         "matchedAttributes": [],
         "differentAttributes": [],
@@ -68,6 +74,7 @@ def _reviewer_confirmed_entry(
         "reasons": [],
         "warnings": [],
         "features": {},
+        "reviewDecision": "DUPLICATE",
     }
 
 
