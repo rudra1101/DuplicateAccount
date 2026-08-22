@@ -125,6 +125,11 @@ export interface StandaloneReviewCandidate {
   reviewedAt: string | null;
 }
 
+interface StandaloneReviewCandidateListResponse {
+  count: number;
+  candidates: StandaloneReviewCandidate[];
+}
+
 export interface ReviewScanStatus {
   accounts: number;
   applications: number;
@@ -343,10 +348,15 @@ export async function getStandaloneReviewCandidates(
     `${BASE_URL}/review/review-candidates${query}`,
   );
 
-  return parseResponse<StandaloneReviewCandidate[]>(
-    response,
-    "Unable to load review candidates.",
-  );
+  const result =
+    await parseResponse<StandaloneReviewCandidateListResponse>(
+      response,
+      "Unable to load review candidates.",
+    );
+
+  return Array.isArray(result.candidates)
+    ? result.candidates
+    : [];
 }
 
 export async function submitStandaloneReviewDecision(
