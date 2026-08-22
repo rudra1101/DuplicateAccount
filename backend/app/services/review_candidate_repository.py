@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db_models.review_candidate import ReviewCandidateRecord
 from app.db_models.scan import ScanRecord
+from app.services.remediation_service import record_review_decision
 from app.services.review_pair_feedback_service import upsert_pair_feedback
 
 
@@ -140,20 +141,18 @@ def save_review_candidate_decision(
             "Decision must be one of: DUPLICATE, NOT_DUPLICATE, UNCERTAIN."
         )
 
+    scan = db.get(ScanRecord, record.scan_id)
+    if scan is None or scan.integration_id is None:
+        raise ValueError(
+            "Review candidate is not attached to an integration scan, so reviewer history cannot be saved."
+        )
+
     record.review_decision = normalized
     record.review_comment = (comment or "").strip() or None
     record.reviewer_name = (reviewer_name or "").strip() or None
     record.reviewed_at = datetime.utcnow()
 
-    # DUPLICATE and NOT_DUPLICATE become durable pair memory. UNCERTAIN remains
-    # scan-local so the pair may be reviewed again if later evidence changes.
     if normalized in {"DUPLICATE", "NOT_DUPLICATE"}:
-        scan = db.get(ScanRecord, record.scan_id)
-        if scan is None or scan.integration_id is None:
-            raise ValueError(
-                "Review candidate is not attached to an integration scan, so durable feedback cannot be saved."
-            )
-
         upsert_pair_feedback(
             db,
             integration_id=scan.integration_id,
@@ -165,6 +164,21 @@ def save_review_candidate_decision(
             reviewer_name=record.reviewer_name,
             source_review_candidate_id=record.id,
         )
+
+    record_review_decision(
+        db,
+        integration_id=int(scan.integration_id),
+        application=record.application,
+        account_1_key=record.account_1_key,
+        account_2_key=record.account_2_key,
+        decision=normalized,
+        confidence=float(record.confidence),
+        reviewer_name=record.reviewer_name,
+        comment=record.review_comment,
+        source="REVIEW_CANDIDATE",
+        account_1_data=record.account_1_data or {},
+        account_2_data=record.account_2_data or {},
+    )
 
     db.commit()
     db.refresh(record)
