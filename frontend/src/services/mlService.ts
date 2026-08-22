@@ -39,6 +39,16 @@ export interface ReviewerConfidenceBand {
   confirmationRate: number | null;
 }
 
+export interface EvidencePerformanceRow {
+  evidence: string;
+  reviewed: number;
+  confirmedDuplicates: number;
+  notDuplicates: number;
+  uncertain: number;
+  confirmationRate: number | null;
+  falsePositiveRate: number | null;
+}
+
 export interface ReviewerFeedbackAnalytics {
   reviewedPairs: number;
   confirmedDuplicates: number;
@@ -50,6 +60,8 @@ export interface ReviewerFeedbackAnalytics {
   reviewCandidateAcceptanceRate: number | null;
   averageConfirmedConfidence: number | null;
   confidenceBands: ReviewerConfidenceBand[];
+  evidencePerformance: EvidencePerformanceRow[];
+  evidencePatterns: EvidencePerformanceRow[];
 }
 
 export interface TrainModelMetadata {
