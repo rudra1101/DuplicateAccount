@@ -65,7 +65,7 @@ const AppRoutes = () => {
             <Route path="ml-training" element={<MlTrainingDashboard />} />
           </Route>
 
-          <Route element={<PermissionRoute anyOf={["ml.analytics.view"]} />}>
+          <Route element={<PermissionRoute anyOf={["ml.analytics.view", "ml.calibration.view"]} />}>
             <Route path="ml-evaluation" element={<ReviewerAnalytics />} />
           </Route>
 
