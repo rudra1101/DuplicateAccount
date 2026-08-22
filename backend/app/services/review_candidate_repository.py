@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -150,7 +150,7 @@ def save_review_candidate_decision(
     record.review_decision = normalized
     record.review_comment = (comment or "").strip() or None
     record.reviewer_name = (reviewer_name or "").strip() or None
-    record.reviewed_at = datetime.utcnow()
+    record.reviewed_at = datetime.now(UTC)
 
     if normalized in {"DUPLICATE", "NOT_DUPLICATE"}:
         upsert_pair_feedback(
