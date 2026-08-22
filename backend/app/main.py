@@ -20,6 +20,7 @@ from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
 from app.api.review import router as review_router
+from app.api.remediation import router as remediation_router
 from app.api.roles import router as roles_router
 from app.api.scans import router as scans_router
 from app.api.upload import router as upload_router
@@ -31,7 +32,6 @@ from app.database.session import SessionLocal, engine
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 
-# Imports required for ORM and connector registration.
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
 
@@ -56,9 +56,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Authentication is registered first so CORSMiddleware becomes the outermost
-# middleware. This ensures even early 401/403 responses from authentication
-# include the required Access-Control-Allow-Origin header for the frontend.
 app.middleware("http")(authentication_middleware)
 
 app.add_middleware(
@@ -81,6 +78,7 @@ app.include_router(upload_router, prefix="/api")
 app.include_router(detect_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
+app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(application_schemas_router, prefix="/api")
