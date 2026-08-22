@@ -6,7 +6,7 @@ from app.database.base import Base
 from app.db_models.integration import IntegrationRecord
 from app.db_models.review_candidate import ReviewCandidateRecord
 from app.db_models.scan import ScanRecord
-from app.services.reviewer_analytics_service import get_reviewer_feedback_analytics
+from app.services.reviewer_analytics_service import get_evidence_calibration_analytics
 
 
 def _session():
@@ -65,7 +65,7 @@ def test_evidence_performance_uses_reviewer_decisions():
     db.add(_candidate(scan_id, 2, "NOT_DUPLICATE", email_exact=True))
     db.commit()
 
-    analytics = get_reviewer_feedback_analytics(db)
+    analytics = get_evidence_calibration_analytics(db)
     rows = {row["evidence"]: row for row in analytics["evidencePerformance"]}
 
     assert rows["Email exact"]["reviewed"] == 2
@@ -81,7 +81,7 @@ def test_evidence_patterns_capture_signal_combinations():
     db.add(_candidate(scan_id, 1, "DUPLICATE", email_exact=True))
     db.commit()
 
-    analytics = get_reviewer_feedback_analytics(db)
+    analytics = get_evidence_calibration_analytics(db)
     patterns = analytics["evidencePatterns"]
 
     assert len(patterns) >= 1
@@ -94,7 +94,7 @@ def test_profiled_similarity_labels_are_bucketed_instead_of_fragmented():
     db.add(_candidate(scan_id, 1, "NOT_DUPLICATE", email_exact=False))
     db.commit()
 
-    analytics = get_reviewer_feedback_analytics(db)
+    analytics = get_evidence_calibration_analytics(db)
     labels = {row["evidence"] for row in analytics["evidencePerformance"]}
 
     assert "Profiled username similarity (90-94%)" in labels
@@ -109,7 +109,7 @@ def test_evidence_family_analytics_group_correlated_identity_fields():
     db.add(_candidate(scan_id, 2, "NOT_DUPLICATE", email_exact=False))
     db.commit()
 
-    analytics = get_reviewer_feedback_analytics(db)
+    analytics = get_evidence_calibration_analytics(db)
     families = {row["evidence"]: row for row in analytics["evidenceFamilyPerformance"]}
 
     assert "Authoritative Identifier" in families
