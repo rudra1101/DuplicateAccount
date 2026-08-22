@@ -112,6 +112,11 @@ def update_role_permissions(
         raise HTTPException(status_code=404, detail="Role not found.")
     if role.name == "OWNER":
         raise HTTPException(status_code=400, detail="OWNER permissions are fixed to unrestricted access.")
+    if role.name == "ADMIN":
+        raise HTTPException(
+            status_code=400,
+            detail="ADMIN permissions are fixed to all platform permissions.",
+        )
 
     permission_map = {
         item.code: item for item in db.scalars(select(PermissionRecord)).all()
