@@ -140,28 +140,31 @@ def save_review_candidate_decision(
             "Decision must be one of: DUPLICATE, NOT_DUPLICATE, UNCERTAIN."
         )
 
-    scan = db.get(ScanRecord, record.scan_id)
-    if scan is None or scan.integration_id is None:
-        raise ValueError(
-            "Review candidate is not attached to an integration scan, so durable feedback cannot be saved."
-        )
-
     record.review_decision = normalized
     record.review_comment = (comment or "").strip() or None
     record.reviewer_name = (reviewer_name or "").strip() or None
     record.reviewed_at = datetime.utcnow()
 
-    upsert_pair_feedback(
-        db,
-        integration_id=scan.integration_id,
-        application=record.application,
-        account_1_key=record.account_1_key,
-        account_2_key=record.account_2_key,
-        decision=normalized,
-        comment=record.review_comment,
-        reviewer_name=record.reviewer_name,
-        source_review_candidate_id=record.id,
-    )
+    # DUPLICATE and NOT_DUPLICATE become durable pair memory. UNCERTAIN remains
+    # scan-local so the pair may be reviewed again if later evidence changes.
+    if normalized in {"DUPLICATE", "NOT_DUPLICATE"}:
+        scan = db.get(ScanRecord, record.scan_id)
+        if scan is None or scan.integration_id is None:
+            raise ValueError(
+                "Review candidate is not attached to an integration scan, so durable feedback cannot be saved."
+            )
+
+        upsert_pair_feedback(
+            db,
+            integration_id=scan.integration_id,
+            application=record.application,
+            account_1_key=record.account_1_key,
+            account_2_key=record.account_2_key,
+            decision=normalized,
+            comment=record.review_comment,
+            reviewer_name=record.reviewer_name,
+            source_review_candidate_id=record.id,
+        )
 
     db.commit()
     db.refresh(record)
