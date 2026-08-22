@@ -37,16 +37,19 @@ export interface ReviewerConfidenceBand {
   notDuplicates: number;
   uncertain: number;
   confirmationRate: number | null;
+  sampleQuality: "LIMITED" | "DEVELOPING" | "SUFFICIENT";
 }
 
 export interface EvidencePerformanceRow {
   evidence: string;
   reviewed: number;
+  usableSamples: number;
   confirmedDuplicates: number;
   notDuplicates: number;
   uncertain: number;
   confirmationRate: number | null;
   falsePositiveRate: number | null;
+  sampleQuality: "LIMITED" | "DEVELOPING" | "SUFFICIENT";
 }
 
 export interface ReviewerFeedbackAnalytics {
@@ -62,6 +65,8 @@ export interface ReviewerFeedbackAnalytics {
   confidenceBands: ReviewerConfidenceBand[];
   evidencePerformance: EvidencePerformanceRow[];
   evidencePatterns: EvidencePerformanceRow[];
+  evidenceFamilyPerformance: EvidencePerformanceRow[];
+  evidenceFamilyPatterns: EvidencePerformanceRow[];
 }
 
 export interface TrainModelMetadata {
