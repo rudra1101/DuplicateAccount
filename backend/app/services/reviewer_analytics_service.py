@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from typing import Any, Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db_models.duplicate_candidate import DuplicateCandidateRecord
+from app.db_models.review_candidate import ReviewCandidateRecord
 from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
 
 
@@ -34,6 +36,173 @@ def _confidence_band(value: float | None) -> str:
         elif minimum <= value < maximum:
             return label
     return "Not available"
+
+
+def _number(features: dict[str, Any], key: str) -> float:
+    try:
+        return float(features.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _truthy(features: dict[str, Any], key: str) -> bool:
+    value = features.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return bool(value)
+
+
+def _evidence_signals(
+    features: dict[str, Any] | None,
+    matched_attributes: Iterable[Any] | None,
+) -> list[str]:
+    values = features or {}
+    signals: list[str] = []
+
+    if _truthy(values, "employee_id_exact"):
+        signals.append("Employee ID exact")
+    if _truthy(values, "email_exact"):
+        signals.append("Email exact")
+    if _truthy(values, "phone_exact"):
+        signals.append("Phone exact")
+    if _truthy(values, "username_exact"):
+        signals.append("Username exact")
+    elif _number(values, "username_similarity") >= 0.90:
+        signals.append("Strong username similarity")
+
+    display_name = _number(values, "display_name_similarity")
+    first_name = _number(values, "first_name_similarity")
+    last_name = _number(values, "last_name_similarity")
+    if display_name >= 0.92 or (first_name >= 0.90 and last_name >= 0.92):
+        signals.append("Strong name similarity")
+    elif display_name >= 0.80 or (first_name >= 0.80 and last_name >= 0.85):
+        signals.append("Name similarity")
+
+    if _number(values, "email_local_similarity") >= 0.90 and not _truthy(values, "email_exact"):
+        signals.append("Strong email-local similarity")
+
+    identifier_matches = int(_number(values, "dynamic_identifier_matches"))
+    if identifier_matches >= 2:
+        signals.append("Multiple profiled identifiers")
+    elif identifier_matches == 1:
+        signals.append("Profiled identifier")
+
+    if int(_number(values, "dynamic_contact_matches")) > 0:
+        signals.append("Profiled contact")
+    if int(_number(values, "dynamic_name_matches")) > 0:
+        signals.append("Profiled name")
+    if int(_number(values, "dynamic_org_matches")) > 0:
+        signals.append("Organizational support")
+    if int(_number(values, "dynamic_identifier_conflicts")) > 0:
+        signals.append("Identifier conflict")
+
+    # Preserve useful application-specific evidence discovered by the profiler.
+    # Limit the number of raw attribute labels so one unusually wide schema
+    # cannot dominate the analytics response.
+    for attribute in list(matched_attributes or [])[:4]:
+        label = str(attribute or "").strip()
+        if label:
+            signals.append(f"Profiled attribute: {label}")
+
+    # Stable order, no duplicate labels.
+    return list(dict.fromkeys(signals))
+
+
+def _append_evidence_result(
+    counters: dict[str, dict[str, int]],
+    patterns: dict[str, dict[str, int]],
+    *,
+    decision: str,
+    features: dict[str, Any] | None,
+    matched_attributes: Iterable[Any] | None,
+) -> None:
+    if decision not in {"DUPLICATE", "NOT_DUPLICATE", "UNCERTAIN"}:
+        return
+
+    signals = _evidence_signals(features, matched_attributes)
+    if not signals:
+        signals = ["No classified evidence"]
+
+    for signal in signals:
+        counters[signal][decision] += 1
+
+    # A compact pattern captures the interaction between the strongest signals.
+    pattern = " + ".join(signals[:4])
+    patterns[pattern][decision] += 1
+
+
+def _serialize_evidence_rows(
+    counters: dict[str, dict[str, int]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for evidence, counts in counters.items():
+        duplicates = int(counts.get("DUPLICATE", 0))
+        not_duplicates = int(counts.get("NOT_DUPLICATE", 0))
+        uncertain = int(counts.get("UNCERTAIN", 0))
+        reviewed = duplicates + not_duplicates + uncertain
+        usable = duplicates + not_duplicates
+        rows.append(
+            {
+                "evidence": evidence,
+                "reviewed": reviewed,
+                "confirmedDuplicates": duplicates,
+                "notDuplicates": not_duplicates,
+                "uncertain": uncertain,
+                "confirmationRate": _rate(duplicates, usable),
+                "falsePositiveRate": _rate(not_duplicates, usable),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -int(row["reviewed"]),
+            -int(row["confirmedDuplicates"]),
+            str(row["evidence"]),
+        )
+    )
+    return rows[:limit]
+
+
+def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
+    evidence_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    pattern_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    group_candidates = db.scalars(
+        select(DuplicateCandidateRecord).where(
+            DuplicateCandidateRecord.review_decision.is_not(None)
+        )
+    ).all()
+    for record in group_candidates:
+        _append_evidence_result(
+            evidence_counts,
+            pattern_counts,
+            decision=str(record.review_decision or "").upper(),
+            features=record.features or {},
+            matched_attributes=record.matched_attributes or [],
+        )
+
+    review_candidates = db.scalars(
+        select(ReviewCandidateRecord).where(
+            ReviewCandidateRecord.review_decision.is_not(None)
+        )
+    ).all()
+    for record in review_candidates:
+        _append_evidence_result(
+            evidence_counts,
+            pattern_counts,
+            decision=str(record.review_decision or "").upper(),
+            features=record.features or {},
+            matched_attributes=record.matched_attributes or [],
+        )
+
+    return {
+        "evidencePerformance": _serialize_evidence_rows(evidence_counts, limit=30),
+        "evidencePatterns": _serialize_evidence_rows(pattern_counts, limit=20),
+    }
 
 
 def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
@@ -97,6 +266,8 @@ def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
             }
         )
 
+    evidence = _evidence_performance(db)
+
     return {
         "reviewedPairs": len(records),
         "confirmedDuplicates": duplicate_count,
@@ -118,4 +289,5 @@ def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
             else None
         ),
         "confidenceBands": confidence_bands,
+        **evidence,
     }
