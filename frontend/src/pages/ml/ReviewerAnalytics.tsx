@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   Grid,
   Paper,
@@ -31,6 +32,12 @@ import {
 
 const percent = (value: number | null): string =>
   value === null ? "Not available" : `${value.toFixed(1)}%`;
+
+const sampleLabel = (value: EvidencePerformanceRow["sampleQuality"]): string => {
+  if (value === "SUFFICIENT") return "Sufficient";
+  if (value === "DEVELOPING") return "Developing";
+  return "Limited";
+};
 
 interface MetricCardProps {
   title: string;
@@ -67,17 +74,19 @@ const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableP
           <TableRow>
             <TableCell>{firstColumn}</TableCell>
             <TableCell align="right">Reviewed</TableCell>
+            <TableCell align="right">Usable</TableCell>
             <TableCell align="right">Confirmed Duplicate</TableCell>
             <TableCell align="right">Not Duplicate</TableCell>
             <TableCell align="right">Uncertain</TableCell>
             <TableCell align="right">Confirmation Rate</TableCell>
             <TableCell align="right">False Positive Rate</TableCell>
+            <TableCell>Sample Quality</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+              <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
                 No reviewed evidence is available yet.
               </TableCell>
             </TableRow>
@@ -85,11 +94,19 @@ const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableP
             <TableRow key={row.evidence} hover>
               <TableCell sx={{ maxWidth: 420 }}>{row.evidence}</TableCell>
               <TableCell align="right">{row.reviewed}</TableCell>
+              <TableCell align="right">{row.usableSamples}</TableCell>
               <TableCell align="right">{row.confirmedDuplicates}</TableCell>
               <TableCell align="right">{row.notDuplicates}</TableCell>
               <TableCell align="right">{row.uncertain}</TableCell>
               <TableCell align="right">{percent(row.confirmationRate)}</TableCell>
               <TableCell align="right">{percent(row.falsePositiveRate)}</TableCell>
+              <TableCell>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  label={sampleLabel(row.sampleQuality)}
+                />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -181,6 +198,10 @@ const ReviewerAnalytics = () => {
               </Grid>
             </Grid>
 
+            <Alert severity="info">
+              Evidence rates are only calibration signals. Limited and developing samples should not be used alone to change production behavior.
+            </Alert>
+
             <Box>
               <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>Confidence Calibration</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -196,6 +217,7 @@ const ReviewerAnalytics = () => {
                       <TableCell align="right">Not Duplicate</TableCell>
                       <TableCell align="right">Uncertain</TableCell>
                       <TableCell align="right">Confirmation Rate</TableCell>
+                      <TableCell>Sample Quality</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -207,6 +229,7 @@ const ReviewerAnalytics = () => {
                         <TableCell align="right">{band.notDuplicates}</TableCell>
                         <TableCell align="right">{band.uncertain}</TableCell>
                         <TableCell align="right">{percent(band.confirmationRate)}</TableCell>
+                        <TableCell><Chip size="small" variant="outlined" label={sampleLabel(band.sampleQuality)} /></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -215,15 +238,29 @@ const ReviewerAnalytics = () => {
             </Box>
 
             <EvidenceTable
+              title="Evidence Family Performance"
+              description="Group correlated fields into independent evidence families so username, email-local and fuzzy email evidence are not counted as separate proofs."
+              rows={analytics.evidenceFamilyPerformance}
+              firstColumn="Evidence Family"
+            />
+
+            <EvidenceTable
+              title="Evidence Family Combinations"
+              description="Measure which independent evidence families work well together. This is the preferred view for calibration decisions."
+              rows={analytics.evidenceFamilyPatterns}
+              firstColumn="Evidence Family Combination"
+            />
+
+            <EvidenceTable
               title="Evidence Performance"
-              description="See which individual identity signals produce confirmed duplicates versus reviewer-rejected false positives."
+              description="Inspect normalized individual identity signals. Similarity percentages are bucketed to avoid fragmented one-off rows."
               rows={analytics.evidencePerformance}
               firstColumn="Evidence"
             />
 
             <EvidenceTable
               title="Evidence Combination Performance"
-              description="Measure how combinations of identity signals perform together. These patterns are ranked by reviewed volume."
+              description="Inspect detailed signal combinations after taxonomy normalization."
               rows={analytics.evidencePatterns}
               firstColumn="Evidence Combination"
             />
