@@ -22,10 +22,13 @@ import {
 import RefreshIcon from "@mui/icons-material/Refresh";
 import AnalyticsOutlinedIcon from "@mui/icons-material/AnalyticsOutlined";
 
+import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
 import {
+  type EvidenceCalibrationAnalytics,
   type EvidencePerformanceRow,
   type ReviewerFeedbackAnalytics,
+  getEvidenceCalibrationAnalytics,
   getReviewerFeedbackAnalytics,
 } from "../../services/mlService";
 
@@ -103,13 +106,7 @@ const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableP
                 <TableCell align="right">{row.uncertain}</TableCell>
                 <TableCell align="right">{percent(row.confirmationRate)}</TableCell>
                 <TableCell align="right">{percent(row.falsePositiveRate)}</TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={sampleLabel(row.sampleQuality)}
-                  />
-                </TableCell>
+                <TableCell><Chip size="small" variant="outlined" label={sampleLabel(row.sampleQuality)} /></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -120,7 +117,12 @@ const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableP
 };
 
 const ReviewerAnalytics = () => {
+  const { hasPermission } = useAuth();
+  const canViewSummary = hasPermission("ml.analytics.view");
+  const canViewCalibration = hasPermission("ml.calibration.view");
+
   const [analytics, setAnalytics] = useState<ReviewerFeedbackAnalytics | null>(null);
+  const [calibration, setCalibration] = useState<EvidenceCalibrationAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -128,17 +130,22 @@ const ReviewerAnalytics = () => {
     try {
       setLoading(true);
       setError("");
-      setAnalytics(await getReviewerFeedbackAnalytics());
+      const [summaryData, calibrationData] = await Promise.all([
+        canViewSummary ? getReviewerFeedbackAnalytics() : Promise.resolve(null),
+        canViewCalibration ? getEvidenceCalibrationAnalytics() : Promise.resolve(null),
+      ]);
+      setAnalytics(summaryData);
+      setCalibration(calibrationData);
     } catch (loadError) {
       setError(
         loadError instanceof Error
           ? loadError.message
-          : "Unable to load reviewer feedback analytics.",
+          : "Unable to load model evaluation analytics.",
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewSummary, canViewCalibration]);
 
   useEffect(() => {
     void loadAnalytics();
@@ -169,107 +176,75 @@ const ReviewerAnalytics = () => {
 
         {error && <Alert severity="error">{error}</Alert>}
 
-        {loading && !analytics ? (
+        {loading ? (
           <Box sx={{ minHeight: 320, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <CircularProgress />
           </Box>
-        ) : analytics ? (
+        ) : (
           <>
-            <Grid container spacing={2.5}>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Reviewed Pairs" value={String(analytics.reviewedPairs)} description="All reviewer decisions recorded." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Confirmed Duplicates" value={String(analytics.confirmedDuplicates)} description="Pairs reviewers confirmed as duplicates." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Not Duplicates" value={String(analytics.notDuplicates)} description="Pairs reviewers explicitly kept separate." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Uncertain" value={String(analytics.uncertain)} description="Pairs requiring additional review." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Duplicate Group Precision" value={percent(analytics.duplicateGroupPrecision)} description="Share of reviewed AI duplicate-group pairs confirmed by reviewers." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Review Acceptance Rate" value={percent(analytics.reviewAcceptanceRate)} description="Confirmed duplicates among usable reviewer decisions." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Candidate Acceptance" value={percent(analytics.reviewCandidateAcceptanceRate)} description="Standalone review candidates confirmed as duplicates." />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
-                <MetricCard title="Avg Confirmed Confidence" value={percent(analytics.averageConfirmedConfidence)} description="Average AI confidence for confirmed duplicate decisions." />
-              </Grid>
-            </Grid>
+            {canViewSummary && analytics && (
+              <>
+                <Grid container spacing={2.5}>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Reviewed Pairs" value={String(analytics.reviewedPairs)} description="All reviewer decisions recorded." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Confirmed Duplicates" value={String(analytics.confirmedDuplicates)} description="Pairs reviewers confirmed as duplicates." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Not Duplicates" value={String(analytics.notDuplicates)} description="Pairs reviewers explicitly kept separate." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Uncertain" value={String(analytics.uncertain)} description="Pairs requiring additional review." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Duplicate Group Precision" value={percent(analytics.duplicateGroupPrecision)} description="Share of reviewed AI duplicate-group pairs confirmed by reviewers." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Review Acceptance Rate" value={percent(analytics.reviewAcceptanceRate)} description="Confirmed duplicates among usable reviewer decisions." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Candidate Acceptance" value={percent(analytics.reviewCandidateAcceptanceRate)} description="Standalone review candidates confirmed as duplicates." /></Grid>
+                  <Grid size={{ xs: 12, sm: 6, lg: 3 }}><MetricCard title="Avg Confirmed Confidence" value={percent(analytics.averageConfirmedConfidence)} description="Average AI confidence for confirmed duplicate decisions." /></Grid>
+                </Grid>
 
-            <Alert severity="info">
-              Evidence rates are only calibration signals. Limited and developing samples should not be used alone to change production behavior.
-            </Alert>
+                <Box>
+                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>Confidence Calibration</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Compare model confidence bands with the decisions reviewers actually made.
+                  </Typography>
+                  <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+                    <Table>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Confidence</TableCell>
+                          <TableCell align="right">Reviewed</TableCell>
+                          <TableCell align="right">Confirmed Duplicate</TableCell>
+                          <TableCell align="right">Not Duplicate</TableCell>
+                          <TableCell align="right">Uncertain</TableCell>
+                          <TableCell align="right">Confirmation Rate</TableCell>
+                          <TableCell>Sample Quality</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {(analytics.confidenceBands ?? []).map((band) => (
+                          <TableRow key={band.band} hover>
+                            <TableCell>{band.band === "Not available" ? band.band : `${band.band}%`}</TableCell>
+                            <TableCell align="right">{band.reviewed}</TableCell>
+                            <TableCell align="right">{band.confirmedDuplicates}</TableCell>
+                            <TableCell align="right">{band.notDuplicates}</TableCell>
+                            <TableCell align="right">{band.uncertain}</TableCell>
+                            <TableCell align="right">{percent(band.confirmationRate)}</TableCell>
+                            <TableCell><Chip size="small" variant="outlined" label={sampleLabel(band.sampleQuality)} /></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              </>
+            )}
 
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>Confidence Calibration</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Compare model confidence bands with the decisions reviewers actually made.
-              </Typography>
-              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Confidence</TableCell>
-                      <TableCell align="right">Reviewed</TableCell>
-                      <TableCell align="right">Confirmed Duplicate</TableCell>
-                      <TableCell align="right">Not Duplicate</TableCell>
-                      <TableCell align="right">Uncertain</TableCell>
-                      <TableCell align="right">Confirmation Rate</TableCell>
-                      <TableCell>Sample Quality</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {(analytics.confidenceBands ?? []).map((band) => (
-                      <TableRow key={band.band} hover>
-                        <TableCell>{band.band === "Not available" ? band.band : `${band.band}%`}</TableCell>
-                        <TableCell align="right">{band.reviewed}</TableCell>
-                        <TableCell align="right">{band.confirmedDuplicates}</TableCell>
-                        <TableCell align="right">{band.notDuplicates}</TableCell>
-                        <TableCell align="right">{band.uncertain}</TableCell>
-                        <TableCell align="right">{percent(band.confirmationRate)}</TableCell>
-                        <TableCell><Chip size="small" variant="outlined" label={sampleLabel(band.sampleQuality)} /></TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
-
-            <EvidenceTable
-              title="Evidence Family Performance"
-              description="Group correlated fields into independent evidence families so username, email-local and fuzzy email evidence are not counted as separate proofs."
-              rows={analytics.evidenceFamilyPerformance}
-              firstColumn="Evidence Family"
-            />
-
-            <EvidenceTable
-              title="Evidence Family Combinations"
-              description="Measure which independent evidence families work well together. This is the preferred view for calibration decisions."
-              rows={analytics.evidenceFamilyPatterns}
-              firstColumn="Evidence Family Combination"
-            />
-
-            <EvidenceTable
-              title="Evidence Performance"
-              description="Inspect normalized individual identity signals. Similarity percentages are bucketed to avoid fragmented one-off rows."
-              rows={analytics.evidencePerformance}
-              firstColumn="Evidence"
-            />
-
-            <EvidenceTable
-              title="Evidence Combination Performance"
-              description="Inspect detailed signal combinations after taxonomy normalization."
-              rows={analytics.evidencePatterns}
-              firstColumn="Evidence Combination"
-            />
+            {canViewCalibration && calibration && (
+              <>
+                <Alert severity="info">
+                  Evidence rates are calibration signals. Limited and developing samples should not be used alone to change production behavior.
+                </Alert>
+                <EvidenceTable title="Evidence Family Performance" description="Group correlated fields into independent evidence families so username, email-local and fuzzy email evidence are not counted as separate proofs." rows={calibration.evidenceFamilyPerformance} firstColumn="Evidence Family" />
+                <EvidenceTable title="Evidence Family Combinations" description="Measure which independent evidence families work well together. This is the preferred view for calibration decisions." rows={calibration.evidenceFamilyPatterns} firstColumn="Evidence Family Combination" />
+                <EvidenceTable title="Evidence Performance" description="Inspect normalized individual identity signals. Similarity percentages are bucketed to avoid fragmented one-off rows." rows={calibration.evidencePerformance} firstColumn="Evidence" />
+                <EvidenceTable title="Evidence Combination Performance" description="Inspect detailed signal combinations after taxonomy normalization." rows={calibration.evidencePatterns} firstColumn="Evidence Combination" />
+              </>
+            )}
           </>
-        ) : null}
+        )}
       </Stack>
     </PageContainer>
   );
