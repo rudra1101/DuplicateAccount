@@ -42,6 +42,9 @@ const AppRoutes = () => {
 
           <Route element={<PermissionRoute anyOf={["report.view"]} />}>
             <Route path="reports" element={<Reports />} />
+          </Route>
+
+          <Route element={<PermissionRoute anyOf={["remediation.view", "remediation.history.view"]} />}>
             <Route path="remediation" element={<RemediationQueue />} />
           </Route>
 
@@ -57,7 +60,7 @@ const AppRoutes = () => {
             <Route path="operations" element={<Operations />} />
           </Route>
 
-          <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
+          <Route element={<PermissionRoute anyOf={["ml.view", "ml.analytics.view"]} />}>
             <Route path="ml-training" element={<MlTrainingDashboard />} />
           </Route>
 
