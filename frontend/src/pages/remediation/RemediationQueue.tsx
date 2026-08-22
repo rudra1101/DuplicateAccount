@@ -79,7 +79,11 @@ const RemediationQueue = () => {
         getReviewDecisionHistory(),
       ]);
       setItems(queueItems);
-      setHistory(historyItems);
+      setHistory(
+        historyItems.filter(
+          (item) => item.source !== "PHASE10_BACKFILL",
+        ),
+      );
     } catch (loadError) {
       setError(
         loadError instanceof Error
