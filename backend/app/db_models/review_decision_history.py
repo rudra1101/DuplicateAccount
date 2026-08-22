@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -25,4 +25,8 @@ class ReviewDecisionHistoryRecord(Base):
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="REVIEW")
     account_1_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     account_2_data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+    )
