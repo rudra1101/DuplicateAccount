@@ -33,7 +33,7 @@ import {
 const percent = (value: number | null): string =>
   value === null ? "Not available" : `${value.toFixed(1)}%`;
 
-const sampleLabel = (value: EvidencePerformanceRow["sampleQuality"]): string => {
+const sampleLabel = (value: EvidencePerformanceRow["sampleQuality"] | undefined): string => {
   if (value === "SUFFICIENT") return "Sufficient";
   if (value === "DEVELOPING") return "Developing";
   return "Limited";
@@ -60,60 +60,64 @@ const MetricCard = ({ title, value, description }: MetricCardProps) => (
 interface EvidenceTableProps {
   title: string;
   description: string;
-  rows: EvidencePerformanceRow[];
+  rows?: EvidencePerformanceRow[];
   firstColumn: string;
 }
 
-const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableProps) => (
-  <Box>
-    <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>{title}</Typography>
-    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
-    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
-      <Table>
-        <TableHead>
-          <TableRow>
-            <TableCell>{firstColumn}</TableCell>
-            <TableCell align="right">Reviewed</TableCell>
-            <TableCell align="right">Usable</TableCell>
-            <TableCell align="right">Confirmed Duplicate</TableCell>
-            <TableCell align="right">Not Duplicate</TableCell>
-            <TableCell align="right">Uncertain</TableCell>
-            <TableCell align="right">Confirmation Rate</TableCell>
-            <TableCell align="right">False Positive Rate</TableCell>
-            <TableCell>Sample Quality</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {rows.length === 0 ? (
+const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableProps) => {
+  const safeRows = rows ?? [];
+
+  return (
+    <Box>
+      <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>{title}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
+      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+        <Table>
+          <TableHead>
             <TableRow>
-              <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
-                No reviewed evidence is available yet.
-              </TableCell>
+              <TableCell>{firstColumn}</TableCell>
+              <TableCell align="right">Reviewed</TableCell>
+              <TableCell align="right">Usable</TableCell>
+              <TableCell align="right">Confirmed Duplicate</TableCell>
+              <TableCell align="right">Not Duplicate</TableCell>
+              <TableCell align="right">Uncertain</TableCell>
+              <TableCell align="right">Confirmation Rate</TableCell>
+              <TableCell align="right">False Positive Rate</TableCell>
+              <TableCell>Sample Quality</TableCell>
             </TableRow>
-          ) : rows.map((row) => (
-            <TableRow key={row.evidence} hover>
-              <TableCell sx={{ maxWidth: 420 }}>{row.evidence}</TableCell>
-              <TableCell align="right">{row.reviewed}</TableCell>
-              <TableCell align="right">{row.usableSamples}</TableCell>
-              <TableCell align="right">{row.confirmedDuplicates}</TableCell>
-              <TableCell align="right">{row.notDuplicates}</TableCell>
-              <TableCell align="right">{row.uncertain}</TableCell>
-              <TableCell align="right">{percent(row.confirmationRate)}</TableCell>
-              <TableCell align="right">{percent(row.falsePositiveRate)}</TableCell>
-              <TableCell>
-                <Chip
-                  size="small"
-                  variant="outlined"
-                  label={sampleLabel(row.sampleQuality)}
-                />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  </Box>
-);
+          </TableHead>
+          <TableBody>
+            {safeRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                  No reviewed evidence is available yet.
+                </TableCell>
+              </TableRow>
+            ) : safeRows.map((row) => (
+              <TableRow key={row.evidence} hover>
+                <TableCell sx={{ maxWidth: 420 }}>{row.evidence}</TableCell>
+                <TableCell align="right">{row.reviewed}</TableCell>
+                <TableCell align="right">{row.usableSamples ?? row.confirmedDuplicates + row.notDuplicates}</TableCell>
+                <TableCell align="right">{row.confirmedDuplicates}</TableCell>
+                <TableCell align="right">{row.notDuplicates}</TableCell>
+                <TableCell align="right">{row.uncertain}</TableCell>
+                <TableCell align="right">{percent(row.confirmationRate)}</TableCell>
+                <TableCell align="right">{percent(row.falsePositiveRate)}</TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label={sampleLabel(row.sampleQuality)}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+};
 
 const ReviewerAnalytics = () => {
   const [analytics, setAnalytics] = useState<ReviewerFeedbackAnalytics | null>(null);
@@ -221,7 +225,7 @@ const ReviewerAnalytics = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {analytics.confidenceBands.map((band) => (
+                    {(analytics.confidenceBands ?? []).map((band) => (
                       <TableRow key={band.band} hover>
                         <TableCell>{band.band === "Not available" ? band.band : `${band.band}%`}</TableCell>
                         <TableCell align="right">{band.reviewed}</TableCell>
