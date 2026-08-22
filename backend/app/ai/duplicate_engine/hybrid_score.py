@@ -76,12 +76,6 @@ def _has_authoritative_identifier(features: ComparisonFeatures) -> bool:
 
 
 def _evidence_families(features: ComparisonFeatures) -> set[str]:
-    """Return independent evidence families instead of counting correlated fields.
-
-    Username, email-local and fuzzy email similarity are intentionally grouped
-    into ACCOUNT_HANDLE so they cannot masquerade as several independent
-    identity proofs. Name fields are similarly treated as one NAME family.
-    """
     families: set[str] = set()
 
     if features.employee_id_exact or features.dynamic_identifier_matches > 0:
@@ -130,8 +124,6 @@ def _calculate_authoritative_score(features: ComparisonFeatures) -> float:
 
 
 def _calculate_identity_score(features: ComparisonFeatures) -> float:
-    # NAME is one evidence family. Do not stack display/first/last-name scores
-    # as if they were independent observations of the person.
     display_name_score = _ramp(
         features.display_name_similarity,
         start=0.68,
@@ -146,9 +138,6 @@ def _calculate_identity_score(features: ComparisonFeatures) -> float:
     dynamic_name_score = min(14.0, features.dynamic_name_matches * 8.0)
     name_family_score = max(display_name_score, first_last_score, dynamic_name_score)
 
-    # ACCOUNT_HANDLE is another correlated family. Username, fuzzy email and
-    # email-local similarities often derive from the same login string. Keep
-    # only the strongest contribution rather than summing all of them.
     if features.username_exact:
         username_score = 10.0
     else:
@@ -168,9 +157,6 @@ def _calculate_identity_score(features: ComparisonFeatures) -> float:
             end=0.99,
             points=5.0,
         )
-        # Reviewer evidence currently shows email-local similarity is weak by
-        # itself, so it remains supporting evidence with a deliberately small
-        # ceiling and can never stack with username/email similarity.
         email_local_score = _ramp(
             features.email_local_similarity,
             start=0.90,
@@ -280,14 +266,11 @@ def _determine_confidence_cap(features: ComparisonFeatures) -> float | None:
         apply_cap(40.0)
     if not authoritative and evidence_count == 2 and not strong_name:
         apply_cap(48.0)
-    if (
-        not authoritative
-        and families <= {"NAME", "ACCOUNT_HANDLE"}
-    ):
-        # This is the exact correlated fuzzy pattern that reviewer feedback has
-        # rejected most often. Keep it in review territory until another
-        # independent family supports the pair.
-        apply_cap(54.0)
+    if not authoritative and families <= {"NAME", "ACCOUNT_HANDLE"}:
+        # Name + username/email-local/fuzzy-email is still only two correlated
+        # evidence families. Reviewer data shows this pattern has generated many
+        # false positives, so keep it below the 45-point auto-group threshold.
+        apply_cap(44.0)
     if features.dynamic_identifier_conflicts > 0 and not features.employee_id_exact:
         apply_cap(55.0)
     return cap
@@ -312,7 +295,6 @@ def calculate_score_breakdown(features: ComparisonFeatures) -> ScoreBreakdown:
     if confidence_cap is not None:
         final_score = min(final_score, confidence_cap)
 
-    # Preserve high-confidence floors only for strong independent evidence.
     if (
         features.employee_id_exact
         and features.email_exact
