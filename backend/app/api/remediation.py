@@ -29,7 +29,7 @@ def remediation_queue(
     integration_id: int | None = Query(default=None, alias="integrationId", ge=1),
     application: str | None = Query(default=None),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("report.view")),
+    _user=Depends(require_permission("remediation.view")),
 ):
     try:
         items = list_remediation_items(
@@ -49,7 +49,7 @@ def remediation_queue(
 def decision_history(
     limit: int = Query(default=200, ge=1, le=1000),
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("report.view")),
+    _user=Depends(require_permission("remediation.history.view")),
 ):
     try:
         items = list_decision_history(db, limit=limit)
@@ -63,7 +63,7 @@ def set_remediation_status(
     item_id: int,
     payload: RemediationStatusRequest,
     db: Session = Depends(get_db),
-    _user=Depends(require_permission("duplicate.review")),
+    _user=Depends(require_permission("remediation.manage")),
 ):
     try:
         return update_remediation_status(
