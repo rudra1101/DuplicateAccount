@@ -4,6 +4,7 @@ from app.db_models.application_schema import ApplicationSchemaRecord
 from app.db_models.schema_attribute import SchemaAttributeRecord
 from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
+from app.db_models.review_candidate import ReviewCandidateRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.db_models.job_schedule import JobScheduleRecord
@@ -27,6 +28,7 @@ __all__ = [
     "SchemaAttributeRecord",
     "DuplicateCandidateRecord",
     "DuplicateGroupRecord",
+    "ReviewCandidateRecord",
     "IntegrationRecord",
     "JobExecutionRecord",
     "JobScheduleRecord",
