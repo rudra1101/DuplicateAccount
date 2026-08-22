@@ -40,7 +40,7 @@ const menuItems = [
     permissions: ["duplicate.view"],
   },
   {
-    text: "Review Queue",
+    text: "Review Accounts",
     icon: <FactCheckIcon />,
     path: "/review",
     permissions: ["duplicate.review"],
