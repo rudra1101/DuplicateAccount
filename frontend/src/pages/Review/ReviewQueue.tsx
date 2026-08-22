@@ -729,7 +729,7 @@ const ReviewQueue = () => {
                                 )
                               }
                             >
-                              Duplicate
+                              Confirm Duplicate
                             </Button>
                             <Button
                               size="small"
