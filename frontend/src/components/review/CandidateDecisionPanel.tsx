@@ -31,6 +31,9 @@ import {
 } from "../../utils/dateTime";
 
 
+const BASE_URL = "http://127.0.0.1:8000/api";
+
+
 interface Props {
   candidateRecordId: number;
 
@@ -171,6 +174,47 @@ const CandidateDecisionPanel = ({
     currentReviewerName,
     reviewedAt,
   ]);
+
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDurableDecision = async () => {
+      try {
+        const response = await fetch(
+          `${BASE_URL}/review/candidates/${candidateRecordId}/durable-decision`,
+        );
+
+        if (!response.ok) {
+          return;
+        }
+
+        const result = await response.json() as {
+          decision?: ReviewDecision | null;
+        };
+
+        if (
+          !cancelled
+          && result.decision
+        ) {
+          setDecision(
+            result.decision,
+          );
+        }
+      } catch (loadError) {
+        console.warn(
+          "Unable to load durable reviewer decision:",
+          loadError,
+        );
+      }
+    };
+
+    void loadDurableDecision();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [candidateRecordId]);
 
 
   const saveDecision = async (
@@ -374,6 +418,7 @@ const CandidateDecisionPanel = ({
               }
               disabled={
                 savingDecision !== null
+                || decision === "DUPLICATE"
               }
               onClick={() =>
                 saveDecision(
@@ -408,6 +453,7 @@ const CandidateDecisionPanel = ({
               }
               disabled={
                 savingDecision !== null
+                || decision === "NOT_DUPLICATE"
               }
               onClick={() =>
                 saveDecision(
@@ -441,6 +487,7 @@ const CandidateDecisionPanel = ({
               }
               disabled={
                 savingDecision !== null
+                || decision === "UNCERTAIN"
               }
               onClick={() =>
                 saveDecision(
