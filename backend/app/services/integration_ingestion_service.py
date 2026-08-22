@@ -15,6 +15,7 @@ from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
 from app.services.review_candidate_repository import save_review_candidates
+from app.services.review_pair_feedback_service import load_pair_feedback
 from app.services.scan_repository import save_completed_scan
 from app.services.single_pass_duplicate_service import analyze_duplicate_decisions
 
@@ -119,11 +120,23 @@ def execute_integration(
             allow_dynamic_schema=True,
         )
 
+        pair_feedback = load_pair_feedback(
+            db,
+            integration_id=integration.id,
+        )
+        print(
+            "[Reviewer Feedback] "
+            f"Integration={integration.id}, DurablePairsLoaded={len(pair_feedback)}"
+        )
+
         (
             duplicate_groups,
             duplicate_details,
             review_candidates,
-        ) = analyze_duplicate_decisions(accounts)
+        ) = analyze_duplicate_decisions(
+            accounts,
+            pair_feedback=pair_feedback,
+        )
 
         scan = save_completed_scan(
             db=db,
