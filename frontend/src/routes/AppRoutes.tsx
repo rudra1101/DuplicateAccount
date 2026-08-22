@@ -12,6 +12,7 @@ import Settings from "../pages/Settings/Settings";
 import LoginPage from "../pages/Login/LoginPage";
 import ReviewQueue from "../pages/Review/ReviewQueue";
 import ApplicationReview from "../pages/review/ApplicationReview";
+import RemediationQueue from "../pages/remediation/RemediationQueue";
 import UploadAccounts from "../pages/upload/UploadAccounts";
 import Integrations from "../pages/integrations/Integrations";
 import AddIntegration from "../pages/integrations/AddIntegration";
@@ -41,6 +42,7 @@ const AppRoutes = () => {
 
           <Route element={<PermissionRoute anyOf={["report.view"]} />}>
             <Route path="reports" element={<Reports />} />
+            <Route path="remediation" element={<RemediationQueue />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["settings.view"]} />}>
