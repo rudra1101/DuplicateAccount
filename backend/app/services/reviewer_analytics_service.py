@@ -25,7 +25,6 @@ PERCENT_SIMILARITY_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 CORE_ATTRIBUTE_ALIASES = {
     "employee id exact": "Employee ID exact",
     "email exact": "Email exact",
@@ -97,8 +96,6 @@ def _normalize_profiled_attribute(attribute: Any) -> str | None:
 
     canonical = CORE_ATTRIBUTE_ALIASES.get(raw.lower())
     if canonical is not None:
-        # Returning the same canonical label prevents a duplicate profiled row
-        # such as "Profiled attribute: Email Exact" next to "Email exact".
         return canonical
 
     match = PERCENT_SIMILARITY_RE.match(raw)
@@ -228,8 +225,7 @@ def _append_evidence_result(
     for signal in signals:
         counters[signal][decision] += 1
 
-    pattern = " + ".join(signals[:4])
-    patterns[pattern][decision] += 1
+    patterns[" + ".join(signals[:4])][decision] += 1
 
     families = _evidence_families(features)
     if not families:
@@ -275,7 +271,7 @@ def _serialize_evidence_rows(
     return rows[:limit]
 
 
-def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
+def get_evidence_calibration_analytics(db: Session) -> dict[str, list[dict[str, Any]]]:
     evidence_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     pattern_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     family_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
@@ -383,8 +379,6 @@ def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
             }
         )
 
-    evidence = _evidence_performance(db)
-
     return {
         "reviewedPairs": len(records),
         "confirmedDuplicates": duplicate_count,
@@ -406,5 +400,4 @@ def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
             else None
         ),
         "confidenceBands": confidence_bands,
-        **evidence,
     }
