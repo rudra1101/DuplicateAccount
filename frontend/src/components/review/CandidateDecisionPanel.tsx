@@ -59,11 +59,11 @@ function getDecisionLabel(
   }
 
   if (decision === "NOT_DUPLICATE") {
-    return "Keep Separate";
+    return "Not Duplicate";
   }
 
   if (decision === "UNCERTAIN") {
-    return "Needs Review";
+    return "Uncertain";
   }
 
   return "Not Reviewed";
@@ -380,7 +380,7 @@ const CandidateDecisionPanel = ({
                 event.target.value,
               )
             }
-            placeholder="Explain why the accounts should be merged, kept separate, or reviewed further."
+            placeholder="Explain why the accounts should be confirmed as duplicates, marked not duplicate, or left uncertain."
             multiline
             minRows={3}
             fullWidth
@@ -462,7 +462,7 @@ const CandidateDecisionPanel = ({
               }
               fullWidth
             >
-              Keep Separate
+              Not Duplicate
             </Button>
 
             <Button
@@ -496,7 +496,7 @@ const CandidateDecisionPanel = ({
               }
               fullWidth
             >
-              Needs Review
+              Uncertain
             </Button>
           </Stack>
 
