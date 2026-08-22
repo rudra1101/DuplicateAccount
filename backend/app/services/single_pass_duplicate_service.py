@@ -25,6 +25,7 @@ from app.services.review_candidate_service import (
 
 
 FeedbackKey = tuple[str, str, str]
+PairKey = tuple[str, str]
 
 
 def _pair_feedback_decision(
@@ -35,6 +36,61 @@ def _pair_feedback_decision(
 ) -> str | None:
     normalized_1, normalized_2 = sorted((key_1, key_2))
     return pair_feedback.get((application, normalized_1, normalized_2))
+
+
+def _component_members(
+    union_find: UnionFind,
+    account_keys: set[str],
+    key: str,
+) -> set[str]:
+    root = union_find.find(key)
+    return {
+        account_key
+        for account_key in account_keys
+        if union_find.find(account_key) == root
+    }
+
+
+def _cannot_link_crosses_components(
+    *,
+    union_find: UnionFind,
+    account_keys: set[str],
+    key_1: str,
+    key_2: str,
+    excluded_pairs: set[PairKey],
+) -> PairKey | None:
+    if union_find.find(key_1) == union_find.find(key_2):
+        return None
+
+    left = _component_members(union_find, account_keys, key_1)
+    right = _component_members(union_find, account_keys, key_2)
+    for left_key in left:
+        for right_key in right:
+            pair = tuple(sorted((left_key, right_key)))
+            if pair in excluded_pairs:
+                return pair
+    return None
+
+
+def _union_with_cannot_links(
+    *,
+    union_find: UnionFind,
+    account_keys: set[str],
+    key_1: str,
+    key_2: str,
+    excluded_pairs: set[PairKey],
+) -> tuple[bool, PairKey | None]:
+    blocked_by = _cannot_link_crosses_components(
+        union_find=union_find,
+        account_keys=account_keys,
+        key_1=key_1,
+        key_2=key_2,
+        excluded_pairs=excluded_pairs,
+    )
+    if blocked_by is not None:
+        return False, blocked_by
+    union_find.union(key_1, key_2)
+    return True, None
 
 
 def _reviewer_confirmed_entry(
@@ -49,18 +105,12 @@ def _reviewer_confirmed_entry(
             account=account,
             prediction=prediction,
         )
-        # Human confirmation changes the durable decision, not the model score.
-        # Preserve the current scan's model confidence so reviewer feedback can
-        # never manufacture a 100% AI confidence value.
         entry["recommendation"] = "MERGE"
         entry["classification"] = "REVIEWER_CONFIRMED"
         entry["groupingEvidence"] = "REVIEWER_CONFIRMED_DUPLICATE"
         entry["reviewDecision"] = "DUPLICATE"
         return entry
 
-    # A durable reviewer decision may reconstruct a group even when blocking
-    # does not generate the pair in the current scan. In that case there is no
-    # current model confidence; do not invent one.
     return {
         "id": candidate_number,
         "confidence": 0.0,
@@ -90,26 +140,46 @@ def _build_application_groups(
         get_account_identity(account): account
         for account in accounts
     }
-    prediction_by_pair: dict[tuple[str, str], DuplicatePrediction] = {}
+    prediction_by_pair: dict[PairKey, DuplicatePrediction] = {}
     union_find = UnionFind(list(account_by_key.keys()))
     evidence_counts: dict[str, int] = defaultdict(int)
     grouping_decision_counts: dict[str, int] = defaultdict(int)
-    forced_duplicate_pairs: set[tuple[str, str]] = set()
-    excluded_pairs: set[tuple[str, str]] = set()
-
-    # Apply durable human decisions even if the current scoring pass does not
-    # generate the pair. This is what prevents reviewers from re-confirming the
-    # same pair every aggregation.
+    forced_duplicate_pairs: set[PairKey] = set()
+    excluded_pairs: set[PairKey] = set()
     account_keys = set(account_by_key)
+
+    # Resolve all cannot-link decisions first. This makes the result independent
+    # of feedback iteration order and guarantees that a reviewer-confirmed
+    # NOT_DUPLICATE pair can never be rejoined transitively through account C.
     for (feedback_app, key_1, key_2), decision in pair_feedback.items():
         if feedback_app != application:
             continue
         if key_1 not in account_keys or key_2 not in account_keys:
             continue
         pair_key = tuple(sorted((key_1, key_2)))
-        if decision == "DUPLICATE":
+        if decision == "NOT_DUPLICATE":
+            excluded_pairs.add(pair_key)
+            grouping_decision_counts["REVIEWER_CONFIRMED_NOT_DUPLICATE"] += 1
+            print(
+                "[Reviewer Feedback] "
+                f"Application={application}, Pair={key_1} <-> {key_2}, "
+                "Decision=NOT_DUPLICATE, Action=CANNOT_LINK"
+            )
+        elif decision == "DUPLICATE":
             forced_duplicate_pairs.add(pair_key)
-            union_find.union(*pair_key)
+
+    # Reviewer-confirmed duplicate edges are still subject to another explicit
+    # reviewer cannot-link constraint. This handles inconsistent triangles
+    # deterministically without violating a NOT_DUPLICATE decision.
+    for key_1, key_2 in sorted(forced_duplicate_pairs):
+        merged, blocked_by = _union_with_cannot_links(
+            union_find=union_find,
+            account_keys=account_keys,
+            key_1=key_1,
+            key_2=key_2,
+            excluded_pairs=excluded_pairs,
+        )
+        if merged:
             evidence_counts["REVIEWER_CONFIRMED_DUPLICATE"] += 1
             grouping_decision_counts["REVIEWER_CONFIRMED_DUPLICATE"] += 1
             print(
@@ -117,23 +187,18 @@ def _build_application_groups(
                 f"Application={application}, Pair={key_1} <-> {key_2}, "
                 "Decision=DUPLICATE, Action=FORCE_GROUP"
             )
-        elif decision == "NOT_DUPLICATE":
-            excluded_pairs.add(pair_key)
-            grouping_decision_counts["REVIEWER_CONFIRMED_NOT_DUPLICATE"] += 1
+        else:
+            grouping_decision_counts["BLOCKED_BY_REVIEWER_CANNOT_LINK"] += 1
             print(
                 "[Reviewer Feedback] "
                 f"Application={application}, Pair={key_1} <-> {key_2}, "
-                "Decision=NOT_DUPLICATE, Action=SUPPRESS"
+                f"Decision=DUPLICATE, Action=BLOCKED, CannotLink={blocked_by}"
             )
 
     for prediction in predictions:
         key_1 = prediction_account_key(prediction.account_1)
         key_2 = prediction_account_key(prediction.account_2)
-        if (
-            key_1 == key_2
-            or key_1 not in account_by_key
-            or key_2 not in account_by_key
-        ):
+        if key_1 == key_2 or key_1 not in account_by_key or key_2 not in account_by_key:
             continue
 
         pair_key = tuple(sorted((key_1, key_2)))
@@ -141,17 +206,12 @@ def _build_application_groups(
         if existing is None or prediction.confidence > existing.confidence:
             prediction_by_pair[pair_key] = prediction
 
-        if pair_key in excluded_pairs:
-            continue
-
-        if pair_key in forced_duplicate_pairs:
+        if pair_key in excluded_pairs or pair_key in forced_duplicate_pairs:
             continue
 
         diagnostic = build_grouping_diagnostic(prediction)
         grouping_decision_counts[
-            "ACCEPTED"
-            if diagnostic["result"] == "ACCEPTED"
-            else diagnostic["reason"]
+            "ACCEPTED" if diagnostic["result"] == "ACCEPTED" else diagnostic["reason"]
         ] += 1
 
         print(
@@ -168,7 +228,22 @@ def _build_application_groups(
         if edge_reason is None:
             continue
 
-        union_find.union(key_1, key_2)
+        merged, blocked_by = _union_with_cannot_links(
+            union_find=union_find,
+            account_keys=account_keys,
+            key_1=key_1,
+            key_2=key_2,
+            excluded_pairs=excluded_pairs,
+        )
+        if not merged:
+            grouping_decision_counts["BLOCKED_BY_REVIEWER_CANNOT_LINK"] += 1
+            print(
+                "[Grouping Decision] "
+                f"Pair={key_1} <-> {key_2}, Result=REJECTED, "
+                f"Reason=REVIEWER_CANNOT_LINK, CannotLink={blocked_by}"
+            )
+            continue
+
         evidence_counts[edge_reason] += 1
 
     print(
@@ -210,10 +285,7 @@ def _build_application_groups(
             )
         }
         component_accounts = [account_by_key[key] for key in component_keys]
-        primary_account = select_primary_account(
-            component_accounts,
-            component_predictions,
-        )
+        primary_account = select_primary_account(component_accounts, component_predictions)
         primary_key = get_account_identity(primary_account)
         duplicate_entries: list[dict[str, Any]] = []
 
@@ -258,10 +330,7 @@ def _build_application_groups(
         for index, entry in enumerate(duplicate_entries, start=1):
             entry["id"] = index
 
-        highest_confidence = max(
-            float(entry["confidence"])
-            for entry in duplicate_entries
-        )
+        highest_confidence = max(float(entry["confidence"]) for entry in duplicate_entries)
         groups.append(
             {
                 "groupId": group_id,
@@ -311,8 +380,7 @@ def analyze_duplicate_decisions(
         app_accounts = remove_duplicate_source_records(raw_accounts)
         print(
             "[Duplicate Detection] "
-            f"Application={application}, "
-            f"InputAccounts={len(raw_accounts)}, "
+            f"Application={application}, InputAccounts={len(raw_accounts)}, "
             f"UniqueSourceAccounts={len(app_accounts)}"
         )
 
@@ -322,8 +390,7 @@ def analyze_duplicate_decisions(
         predictions = detect_application_duplicates(app_accounts)
         print(
             "[Duplicate Detection] "
-            f"Application={application}, "
-            f"QualifyingPredictions={len(predictions)}"
+            f"Application={application}, QualifyingPredictions={len(predictions)}"
         )
 
         groups, details, next_group_id = _build_application_groups(
@@ -369,11 +436,9 @@ def analyze_duplicate_decisions(
             decision_counts[outcome["decision"]] += 1
             print(
                 "[Duplicate Decision] "
-                f"Application={application}, "
-                f"Pair={key_1} <-> {key_2}, "
+                f"Application={application}, Pair={key_1} <-> {key_2}, "
                 f"Confidence={round(float(prediction.confidence), 2)}, "
-                f"Decision={outcome['decision']}, "
-                f"Reason={outcome['reason']}"
+                f"Decision={outcome['decision']}, Reason={outcome['reason']}"
             )
             if outcome["decision"] == "REVIEW":
                 review_candidates.append(
@@ -390,12 +455,6 @@ def analyze_duplicate_decisions(
             str(item["account2Key"]),
         )
     )
-    print(
-        "[Duplicate Detection] DecisionSummary="
-        f"{dict(decision_counts)}"
-    )
-    print(
-        "[Duplicate Detection] "
-        "SinglePassDecisionPipeline=completed"
-    )
+    print(f"[Duplicate Detection] DecisionSummary={dict(decision_counts)}")
+    print("[Duplicate Detection] SinglePassDecisionPipeline=completed")
     return all_groups, all_details, review_candidates
