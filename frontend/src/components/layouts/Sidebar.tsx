@@ -28,78 +28,18 @@ import { useAuth } from "../../auth/AuthContext";
 const drawerWidth = 250;
 
 const menuItems = [
-  {
-    text: "Dashboard",
-    icon: <DashboardIcon />,
-    path: "/",
-    permissions: ["dashboard.view"],
-  },
-  {
-    text: "Duplicate Detection",
-    icon: <SearchIcon />,
-    path: "/duplicates",
-    permissions: ["duplicate.view"],
-  },
-  {
-    text: "Review Accounts",
-    icon: <FactCheckIcon />,
-    path: "/review",
-    permissions: ["duplicate.review"],
-  },
-  {
-    text: "Remediation",
-    icon: <TaskAltIcon />,
-    path: "/remediation",
-    permissions: ["report.view"],
-  },
-  {
-    text: "Reports",
-    icon: <AssessmentIcon />,
-    path: "/reports",
-    permissions: ["report.view"],
-  },
-  {
-    text: "Admin",
-    icon: <AdminPanelSettingsIcon />,
-    path: "/admin",
-    permissions: ["user.view", "role.view"],
-  },
-  {
-    text: "Upload Accounts",
-    icon: <CloudUploadIcon />,
-    path: "/upload",
-    permissions: ["upload.manage"],
-  },
-  {
-    text: "Operations",
-    path: "/operations",
-    icon: <MonitorHeartOutlinedIcon />,
-    permissions: ["operations.view"],
-  },
-  {
-    text: "Settings",
-    icon: <SettingsIcon />,
-    path: "/settings",
-    permissions: ["settings.view"],
-  },
-  {
-    text: "Integrations",
-    path: "/integrations",
-    icon: <CableIcon />,
-    permissions: ["integration.view"],
-  },
-  {
-    text: "ML Training",
-    path: "/ml-training",
-    icon: <ModelTrainingIcon />,
-    permissions: ["ml.view"],
-  },
-  {
-    text: "Knowledge Base",
-    path: "/knowledge",
-    icon: <MenuBookOutlined />,
-    permissions: ["knowledge.view"],
-  },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/", permissions: ["dashboard.view"] },
+  { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates", permissions: ["duplicate.view"] },
+  { text: "Review Accounts", icon: <FactCheckIcon />, path: "/review", permissions: ["duplicate.review"] },
+  { text: "Remediation", icon: <TaskAltIcon />, path: "/remediation", permissions: ["remediation.view", "remediation.history.view"] },
+  { text: "Reports", icon: <AssessmentIcon />, path: "/reports", permissions: ["report.view"] },
+  { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", permissions: ["user.view", "role.view"] },
+  { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload", permissions: ["upload.manage"] },
+  { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
+  { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.view"] },
+  { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
+  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view", "ml.analytics.view"] },
+  { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
 ];
 
 const Sidebar = () => {
