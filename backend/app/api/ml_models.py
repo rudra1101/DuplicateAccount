@@ -6,7 +6,10 @@ from app.ai.ml.model_store import load_model
 from app.auth import require_permission
 from app.database.session import get_db
 from app.schemas.training_label import TrainingLabelCreate
-from app.services.reviewer_analytics_service import get_reviewer_feedback_analytics
+from app.services.reviewer_analytics_service import (
+    get_evidence_calibration_analytics,
+    get_reviewer_feedback_analytics,
+)
 from app.services.training_label_service import (
     create_training_label,
     get_training_label_summary,
@@ -94,6 +97,14 @@ def reviewer_feedback_analytics(
     _user=Depends(require_permission("ml.analytics.view")),
 ):
     return get_reviewer_feedback_analytics(db)
+
+
+@router.get("/analytics/evidence-calibration")
+def evidence_calibration_analytics(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("ml.calibration.view")),
+):
+    return get_evidence_calibration_analytics(db)
 
 
 @router.get("/dashboard")
