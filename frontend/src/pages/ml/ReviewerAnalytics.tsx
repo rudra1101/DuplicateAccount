@@ -23,6 +23,7 @@ import AnalyticsOutlinedIcon from "@mui/icons-material/AnalyticsOutlined";
 
 import PageContainer from "../../components/common/PageContainer";
 import {
+  type EvidencePerformanceRow,
   type ReviewerFeedbackAnalytics,
   getReviewerFeedbackAnalytics,
 } from "../../services/mlService";
@@ -47,6 +48,54 @@ const MetricCard = ({ title, value, description }: MetricCardProps) => (
       </Typography>
     </CardContent>
   </Card>
+);
+
+interface EvidenceTableProps {
+  title: string;
+  description: string;
+  rows: EvidencePerformanceRow[];
+  firstColumn: string;
+}
+
+const EvidenceTable = ({ title, description, rows, firstColumn }: EvidenceTableProps) => (
+  <Box>
+    <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>{title}</Typography>
+    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
+    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3 }}>
+      <Table>
+        <TableHead>
+          <TableRow>
+            <TableCell>{firstColumn}</TableCell>
+            <TableCell align="right">Reviewed</TableCell>
+            <TableCell align="right">Confirmed Duplicate</TableCell>
+            <TableCell align="right">Not Duplicate</TableCell>
+            <TableCell align="right">Uncertain</TableCell>
+            <TableCell align="right">Confirmation Rate</TableCell>
+            <TableCell align="right">False Positive Rate</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {rows.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                No reviewed evidence is available yet.
+              </TableCell>
+            </TableRow>
+          ) : rows.map((row) => (
+            <TableRow key={row.evidence} hover>
+              <TableCell sx={{ maxWidth: 420 }}>{row.evidence}</TableCell>
+              <TableCell align="right">{row.reviewed}</TableCell>
+              <TableCell align="right">{row.confirmedDuplicates}</TableCell>
+              <TableCell align="right">{row.notDuplicates}</TableCell>
+              <TableCell align="right">{row.uncertain}</TableCell>
+              <TableCell align="right">{percent(row.confirmationRate)}</TableCell>
+              <TableCell align="right">{percent(row.falsePositiveRate)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  </Box>
 );
 
 const ReviewerAnalytics = () => {
@@ -133,9 +182,7 @@ const ReviewerAnalytics = () => {
             </Grid>
 
             <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>
-                Confidence Calibration
-              </Typography>
+              <Typography variant="h6" fontWeight={700} sx={{ mb: 1 }}>Confidence Calibration</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Compare model confidence bands with the decisions reviewers actually made.
               </Typography>
@@ -166,6 +213,20 @@ const ReviewerAnalytics = () => {
                 </Table>
               </TableContainer>
             </Box>
+
+            <EvidenceTable
+              title="Evidence Performance"
+              description="See which individual identity signals produce confirmed duplicates versus reviewer-rejected false positives."
+              rows={analytics.evidencePerformance}
+              firstColumn="Evidence"
+            />
+
+            <EvidenceTable
+              title="Evidence Combination Performance"
+              description="Measure how combinations of identity signals perform together. These patterns are ranked by reviewed volume."
+              rows={analytics.evidencePatterns}
+              firstColumn="Evidence Combination"
+            />
           </>
         ) : null}
       </Stack>
