@@ -17,6 +17,7 @@ from app.services.review_candidate_repository import (
     save_review_candidate_decision,
 )
 from app.services.duplicate_group_feedback_service import (
+    get_duplicate_group_candidate_durable_decision,
     save_duplicate_group_candidate_decision,
 )
 from app.services.review_service import (
@@ -137,6 +138,28 @@ def duplicate_group_details(
         raise HTTPException(
             status_code=500,
             detail="Unable to load duplicate-group details from the database.",
+        ) from exc
+
+
+@router.get("/candidates/{candidate_id}/durable-decision")
+def duplicate_group_candidate_durable_decision(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("duplicate.view")),
+):
+    try:
+        return get_duplicate_group_candidate_durable_decision(
+            db,
+            candidate_id=candidate_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message.lower() else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load durable candidate decision.",
         ) from exc
 
 
