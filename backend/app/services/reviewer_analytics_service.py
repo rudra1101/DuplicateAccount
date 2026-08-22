@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import re
 from typing import Any, Iterable
 
 from sqlalchemy import select
@@ -19,11 +20,34 @@ CONFIDENCE_BANDS = [
     (0.0, 50.0, "0-49"),
 ]
 
+PERCENT_SIMILARITY_RE = re.compile(
+    r"^(?P<name>.+?)\s+similarity\s*\((?P<percent>\d+(?:\.\d+)?)%\)$",
+    re.IGNORECASE,
+)
+
+
+CORE_ATTRIBUTE_ALIASES = {
+    "employee id exact": "Employee ID exact",
+    "email exact": "Email exact",
+    "phone exact": "Phone exact",
+    "username exact": "Username exact",
+    "display name exact": "Display name exact",
+    "status exact": "Status exact",
+}
+
 
 def _rate(numerator: int, denominator: int) -> float | None:
     if denominator <= 0:
         return None
     return round((numerator / denominator) * 100.0, 2)
+
+
+def _sample_quality(usable: int) -> str:
+    if usable >= 20:
+        return "SUFFICIENT"
+    if usable >= 8:
+        return "DEVELOPING"
+    return "LIMITED"
 
 
 def _confidence_band(value: float | None) -> str:
@@ -52,6 +76,38 @@ def _truthy(features: dict[str, Any], key: str) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes"}
     return bool(value)
+
+
+def _similarity_bucket(percent: float) -> str:
+    if percent >= 100.0:
+        return "100%"
+    if percent >= 95.0:
+        return "95-99%"
+    if percent >= 90.0:
+        return "90-94%"
+    if percent >= 85.0:
+        return "85-89%"
+    return "below 85%"
+
+
+def _normalize_profiled_attribute(attribute: Any) -> str | None:
+    raw = str(attribute or "").strip()
+    if not raw:
+        return None
+
+    canonical = CORE_ATTRIBUTE_ALIASES.get(raw.lower())
+    if canonical is not None:
+        # Returning the same canonical label prevents a duplicate profiled row
+        # such as "Profiled attribute: Email Exact" next to "Email exact".
+        return canonical
+
+    match = PERCENT_SIMILARITY_RE.match(raw)
+    if match:
+        name = " ".join(match.group("name").strip().split())
+        percent = float(match.group("percent"))
+        return f"Profiled {name.lower()} similarity ({_similarity_bucket(percent)})"
+
+    return f"Profiled attribute: {raw}"
 
 
 def _evidence_signals(
@@ -98,21 +154,65 @@ def _evidence_signals(
     if int(_number(values, "dynamic_identifier_conflicts")) > 0:
         signals.append("Identifier conflict")
 
-    # Preserve useful application-specific evidence discovered by the profiler.
-    # Limit the number of raw attribute labels so one unusually wide schema
-    # cannot dominate the analytics response.
-    for attribute in list(matched_attributes or [])[:4]:
-        label = str(attribute or "").strip()
-        if label:
-            signals.append(f"Profiled attribute: {label}")
+    for attribute in list(matched_attributes or [])[:6]:
+        normalized = _normalize_profiled_attribute(attribute)
+        if normalized:
+            signals.append(normalized)
 
-    # Stable order, no duplicate labels.
     return list(dict.fromkeys(signals))
+
+
+def _evidence_families(features: dict[str, Any] | None) -> list[str]:
+    values = features or {}
+    families: list[str] = []
+
+    if _truthy(values, "employee_id_exact") or _number(values, "dynamic_identifier_matches") > 0:
+        families.append("Authoritative Identifier")
+
+    if (
+        _truthy(values, "email_exact")
+        or _truthy(values, "phone_exact")
+        or _number(values, "dynamic_contact_matches") > 0
+    ):
+        families.append("Contact")
+
+    display_name = _number(values, "display_name_similarity")
+    first_name = _number(values, "first_name_similarity")
+    last_name = _number(values, "last_name_similarity")
+    if (
+        display_name >= 0.80
+        or (first_name >= 0.80 and last_name >= 0.85)
+        or _number(values, "dynamic_name_matches") > 0
+    ):
+        families.append("Name")
+
+    if (
+        _truthy(values, "username_exact")
+        or _number(values, "username_similarity") >= 0.90
+        or _number(values, "email_similarity") >= 0.92
+        or _number(values, "email_local_similarity") >= 0.90
+    ):
+        families.append("Account Handle")
+
+    if (
+        _truthy(values, "department_exact")
+        or _truthy(values, "manager_exact")
+        or _number(values, "manager_similarity") >= 0.90
+        or _number(values, "dynamic_org_matches") > 0
+    ):
+        families.append("Organizational")
+
+    if _number(values, "dynamic_identifier_conflicts") > 0:
+        families.append("Contradiction")
+
+    return list(dict.fromkeys(families))
 
 
 def _append_evidence_result(
     counters: dict[str, dict[str, int]],
     patterns: dict[str, dict[str, int]],
+    family_counters: dict[str, dict[str, int]],
+    family_patterns: dict[str, dict[str, int]],
     *,
     decision: str,
     features: dict[str, Any] | None,
@@ -128,9 +228,15 @@ def _append_evidence_result(
     for signal in signals:
         counters[signal][decision] += 1
 
-    # A compact pattern captures the interaction between the strongest signals.
     pattern = " + ".join(signals[:4])
     patterns[pattern][decision] += 1
+
+    families = _evidence_families(features)
+    if not families:
+        families = ["Unclassified"]
+    for family in families:
+        family_counters[family][decision] += 1
+    family_patterns[" + ".join(families)][decision] += 1
 
 
 def _serialize_evidence_rows(
@@ -149,11 +255,13 @@ def _serialize_evidence_rows(
             {
                 "evidence": evidence,
                 "reviewed": reviewed,
+                "usableSamples": usable,
                 "confirmedDuplicates": duplicates,
                 "notDuplicates": not_duplicates,
                 "uncertain": uncertain,
                 "confirmationRate": _rate(duplicates, usable),
                 "falsePositiveRate": _rate(not_duplicates, usable),
+                "sampleQuality": _sample_quality(usable),
             }
         )
 
@@ -170,6 +278,8 @@ def _serialize_evidence_rows(
 def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
     evidence_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     pattern_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    family_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    family_pattern_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     group_candidates = db.scalars(
         select(DuplicateCandidateRecord).where(
@@ -180,6 +290,8 @@ def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
         _append_evidence_result(
             evidence_counts,
             pattern_counts,
+            family_counts,
+            family_pattern_counts,
             decision=str(record.review_decision or "").upper(),
             features=record.features or {},
             matched_attributes=record.matched_attributes or [],
@@ -194,6 +306,8 @@ def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
         _append_evidence_result(
             evidence_counts,
             pattern_counts,
+            family_counts,
+            family_pattern_counts,
             decision=str(record.review_decision or "").upper(),
             features=record.features or {},
             matched_attributes=record.matched_attributes or [],
@@ -202,6 +316,8 @@ def _evidence_performance(db: Session) -> dict[str, list[dict[str, Any]]]:
     return {
         "evidencePerformance": _serialize_evidence_rows(evidence_counts, limit=30),
         "evidencePatterns": _serialize_evidence_rows(pattern_counts, limit=20),
+        "evidenceFamilyPerformance": _serialize_evidence_rows(family_counts, limit=12),
+        "evidenceFamilyPatterns": _serialize_evidence_rows(family_pattern_counts, limit=15),
     }
 
 
@@ -263,6 +379,7 @@ def get_reviewer_feedback_analytics(db: Session) -> dict[str, Any]:
                 "notDuplicates": not_duplicates,
                 "uncertain": uncertain,
                 "confirmationRate": _rate(duplicates, usable),
+                "sampleQuality": _sample_quality(usable),
             }
         )
 
