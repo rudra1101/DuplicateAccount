@@ -15,6 +15,8 @@ from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
 from app.services.duplicate_detector import detect_duplicate_groups
+from app.services.review_candidate_service import detect_review_candidates
+from app.services.review_candidate_repository import save_review_candidates
 from app.services.scan_repository import save_completed_scan
 
 
@@ -70,8 +72,6 @@ def _default_application_for_integration(
     if len(applications) == 1:
         return applications[0].name
 
-    # Multiple applications are valid only when the incoming account feed
-    # contains an application/source attribute that can route each row.
     return None
 
 
@@ -121,6 +121,7 @@ def execute_integration(
         )
 
         duplicate_groups, duplicate_details = detect_duplicate_groups(accounts)
+        review_candidates = detect_review_candidates(accounts)
 
         scan = save_completed_scan(
             db=db,
@@ -129,6 +130,16 @@ def execute_integration(
             accounts=accounts,
             duplicate_groups=duplicate_groups,
             duplicate_details=duplicate_details,
+        )
+
+        saved_review_candidates = save_review_candidates(
+            db,
+            scan_id=scan.id,
+            candidates=review_candidates,
+        )
+        print(
+            "[Duplicate Detection] "
+            f"ApplicationReviewCandidatesPersisted={saved_review_candidates}"
         )
 
         total_duplicate_groups = sum(len(groups) for groups in duplicate_groups.values())
