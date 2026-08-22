@@ -1,10 +1,10 @@
 {
   "service": {"key":"ml","name":"ML Training","description":"Machine-learning model training, evaluation, and inspection","category":"Machine Learning","route":"/ml-training","icon":"ml","enabled":true,"sortOrder":80},
   "permissions": [
-    {"code":"ml.view","name":"View ML training"},
-    {"code":"ml.analytics.view","name":"View reviewer feedback analytics"},
-    {"code":"ml.calibration.view","name":"View evidence calibration analytics"},
-    {"code":"ml.train","name":"Run ML training"}
+    {"code":"ml.view","name":"View ML Training"},
+    {"code":"ml.analytics.view","name":"View Model Evaluation"},
+    {"code":"ml.calibration.view","name":"View Model Evaluation Calibration"},
+    {"code":"ml.train","name":"Run ML Training"}
   ],
   "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
 }
