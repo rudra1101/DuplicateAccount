@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db_models.integration import IntegrationRecord
+from app.db_models.remediation_item import RemediationItemRecord
+from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
+from app.services.review_pair_feedback_service import normalize_pair_keys
+
+
+VALID_REMEDIATION_STATUSES = {
+    "PENDING_ACTION",
+    "ACTIONED",
+    "IGNORED",
+    "FAILED",
+}
+
+
+def record_review_decision(
+    db: Session,
+    *,
+    integration_id: int,
+    application: str,
+    account_1_key: str,
+    account_2_key: str,
+    decision: str,
+    confidence: float | None = None,
+    reviewer_name: str | None = None,
+    comment: str | None = None,
+    source: str = "REVIEW",
+    account_1_data: dict[str, Any] | None = None,
+    account_2_data: dict[str, Any] | None = None,
+) -> None:
+    key_1, key_2 = normalize_pair_keys(account_1_key, account_2_key)
+    data_1 = account_1_data or {}
+    data_2 = account_2_data or {}
+    if key_1 != str(account_1_key):
+        data_1, data_2 = data_2, data_1
+
+    normalized_decision = decision.strip().upper()
+    db.add(
+        ReviewDecisionHistoryRecord(
+            integration_id=integration_id,
+            application=application,
+            account_1_key=key_1,
+            account_2_key=key_2,
+            decision=normalized_decision,
+            confidence=confidence,
+            reviewer_name=(reviewer_name or "").strip() or None,
+            comment=(comment or "").strip() or None,
+            source=source,
+            account_1_data=data_1,
+            account_2_data=data_2,
+        )
+    )
+
+    existing = db.scalar(
+        select(RemediationItemRecord).where(
+            RemediationItemRecord.integration_id == integration_id,
+            RemediationItemRecord.application == application,
+            RemediationItemRecord.account_1_key == key_1,
+            RemediationItemRecord.account_2_key == key_2,
+        )
+    )
+
+    if normalized_decision == "DUPLICATE":
+        if existing is None:
+            existing = RemediationItemRecord(
+                integration_id=integration_id,
+                application=application,
+                account_1_key=key_1,
+                account_2_key=key_2,
+                status="PENDING_ACTION",
+            )
+            db.add(existing)
+        elif existing.status in {"IGNORED", "FAILED"}:
+            existing.status = "PENDING_ACTION"
+
+        existing.account_1_data = data_1
+        existing.account_2_data = data_2
+        existing.confidence = confidence
+        existing.reviewer_name = (reviewer_name or "").strip() or None
+        existing.review_comment = (comment or "").strip() or None
+        existing.updated_at = datetime.utcnow()
+    elif existing is not None and normalized_decision in {"NOT_DUPLICATE", "UNCERTAIN"}:
+        existing.status = "IGNORED"
+        existing.action_comment = f"Removed from active remediation after reviewer decision: {normalized_decision}."
+        existing.updated_at = datetime.utcnow()
+
+
+def list_remediation_items(
+    db: Session,
+    *,
+    status: str | None = None,
+    integration_id: int | None = None,
+    application: str | None = None,
+) -> list[dict[str, Any]]:
+    query = select(RemediationItemRecord)
+    if status:
+        normalized = status.strip().upper()
+        if normalized not in VALID_REMEDIATION_STATUSES:
+            raise ValueError("Invalid remediation status.")
+        query = query.where(RemediationItemRecord.status == normalized)
+    if integration_id is not None:
+        query = query.where(RemediationItemRecord.integration_id == integration_id)
+    if application:
+        query = query.where(RemediationItemRecord.application == application)
+
+    records = list(
+        db.scalars(
+            query.order_by(RemediationItemRecord.updated_at.desc(), RemediationItemRecord.id.desc())
+        ).all()
+    )
+    integration_ids = {record.integration_id for record in records}
+    names = {
+        row.id: row.name
+        for row in db.execute(
+            select(IntegrationRecord.id, IntegrationRecord.name).where(
+                IntegrationRecord.id.in_(integration_ids)
+            )
+        ).all()
+    } if integration_ids else {}
+
+    return [
+        {
+            "id": record.id,
+            "integrationId": record.integration_id,
+            "integrationName": names.get(record.integration_id),
+            "application": record.application,
+            "account1Key": record.account_1_key,
+            "account2Key": record.account_2_key,
+            "account1": record.account_1_data or {},
+            "account2": record.account_2_data or {},
+            "confidence": record.confidence,
+            "reviewerName": record.reviewer_name,
+            "reviewComment": record.review_comment,
+            "status": record.status,
+            "actionComment": record.action_comment,
+            "actionedBy": record.actioned_by,
+            "createdAt": record.created_at.isoformat() if record.created_at else None,
+            "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
+        }
+        for record in records
+    ]
+
+
+def list_decision_history(db: Session, *, limit: int = 200) -> list[dict[str, Any]]:
+    records = list(
+        db.scalars(
+            select(ReviewDecisionHistoryRecord)
+            .order_by(ReviewDecisionHistoryRecord.created_at.desc(), ReviewDecisionHistoryRecord.id.desc())
+            .limit(limit)
+        ).all()
+    )
+    return [
+        {
+            "id": record.id,
+            "integrationId": record.integration_id,
+            "application": record.application,
+            "account1Key": record.account_1_key,
+            "account2Key": record.account_2_key,
+            "decision": record.decision,
+            "confidence": record.confidence,
+            "reviewerName": record.reviewer_name,
+            "comment": record.comment,
+            "source": record.source,
+            "account1": record.account_1_data or {},
+            "account2": record.account_2_data or {},
+            "createdAt": record.created_at.isoformat() if record.created_at else None,
+        }
+        for record in records
+    ]
+
+
+def update_remediation_status(
+    db: Session,
+    *,
+    item_id: int,
+    status: str,
+    action_comment: str | None = None,
+    actioned_by: str | None = None,
+) -> dict[str, Any]:
+    record = db.get(RemediationItemRecord, item_id)
+    if record is None:
+        raise ValueError("Remediation item not found.")
+    normalized = status.strip().upper()
+    if normalized not in VALID_REMEDIATION_STATUSES:
+        raise ValueError("Invalid remediation status.")
+    record.status = normalized
+    record.action_comment = (action_comment or "").strip() or None
+    record.actioned_by = (actioned_by or "").strip() or None
+    record.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(record)
+    return {
+        "id": record.id,
+        "status": record.status,
+        "actionComment": record.action_comment,
+        "actionedBy": record.actioned_by,
+        "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
+    }
