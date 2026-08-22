@@ -46,10 +46,7 @@ const valueOf = (account: Record<string, unknown>, key: string): string => {
     : String(value);
 };
 
-const accountName = (
-  account: Record<string, unknown>,
-  stableKey: string,
-): string => {
+const accountName = (account: Record<string, unknown>, stableKey: string): string => {
   const username = valueOf(account, "username");
   return username === "Not available" ? stableKey : username;
 };
@@ -61,8 +58,12 @@ const decisionLabel = (value: string): string => {
 };
 
 const RemediationQueue = () => {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<PageTab>("queue");
+  const { user, hasPermission } = useAuth();
+  const canViewQueue = hasPermission("remediation.view");
+  const canViewHistory = hasPermission("remediation.history.view");
+  const canManage = hasPermission("remediation.manage");
+
+  const [activeTab, setActiveTab] = useState<PageTab>(canViewQueue ? "queue" : "history");
   const [statusFilter, setStatusFilter] = useState<QueueFilter>("PENDING_ACTION");
   const [items, setItems] = useState<RemediationItem[]>([]);
   const [history, setHistory] = useState<ReviewDecisionHistoryItem[]>([]);
@@ -75,27 +76,29 @@ const RemediationQueue = () => {
       setLoading(true);
       setError("");
       const [queueItems, historyItems] = await Promise.all([
-        getRemediationItems(statusFilter),
-        getReviewDecisionHistory(),
+        canViewQueue ? getRemediationItems(statusFilter) : Promise.resolve([]),
+        canViewHistory ? getReviewDecisionHistory() : Promise.resolve([]),
       ]);
       setItems(queueItems);
       setHistory(historyItems);
     } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Unable to load remediation data.",
-      );
+      setError(loadError instanceof Error ? loadError.message : "Unable to load remediation data.");
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, [canViewQueue, canViewHistory, statusFilter]);
+
+  useEffect(() => {
+    if (activeTab === "queue" && !canViewQueue && canViewHistory) setActiveTab("history");
+    if (activeTab === "history" && !canViewHistory && canViewQueue) setActiveTab("queue");
+  }, [activeTab, canViewQueue, canViewHistory]);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
 
   const setStatus = async (item: RemediationItem, status: RemediationStatus) => {
+    if (!canManage) return;
     try {
       setUpdatingId(item.id);
       setError("");
@@ -107,11 +110,7 @@ const RemediationQueue = () => {
       );
       await loadData();
     } catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Unable to update remediation item.",
-      );
+      setError(saveError instanceof Error ? saveError.message : "Unable to update remediation item.");
     } finally {
       setUpdatingId(null);
     }
@@ -119,38 +118,22 @@ const RemediationQueue = () => {
 
   return (
     <PageContainer title="Remediation">
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 2,
-          flexWrap: "wrap",
-          mb: 3,
-        }}
-      >
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 2, flexWrap: "wrap", mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>
-            Duplicate Account Remediation
-          </Typography>
+          <Typography variant="h5" fontWeight={700}>Duplicate Account Remediation</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
             Track reviewer-confirmed duplicates separately from detection and record downstream action status.
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={loading ? <CircularProgress size={18} /> : <RefreshIcon />}
-          onClick={loadData}
-          disabled={loading}
-        >
+        <Button variant="outlined" startIcon={loading ? <CircularProgress size={18} /> : <RefreshIcon />} onClick={loadData} disabled={loading}>
           Refresh
         </Button>
       </Box>
 
       <Paper variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
         <Tabs value={activeTab} onChange={(_event, value: PageTab) => setActiveTab(value)}>
-          <Tab value="queue" label={`Remediation Queue (${items.length})`} />
-          <Tab value="history" label={`Decision History (${history.length})`} />
+          {canViewQueue && <Tab value="queue" label={`Remediation Queue (${items.length})`} />}
+          {canViewHistory && <Tab value="history" label={`Decision History (${history.length})`} />}
         </Tabs>
       </Paper>
 
@@ -160,16 +143,12 @@ const RemediationQueue = () => {
         <Box sx={{ minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <CircularProgress />
         </Box>
-      ) : activeTab === "queue" ? (
+      ) : activeTab === "queue" && canViewQueue ? (
         <>
           <Box sx={{ mb: 2, maxWidth: 260 }}>
             <FormControl fullWidth size="small">
               <InputLabel>Status</InputLabel>
-              <Select
-                value={statusFilter}
-                label="Status"
-                onChange={(event) => setStatusFilter(event.target.value as QueueFilter)}
-              >
+              <Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as QueueFilter)}>
                 <MenuItem value="PENDING_ACTION">Pending Action</MenuItem>
                 <MenuItem value="ACTIONED">Actioned</MenuItem>
                 <MenuItem value="IGNORED">Ignored</MenuItem>
@@ -189,16 +168,12 @@ const RemediationQueue = () => {
                   <TableCell>AI Confidence</TableCell>
                   <TableCell>Reviewer</TableCell>
                   <TableCell>Status</TableCell>
-                  <TableCell align="right">Action</TableCell>
+                  {canManage && <TableCell align="right">Action</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {items.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                      No remediation items for this status.
-                    </TableCell>
-                  </TableRow>
+                  <TableRow><TableCell colSpan={canManage ? 7 : 6} align="center" sx={{ py: 6 }}>No remediation items for this status.</TableCell></TableRow>
                 ) : items.map((item) => (
                   <TableRow key={item.id} hover>
                     <TableCell>
@@ -216,33 +191,21 @@ const RemediationQueue = () => {
                     <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
                     <TableCell>{item.reviewerName ?? "Not available"}</TableCell>
                     <TableCell><Chip size="small" label={item.status.replaceAll("_", " ")} /></TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={1} justifyContent="flex-end">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          disabled={updatingId === item.id || item.status === "ACTIONED"}
-                          onClick={() => setStatus(item, "ACTIONED")}
-                        >
-                          Mark Actioned
-                        </Button>
-                        <Button
-                          size="small"
-                          color="inherit"
-                          disabled={updatingId === item.id || item.status === "IGNORED"}
-                          onClick={() => setStatus(item, "IGNORED")}
-                        >
-                          Ignore
-                        </Button>
-                      </Stack>
-                    </TableCell>
+                    {canManage && (
+                      <TableCell align="right">
+                        <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button size="small" variant="outlined" disabled={updatingId === item.id || item.status === "ACTIONED"} onClick={() => setStatus(item, "ACTIONED")}>Mark Actioned</Button>
+                          <Button size="small" color="inherit" disabled={updatingId === item.id || item.status === "IGNORED"} onClick={() => setStatus(item, "IGNORED")}>Ignore</Button>
+                        </Stack>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
         </>
-      ) : (
+      ) : canViewHistory ? (
         <TableContainer component={Paper} sx={{ borderRadius: 3, border: "1px solid", borderColor: "divider" }}>
           <Table>
             <TableHead>
@@ -274,7 +237,7 @@ const RemediationQueue = () => {
             </TableBody>
           </Table>
         </TableContainer>
-      )}
+      ) : null}
     </PageContainer>
   );
 };
