@@ -45,7 +45,7 @@ def test_correlated_fuzzy_name_username_email_local_stays_out_of_auto_group_conf
         )
     )
 
-    assert confidence <= 54.0
+    assert confidence <= 44.0
 
 
 def test_email_local_similarity_does_not_stack_on_top_of_username_similarity():
@@ -64,7 +64,7 @@ def test_email_local_similarity_does_not_stack_on_top_of_username_similarity():
         )
     )
 
-    assert with_email_local <= 54.0
+    assert with_email_local <= 44.0
     assert with_email_local - username_only < 5.0
 
 
