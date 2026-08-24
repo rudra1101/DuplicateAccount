@@ -1,6 +1,6 @@
 import csv
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -109,10 +109,26 @@ def create(
 
 @router.get("/")
 def list_all(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100, alias="pageSize"),
+    search: str = Query(default=""),
+    enabled: bool | None = Query(default=None),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("integration.view")),
 ):
-    return [integration_to_dict(item) for item in get_integrations(db)]
+    integrations, total = get_integrations(
+        db,
+        page=page,
+        page_size=page_size,
+        search=search,
+        enabled=enabled,
+    )
+    return {
+        "page": page,
+        "pageSize": page_size,
+        "total": total,
+        "items": [integration_to_dict(item) for item in integrations],
+    }
 
 
 @router.get("/{integration_id}")
