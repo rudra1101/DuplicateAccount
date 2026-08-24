@@ -1,24 +1,41 @@
-import { useEffect, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 
 import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Grid,
+  FormControl,
+  IconButton,
+  InputLabel,
+  Menu,
+  MenuItem,
+  Paper,
+  Select,
   Snackbar,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TablePagination,
+  TableRow,
+  TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import SearchIcon from "@mui/icons-material/Search";
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
-import IntegrationCard from "../../components/integrations/IntegrationCard";
 import ScheduleDialog from "../../components/integrations/ScheduleDialog";
 import ExecutionHistoryDrawer from "../../components/integrations/ExecutionHistoryDrawer";
 import ScanAccountsDrawer from "../../components/integrations/ScanAccountsDrawer";
@@ -31,6 +48,10 @@ import {
   type Integration,
   type JobSchedule,
 } from "../../services/integrationService";
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+
+type EnabledFilter = "all" | "enabled" | "disabled";
 
 const Integrations = () => {
   const navigate = useNavigate();
@@ -57,16 +78,38 @@ const Integrations = () => {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"success" | "error">("success");
 
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [total, setTotal] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("all");
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [menuTarget, setMenuTarget] = useState<Integration | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPage(0);
+      setSearch(searchInput.trim());
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
   const loadIntegrations = async () => {
     try {
       setLoading(true);
       setError("");
-      const data = await getIntegrations();
-      setIntegrations(data);
+
+      const enabled =
+        enabledFilter === "all" ? undefined : enabledFilter === "enabled";
+
+      const data = await getIntegrations(page + 1, pageSize, search, enabled);
+      setIntegrations(data.items);
+      setTotal(data.total);
 
       if (canSchedule) {
         const scheduleResults = await Promise.all(
-          data.map(async (integration) => {
+          data.items.map(async (integration) => {
             try {
               return {
                 integrationId: integration.id,
@@ -83,6 +126,8 @@ const Integrations = () => {
           scheduleMap[result.integrationId] = result.schedule;
         });
         setSchedules(scheduleMap);
+      } else {
+        setSchedules({});
       }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load integrations.");
@@ -93,7 +138,7 @@ const Integrations = () => {
 
   useEffect(() => {
     void loadIntegrations();
-  }, []);
+  }, [page, pageSize, search, enabledFilter]);
 
   const handleTest = async (integration: Integration) => {
     if (!canTest) return;
@@ -146,18 +191,19 @@ const Integrations = () => {
     if (!canDelete || !deleteTarget) return;
     try {
       await deleteIntegration(deleteTarget.id);
-      setIntegrations((current) => current.filter((item) => item.id !== deleteTarget.id));
-      setSchedules((current) => {
-        const updated = { ...current };
-        delete updated[deleteTarget.id];
-        return updated;
-      });
       setMessage("Integration deleted successfully.");
       setMessageType("success");
+      setDeleteTarget(null);
+
+      const remainingOnPage = integrations.length - 1;
+      if (remainingOnPage === 0 && page > 0) {
+        setPage((current) => current - 1);
+      } else {
+        await loadIntegrations();
+      }
     } catch (deleteError) {
       setMessage(deleteError instanceof Error ? deleteError.message : "Unable to delete integration.");
       setMessageType("error");
-    } finally {
       setDeleteTarget(null);
     }
   };
@@ -168,13 +214,45 @@ const Integrations = () => {
     setMessageType("success");
   };
 
+  const openActions = (event: MouseEvent<HTMLElement>, integration: Integration) => {
+    setMenuAnchor(event.currentTarget);
+    setMenuTarget(integration);
+  };
+
+  const closeActions = () => {
+    setMenuAnchor(null);
+    setMenuTarget(null);
+  };
+
+  const runMenuAction = (action: (integration: Integration) => void) => {
+    if (!menuTarget) return;
+    const target = menuTarget;
+    closeActions();
+    action(target);
+  };
+
+  const formatSchedule = (schedule: JobSchedule | null | undefined) => {
+    if (!schedule) return "Not scheduled";
+    if (!schedule.enabled) return "Disabled";
+    return schedule.name || schedule.cronExpression || "Scheduled";
+  };
+
   return (
     <PageContainer title="Integrations">
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 2, mb: 4 }}>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 2,
+          mb: 3,
+        }}
+      >
         <Box>
-          <Typography variant="h5" fontWeight={700}>File Integrations</Typography>
+          <Typography variant="h5" fontWeight={700}>Integrations</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
-            Run and schedule configured account-source integrations.
+            Manage, run and schedule configured account-source integrations.
           </Typography>
         </Box>
 
@@ -185,40 +263,175 @@ const Integrations = () => {
         )}
       </Box>
 
+      <Paper variant="outlined" sx={{ mb: 2, p: 2 }}>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", alignItems: "center" }}>
+          <TextField
+            size="small"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
+            placeholder="Search integrations"
+            sx={{ minWidth: { xs: "100%", sm: 320 } }}
+            slotProps={{
+              input: {
+                startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} />,
+              },
+            }}
+          />
+
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel>Status</InputLabel>
+            <Select
+              label="Status"
+              value={enabledFilter}
+              onChange={(event) => {
+                setPage(0);
+                setEnabledFilter(event.target.value as EnabledFilter);
+              }}
+            >
+              <MenuItem value="all">All statuses</MenuItem>
+              <MenuItem value="enabled">Enabled</MenuItem>
+              <MenuItem value="disabled">Disabled</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Typography variant="body2" color="text.secondary" sx={{ ml: { sm: "auto" } }}>
+            {total.toLocaleString()} integration{total === 1 ? "" : "s"}
+          </Typography>
+        </Box>
+      </Paper>
+
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      {loading ? (
-        <Box sx={{ minHeight: 350, display: "flex", justifyContent: "center", alignItems: "center" }}>
-          <CircularProgress />
-        </Box>
-      ) : integrations.length === 0 ? (
-        <Alert severity="info">No integrations are configured yet.</Alert>
-      ) : (
-        <Grid container spacing={3}>
-          {integrations.map((integration) => (
-            <Grid key={integration.id} size={{ xs: 12, md: 6, xl: 4 }} sx={{ minWidth: 0, display: "flex" }}>
-              <IntegrationCard
-                integration={integration}
-                schedule={schedules[integration.id]}
-                testing={testingId === integration.id}
-                running={runningId === integration.id}
-                canRun={canRun}
-                canSchedule={canSchedule}
-                canViewHistory={canViewHistory}
-                canTest={canTest}
-                canEdit={canEdit}
-                canDelete={canDelete}
-                onRun={handleRun}
-                onTest={handleTest}
-                onSchedule={setScheduleTarget}
-                onHistory={setHistoryTarget}
-                onEdit={(item) => navigate(`/integrations/${item.id}/edit`)}
-                onDelete={setDeleteTarget}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      )}
+      <Paper variant="outlined" sx={{ overflow: "hidden" }}>
+        <TableContainer sx={{ overflowX: "auto" }}>
+          <Table size="small" sx={{ minWidth: 900 }}>
+            <TableHead>
+              <TableRow sx={{ bgcolor: "action.hover" }}>
+                <TableCell sx={{ fontWeight: 700 }}>Application / Integration</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Connector Type</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Schedule</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Description</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700, width: 70 }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <CircularProgress size={32} />
+                  </TableCell>
+                </TableRow>
+              ) : integrations.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <Typography fontWeight={600}>No integrations found</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      {search || enabledFilter !== "all"
+                        ? "Try changing your search or filters."
+                        : "No integrations are configured yet."}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                integrations.map((integration) => {
+                  const schedule = schedules[integration.id];
+                  return (
+                    <TableRow key={integration.id} hover>
+                      <TableCell>
+                        <Typography fontWeight={600}>{integration.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          ID: {integration.id}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>{integration.connectorType}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={integration.enabled ? "Enabled" : "Disabled"}
+                          color={integration.enabled ? "success" : "default"}
+                          variant={integration.enabled ? "filled" : "outlined"}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{formatSchedule(schedule)}</Typography>
+                        {schedule?.nextRunAt && schedule.enabled && (
+                          <Typography variant="caption" color="text.secondary">
+                            Next: {new Date(schedule.nextRunAt).toLocaleString()}
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell sx={{ maxWidth: 340 }}>
+                        <Typography variant="body2" noWrap title={integration.description ?? ""}>
+                          {integration.description || "—"}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Actions">
+                          <IconButton size="small" onClick={(event) => openActions(event, integration)}>
+                            <MoreVertIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        <TablePagination
+          component="div"
+          count={total}
+          page={page}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={pageSize}
+          onRowsPerPageChange={(event) => {
+            setPageSize(Number(event.target.value));
+            setPage(0);
+          }}
+          rowsPerPageOptions={PAGE_SIZE_OPTIONS}
+          labelRowsPerPage="Rows per page:"
+          showFirstButton
+          showLastButton
+        />
+      </Paper>
+
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeActions}>
+        {canRun && (
+          <MenuItem
+            disabled={!menuTarget?.enabled || runningId === menuTarget?.id}
+            onClick={() => runMenuAction((integration) => void handleRun(integration))}
+          >
+            {runningId === menuTarget?.id ? "Running..." : "Run Now"}
+          </MenuItem>
+        )}
+        {canTest && (
+          <MenuItem
+            disabled={testingId === menuTarget?.id}
+            onClick={() => runMenuAction((integration) => void handleTest(integration))}
+          >
+            {testingId === menuTarget?.id ? "Testing..." : "Test Connection"}
+          </MenuItem>
+        )}
+        {canSchedule && (
+          <MenuItem onClick={() => runMenuAction(setScheduleTarget)}>Schedule</MenuItem>
+        )}
+        {canViewHistory && (
+          <MenuItem onClick={() => runMenuAction(setHistoryTarget)}>Execution History</MenuItem>
+        )}
+        {canEdit && (
+          <MenuItem onClick={() => runMenuAction((item) => navigate(`/integrations/${item.id}/edit`))}>
+            Edit
+          </MenuItem>
+        )}
+        {canDelete && (
+          <MenuItem onClick={() => runMenuAction(setDeleteTarget)} sx={{ color: "error.main" }}>
+            Delete
+          </MenuItem>
+        )}
+      </Menu>
 
       {canSchedule && (
         <ScheduleDialog
