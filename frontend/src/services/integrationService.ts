@@ -31,6 +31,22 @@ export interface ConnectorType {
   configurationSchema: ConnectorConfigurationSchema;
 }
 
+export interface JobSchedule {
+  id: number;
+  integrationId: number;
+  name: string;
+  scheduleType: string;
+  cronExpression: string;
+  timezone: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  nextRunAt: string | null;
+  lastError: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface Integration {
   id: number;
   name: string;
@@ -40,6 +56,7 @@ export interface Integration {
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
+  schedule: JobSchedule | null;
 }
 
 export interface IntegrationListResponse {
@@ -130,22 +147,6 @@ export interface ScanAccountsResponse {
   pageSize: number;
   total: number;
   items: ScanAccount[];
-}
-
-export interface JobSchedule {
-  id: number;
-  integrationId: number;
-  name: string;
-  scheduleType: string;
-  cronExpression: string;
-  timezone: string;
-  enabled: boolean;
-  lastRunAt: string | null;
-  lastRunStatus: string | null;
-  nextRunAt: string | null;
-  lastError: string | null;
-  createdAt: string | null;
-  updatedAt: string | null;
 }
 
 export interface CreateSchedulePayload {
