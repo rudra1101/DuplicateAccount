@@ -42,6 +42,13 @@ export interface Integration {
   updatedAt: string;
 }
 
+export interface IntegrationListResponse {
+  page: number;
+  pageSize: number;
+  total: number;
+  items: Integration[];
+}
+
 export interface CreateIntegrationPayload {
   name: string;
   connectorType: string;
@@ -187,9 +194,21 @@ export async function detectIntegrationSchema(
   return parseResponse<SchemaDetectionResult>(response, "Unable to detect source schema.");
 }
 
-export async function getIntegrations(): Promise<Integration[]> {
-  const response = await fetch(`${API_URL}/integrations/`);
-  return parseResponse<Integration[]>(response, "Unable to load integrations.");
+export async function getIntegrations(
+  page = 1,
+  pageSize = 25,
+  search = "",
+  enabled?: boolean,
+): Promise<IntegrationListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    pageSize: String(pageSize),
+  });
+  if (search.trim()) params.set("search", search.trim());
+  if (enabled !== undefined) params.set("enabled", String(enabled));
+
+  const response = await fetch(`${API_URL}/integrations/?${params.toString()}`);
+  return parseResponse<IntegrationListResponse>(response, "Unable to load integrations.");
 }
 
 export async function getIntegration(integrationId: number): Promise<Integration> {
