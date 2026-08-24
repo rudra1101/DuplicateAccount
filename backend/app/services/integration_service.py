@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.connectors.factory import (
@@ -76,15 +76,49 @@ def create_integration(
 
 def get_integrations(
     db: Session,
-) -> list[IntegrationRecord]:
-    statement = (
-        select(IntegrationRecord)
-        .order_by(
-            IntegrationRecord.created_at.desc(),
-            IntegrationRecord.id.desc(),
+    *,
+    page: int = 1,
+    page_size: int = 25,
+    search: str = "",
+    enabled: bool | None = None,
+) -> tuple[list[IntegrationRecord], int]:
+    safe_page = max(1, int(page))
+    safe_page_size = max(1, min(int(page_size), 100))
+
+    filters = []
+    normalized_search = search.strip()
+    if normalized_search:
+        pattern = f"%{normalized_search}%"
+        filters.append(
+            or_(
+                IntegrationRecord.name.ilike(pattern),
+                IntegrationRecord.connector_type.ilike(pattern),
+                IntegrationRecord.description.ilike(pattern),
+            )
         )
+
+    if enabled is not None:
+        filters.append(IntegrationRecord.enabled.is_(enabled))
+
+    total_statement = select(func.count(IntegrationRecord.id))
+    if filters:
+        total_statement = total_statement.where(*filters)
+    total = int(db.scalar(total_statement) or 0)
+
+    statement = select(IntegrationRecord)
+    if filters:
+        statement = statement.where(*filters)
+    statement = (
+        statement
+        .order_by(
+            IntegrationRecord.name.asc(),
+            IntegrationRecord.id.asc(),
+        )
+        .offset((safe_page - 1) * safe_page_size)
+        .limit(safe_page_size)
     )
-    return list(db.scalars(statement).all())
+
+    return list(db.scalars(statement).all()), total
 
 
 def get_integration(
