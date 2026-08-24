@@ -107,28 +107,11 @@ const Integrations = () => {
       setIntegrations(data.items);
       setTotal(data.total);
 
-      if (canSchedule) {
-        const scheduleResults = await Promise.all(
-          data.items.map(async (integration) => {
-            try {
-              return {
-                integrationId: integration.id,
-                schedule: await getIntegrationSchedule(integration.id),
-              };
-            } catch {
-              return { integrationId: integration.id, schedule: null };
-            }
-          }),
-        );
-
-        const scheduleMap: Record<number, JobSchedule | null> = {};
-        scheduleResults.forEach((result) => {
-          scheduleMap[result.integrationId] = result.schedule;
-        });
-        setSchedules(scheduleMap);
-      } else {
-        setSchedules({});
-      }
+      const scheduleMap: Record<number, JobSchedule | null> = {};
+      data.items.forEach((integration) => {
+        scheduleMap[integration.id] = integration.schedule;
+      });
+      setSchedules(scheduleMap);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load integrations.");
     } finally {
@@ -210,6 +193,11 @@ const Integrations = () => {
 
   const handleScheduleSaved = (integrationId: number, schedule: JobSchedule | null) => {
     setSchedules((current) => ({ ...current, [integrationId]: schedule }));
+    setIntegrations((current) =>
+      current.map((integration) =>
+        integration.id === integrationId ? { ...integration, schedule } : integration,
+      ),
+    );
     setMessage(schedule ? "Schedule saved successfully." : "Schedule deleted successfully.");
     setMessageType("success");
   };
@@ -356,7 +344,7 @@ const Integrations = () => {
                       <TableCell>
                         <Typography variant="body2">{formatSchedule(schedule)}</Typography>
                         {schedule?.nextRunAt && schedule.enabled && (
-                          <Typography variant="caption" color="text.secondary">
+                          <Typography variant="caption" color="text.secondary" display="block">
                             Next: {new Date(schedule.nextRunAt).toLocaleString()}
                           </Typography>
                         )}
