@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.connectors.factory import (
     ConnectorFactory,
@@ -25,6 +25,26 @@ from app.services.integration_ingestion_service import (
 )
 
 
+def _schedule_to_dict(schedule) -> dict | None:
+    if schedule is None:
+        return None
+    return {
+        "id": schedule.id,
+        "integrationId": schedule.integration_id,
+        "name": schedule.name,
+        "scheduleType": schedule.schedule_type,
+        "cronExpression": schedule.cron_expression,
+        "timezone": schedule.timezone,
+        "enabled": schedule.enabled,
+        "lastRunAt": schedule.last_run_at.isoformat() if schedule.last_run_at else None,
+        "lastRunStatus": schedule.last_run_status,
+        "nextRunAt": schedule.next_run_at.isoformat() if schedule.next_run_at else None,
+        "lastError": schedule.last_error,
+        "createdAt": schedule.created_at.isoformat() if schedule.created_at else None,
+        "updatedAt": schedule.updated_at.isoformat() if schedule.updated_at else None,
+    }
+
+
 def integration_to_dict(
     integration: IntegrationRecord,
 ) -> dict:
@@ -37,6 +57,7 @@ def integration_to_dict(
         "enabled": integration.enabled,
         "createdAt": integration.created_at.isoformat() if integration.created_at else None,
         "updatedAt": integration.updated_at.isoformat() if integration.updated_at else None,
+        "schedule": _schedule_to_dict(integration.schedule),
     }
 
 
@@ -105,7 +126,7 @@ def get_integrations(
         total_statement = total_statement.where(*filters)
     total = int(db.scalar(total_statement) or 0)
 
-    statement = select(IntegrationRecord)
+    statement = select(IntegrationRecord).options(selectinload(IntegrationRecord.schedule))
     if filters:
         statement = statement.where(*filters)
     statement = (
@@ -125,7 +146,12 @@ def get_integration(
     db: Session,
     integration_id: int,
 ) -> IntegrationRecord | None:
-    return db.get(IntegrationRecord, integration_id)
+    statement = (
+        select(IntegrationRecord)
+        .options(selectinload(IntegrationRecord.schedule))
+        .where(IntegrationRecord.id == integration_id)
+    )
+    return db.scalar(statement)
 
 
 def update_integration(
