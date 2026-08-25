@@ -1,5 +1,4 @@
-const API_URL =
-  "http://127.0.0.1:8000/api";
+import { API_BASE_URL } from "../config/api";
 
 export type OperationStatus =
   | "RUNNING"
@@ -76,7 +75,7 @@ async function parseResponse<T>(
 export async function getOperationsSummary():
 Promise<OperationSummary> {
   const response = await fetch(
-    `${API_URL}/operations/summary`
+    `${API_BASE_URL}/operations/summary`
   );
 
   return parseResponse<OperationSummary>(
@@ -123,7 +122,7 @@ export async function getOperations(
   );
 
   const response = await fetch(
-    `${API_URL}/operations/?${parameters.toString()}`
+    `${API_BASE_URL}/operations/?${parameters.toString()}`
   );
 
   return parseResponse<
@@ -138,7 +137,7 @@ export async function retryOperation(
   executionId: number
 ): Promise<OperationExecution> {
   const response = await fetch(
-    `${API_URL}/operations/${executionId}/retry`,
+    `${API_BASE_URL}/operations/${executionId}/retry`,
     {
       method: "POST",
     }
@@ -148,4 +147,4 @@ export async function retryOperation(
     response,
     "Unable to retry execution."
   );
-}``
+}
