@@ -8,13 +8,21 @@ export type DashboardPeriod =
 
 export interface DashboardScan {
   id: number;
+  integrationId: number | null;
+  integrationName: string | null;
   filename: string;
   status: string;
   createdAt: string | null;
+  accountsScanned?: number;
+  applications?: number;
+  duplicateGroups?: number;
+  duplicateAccounts?: number;
+  highConfidenceMatches?: number;
 }
 
 export interface DashboardTotals {
   accountsScanned: number;
+  integrations: number;
   applications: number;
   duplicateGroups: number;
   duplicateAccounts: number;
@@ -31,6 +39,8 @@ export interface DashboardApplication {
 
 export interface DashboardTrendItem {
   scanId: number;
+  integrationId: number | null;
+  integrationName: string | null;
   name: string;
   filename: string;
   accountsScanned: number;
@@ -44,16 +54,18 @@ export interface DashboardResponse {
   hasData: boolean;
   period: DashboardPeriod;
   scan: DashboardScan | null;
+  scans: DashboardScan[];
   summary: DashboardTotals;
   applications: DashboardApplication[];
+  applicationCount: number;
   trend: DashboardTrendItem[];
 }
 
 export async function getDashboardSummary(
-  period: DashboardPeriod = "daily"
+  period: DashboardPeriod = "daily",
 ): Promise<DashboardResponse> {
   const response = await fetch(
-    `${API_URL}/dashboard/?period=${period}`
+    `${API_URL}/dashboard/?period=${period}`,
   );
 
   if (!response.ok) {
@@ -61,7 +73,7 @@ export async function getDashboardSummary(
 
     throw new Error(
       responseBody ||
-        `Dashboard request failed with status ${response.status}`
+        `Dashboard request failed with status ${response.status}`,
     );
   }
 
