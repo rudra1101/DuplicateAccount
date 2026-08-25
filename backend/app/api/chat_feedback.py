@@ -11,6 +11,7 @@ from pydantic import (
 )
 from sqlalchemy.orm import Session
 
+from app.auth import get_current_user
 from app.database.session import (
     get_db,
 )
@@ -23,6 +24,9 @@ from app.services.chat_feedback_service import (
 router = APIRouter(
     prefix="/chat-feedback",
     tags=["Chat Feedback"],
+    dependencies=[
+        Depends(get_current_user),
+    ],
 )
 
 
