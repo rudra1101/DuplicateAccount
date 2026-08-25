@@ -1,4 +1,4 @@
-const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+import { API_BASE_URL } from "../config/api";
 
 export interface PermissionItem {
   id: number;
@@ -26,13 +26,13 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function getRoles(): Promise<RoleItem[]> {
-  const response = await fetch(`${API_URL}/roles/`, { credentials: "include" });
+  const response = await fetch(`${API_BASE_URL}/roles/`, { credentials: "include" });
   if (!response.ok) throw new Error(await readError(response));
   return response.json();
 }
 
 export async function getPermissions(): Promise<PermissionItem[]> {
-  const response = await fetch(`${API_URL}/roles/permissions`, { credentials: "include" });
+  const response = await fetch(`${API_BASE_URL}/roles/permissions`, { credentials: "include" });
   if (!response.ok) throw new Error(await readError(response));
   return response.json();
 }
@@ -42,7 +42,7 @@ export async function createRole(payload: {
   description: string;
   permissions: string[];
 }): Promise<RoleItem> {
-  const response = await fetch(`${API_URL}/roles/`, {
+  const response = await fetch(`${API_BASE_URL}/roles/`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -56,7 +56,7 @@ export async function updateRolePermissions(
   roleId: number,
   permissions: string[],
 ): Promise<RoleItem> {
-  const response = await fetch(`${API_URL}/roles/${roleId}/permissions`, {
+  const response = await fetch(`${API_BASE_URL}/roles/${roleId}/permissions`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
