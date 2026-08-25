@@ -1,6 +1,6 @@
-const API_URL =
-   "http://127.0.0.1:8000/api";
+import { API_BASE_URL } from "../config/api";
 
+const API_URL = API_BASE_URL;
 
 export interface ChatSource {
   documentId: number | null;
@@ -9,12 +9,10 @@ export interface ChatSource {
   score?: number | null;
 }
 
-
 export interface ChatHistoryMessage {
   role: "user" | "assistant";
   content: string;
 }
-
 
 export interface AIResponse {
   conversationId: string;
@@ -23,7 +21,6 @@ export interface AIResponse {
   toolsUsed?: unknown[];
   sources: ChatSource[];
 }
-
 
 export type ChatStreamEvent =
   | {
@@ -51,7 +48,6 @@ export type ChatStreamEvent =
       message: string;
     };
 
-
 export interface StreamAIHandlers {
   onStart?: (
     conversationId: string,
@@ -73,7 +69,6 @@ export interface StreamAIHandlers {
   ) => void;
 }
 
-
 export interface KnowledgeChunk {
   id: number;
   chunkId: string;
@@ -82,7 +77,6 @@ export interface KnowledgeChunk {
   content: string;
   characterCount: number;
 }
-
 
 export interface KnowledgeDocumentDetails {
   id: number;
@@ -98,14 +92,12 @@ export interface KnowledgeDocumentDetails {
   chunks: KnowledgeChunk[];
 }
 
-
 export interface ChatConversationSummary {
   id: string;
   title: string;
   createdAt: string | null;
   updatedAt: string | null;
 }
-
 
 export interface StoredChatMessage {
   id: number;
@@ -117,18 +109,14 @@ export interface StoredChatMessage {
   createdAt: string | null;
 }
 
-
 export interface ChatConversationDetails
   extends ChatConversationSummary {
   messages: StoredChatMessage[];
 }
 
-
-
 export type ChatFeedbackRating =
   | "UP"
   | "DOWN";
-
 
 export interface ChatFeedback {
   id: number;
@@ -139,7 +127,6 @@ export interface ChatFeedback {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
 
 async function parseApiResponse<T>(
   response: Response,
@@ -177,7 +164,6 @@ async function parseApiResponse<T>(
   return payload as T;
 }
 
-
 async function ensureSuccess(
   response: Response,
   fallbackMessage: string,
@@ -191,7 +177,6 @@ async function ensureSuccess(
     fallbackMessage,
   );
 }
-
 
 export async function askAI(
   message: string,
@@ -232,7 +217,6 @@ export async function askAI(
   };
 }
 
-
 export async function getKnowledgeDocument(
   documentId: number,
 ): Promise<KnowledgeDocumentDetails> {
@@ -254,7 +238,6 @@ export async function getKnowledgeDocument(
     "Unable to load the knowledge document.",
   );
 }
-
 
 export async function getChatConversations(
   limit = 50,
@@ -279,7 +262,6 @@ export async function getChatConversations(
   );
 }
 
-
 export async function getChatConversation(
   conversationId: string,
 ): Promise<ChatConversationDetails> {
@@ -303,8 +285,6 @@ export async function getChatConversation(
     "Unable to load the conversation.",
   );
 }
-
-
 
 export async function regenerateChatResponse(
   conversationId: string,
@@ -352,7 +332,6 @@ export async function regenerateChatResponse(
   };
 }
 
-
 export async function generateChatConversationTitle(
   conversationId: string,
 ): Promise<ChatConversationSummary> {
@@ -379,7 +358,6 @@ export async function generateChatConversationTitle(
     "Unable to generate the conversation title.",
   );
 }
-
 
 export async function renameChatConversation(
   conversationId: string,
@@ -430,7 +408,6 @@ export async function renameChatConversation(
   );
 }
 
-
 export async function deleteChatConversation(
   conversationId: string,
 ): Promise<void> {
@@ -456,7 +433,6 @@ export async function deleteChatConversation(
   );
 }
 
-
 export async function clearChatConversations():
 Promise<void> {
   const response = await fetch(
@@ -471,8 +447,6 @@ Promise<void> {
     "Unable to clear chat history.",
   );
 }
-
-
 
 export async function submitChatFeedback(
   conversationId: string,
@@ -530,7 +504,6 @@ export async function submitChatFeedback(
   );
 }
 
-
 export async function getConversationFeedback(
   conversationId: string,
 ): Promise<ChatFeedback[]> {
@@ -559,8 +532,6 @@ export async function getConversationFeedback(
     ? result
     : [];
 }
-
-
 
 export async function streamAI(
   message: string,
