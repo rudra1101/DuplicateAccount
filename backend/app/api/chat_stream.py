@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.ai.agent_service import (
     run_identity_agent_stream,
 )
+from app.auth import get_current_user
 from app.database.session import (
     get_db,
 )
@@ -31,6 +32,9 @@ from app.services.chat_history_service import (
 router = APIRouter(
     prefix="/chat",
     tags=["AI Assistant"],
+    dependencies=[
+        Depends(get_current_user),
+    ],
 )
 
 
@@ -209,14 +213,15 @@ def stream_chat(
                 db.rollback()
             raise
 
-        except Exception as exc:
+        except Exception:
             if not committed:
                 db.rollback()
 
             yield _event(
                 "error",
-                message=
-                    str(exc),
+                message=(
+                    "AI assistant streaming request failed."
+                ),
             )
 
     return StreamingResponse(
