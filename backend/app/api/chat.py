@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.ai.agent_service import (
     run_identity_agent,
 )
+from app.auth import get_current_user
 from app.database.session import (
     get_db,
 )
@@ -30,6 +31,9 @@ router = APIRouter(
     tags=[
         "AI Assistant"
     ],
+    dependencies=[
+        Depends(get_current_user),
+    ],
 )
 
 
@@ -44,11 +48,6 @@ def chat(
     ),
 ):
     try:
-        #
-        # Generate the ID here instead of waiting
-        # for the agent so the user and assistant
-        # messages share the same persisted ID.
-        #
         conversation_id = (
             payload.conversationId
             or str(
@@ -66,9 +65,6 @@ def chat(
             ),
         )
 
-        #
-        # Save the user message.
-        #
         save_chat_message(
             db=db,
             conversation_id=(
@@ -80,10 +76,6 @@ def chat(
             ),
         )
 
-        #
-        # Ensure the agent receives the generated
-        # conversation ID.
-        #
         agent_request = (
             payload.model_copy(
                 update={
@@ -100,19 +92,12 @@ def chat(
             )
         )
 
-        #
-        # Convert Pydantic source models to JSON-safe
-        # dictionaries before storing them.
-        #
         stored_sources = [
             source.model_dump()
             for source
             in response.sources
         ]
 
-        #
-        # Save assistant response.
-        #
         save_chat_message(
             db=db,
             conversation_id=(
@@ -150,7 +135,6 @@ def chat(
         raise HTTPException(
             status_code=500,
             detail=(
-                "AI assistant request failed: "
-                f"{exc}"
+                "AI assistant request failed."
             ),
         ) from exc
