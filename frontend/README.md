@@ -1,16 +1,27 @@
-# React + Vite
+# DuplicateAccount Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend for the Duplicate Account Detection platform.
 
-Currently, two official plugins are available:
+## Local setup
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Install dependencies and start Vite:
 
-## React Compiler
+```bash
+npm install
+npm run dev
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## API configuration
 
-## Expanding the ESLint configuration
+The frontend API URL is configured through a single Vite environment variable.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. Copy `.env.example` to `.env`.
+2. Set the backend API base URL:
+
+```env
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+```
+
+All frontend services read the shared value from `src/config/api.ts`. When the backend host, protocol, port, or API prefix changes, update `VITE_API_BASE_URL` rather than editing individual service files.
+
+A local-development fallback is retained in `src/config/api.ts` so the frontend still works when `.env` is absent.
