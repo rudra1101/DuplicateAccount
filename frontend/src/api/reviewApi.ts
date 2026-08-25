@@ -1,7 +1,9 @@
-const BASE_URL = "http://127.0.0.1:8000/api/review";
+import { API_BASE_URL } from "../config/api";
+
+const REVIEW_BASE_URL = `${API_BASE_URL}/review`;
 
 export async function getApplicationSummary() {
-  const response = await fetch(BASE_URL);
+  const response = await fetch(REVIEW_BASE_URL);
 
   if (!response.ok) {
     throw new Error("Failed to fetch application summary");
@@ -12,7 +14,7 @@ export async function getApplicationSummary() {
 
 export async function getDuplicatePairs(application: string) {
   const response = await fetch(
-    `${BASE_URL}/${encodeURIComponent(application)}`
+    `${REVIEW_BASE_URL}/${encodeURIComponent(application)}`
   );
 
   if (!response.ok) {
@@ -24,7 +26,7 @@ export async function getDuplicatePairs(application: string) {
 
 export async function getDuplicateDetails(id: number) {
   const response = await fetch(
-    `${BASE_URL}/details/${id}`
+    `${REVIEW_BASE_URL}/details/${id}`
   );
 
   if (!response.ok) {
