@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "../config/api";
+
 export interface KnowledgeDocument {
   id: number;
   name: string;
@@ -10,11 +12,6 @@ export interface KnowledgeDocument {
   createdAt: string | null;
   updatedAt: string | null;
 }
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ??
-  "http://127.0.0.1:8000/api";
-
 
 export async function getKnowledgeDocuments(): Promise<
   KnowledgeDocument[]
@@ -42,7 +39,6 @@ export async function getKnowledgeDocuments(): Promise<
   return [];
 }
 
-
 export async function getKnowledgeDocument(
   documentId: number
 ): Promise<KnowledgeDocument> {
@@ -58,7 +54,6 @@ export async function getKnowledgeDocument(
 
   return response.json();
 }
-
 
 export async function uploadKnowledgeDocument(
   file: File,
@@ -99,7 +94,6 @@ export async function uploadKnowledgeDocument(
 
   return response.json();
 }
-
 
 export async function deleteKnowledgeDocument(
   documentId: number
