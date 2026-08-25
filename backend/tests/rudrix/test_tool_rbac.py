@@ -12,7 +12,10 @@ from app.ai.authorization import (
 )
 from app.ai.tools import create_ai_tool_registry
 from app.ai.tools.base import BaseAITool
-from app.ai.tools.registry import AIToolRegistry
+from app.ai.tools.registry import (
+    AIToolRegistry,
+    TOOL_PERMISSION_MAP,
+)
 
 
 class ProbeTool(BaseAITool):
@@ -31,11 +34,21 @@ class ProbeTool(BaseAITool):
         return {"ok": True}
 
 
+class UnmappedProbeTool(ProbeTool):
+    name = "future_sensitive_tool"
+
+
 def definition_names(registry) -> set[str]:
     return {
         definition["name"]
         for definition in registry.definitions()
     }
+
+
+def test_every_registered_rudrix_tool_has_an_explicit_permission_mapping():
+    names = definition_names(create_ai_tool_registry())
+
+    assert names <= set(TOOL_PERMISSION_MAP)
 
 
 def test_integration_tools_are_hidden_without_integration_view():
@@ -118,7 +131,28 @@ def test_authorized_execution_reaches_tool():
     assert probe.calls == 1
 
 
-def test_owner_permissions_are_unrestricted():
+def test_unmapped_future_tool_is_hidden_and_blocked_fail_closed():
+    registry = AIToolRegistry()
+    probe = UnmappedProbeTool()
+    registry.register(probe)
+
+    token = set_rudrix_permissions({"*"})
+    try:
+        assert "future_sensitive_tool" not in definition_names(registry)
+
+        with pytest.raises(PermissionError, match="Access denied"):
+            registry.execute(
+                name="future_sensitive_tool",
+                db=object(),
+                arguments={},
+            )
+    finally:
+        reset_rudrix_permissions(token)
+
+    assert probe.calls == 0
+
+
+def test_owner_permissions_are_unrestricted_for_mapped_tools():
     owner = SimpleNamespace(
         role="OWNER",
         role_record=None,
