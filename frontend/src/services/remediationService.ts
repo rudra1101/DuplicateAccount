@@ -1,4 +1,4 @@
-const BASE_URL = "http://127.0.0.1:8000/api";
+import { API_BASE_URL } from "../config/api";
 
 export type RemediationStatus =
   | "PENDING_ACTION"
@@ -76,7 +76,7 @@ export async function getRemediationItems(
   }
   const query = params.toString();
   const response = await fetch(
-    `${BASE_URL}/remediation/${query ? `?${query}` : ""}`,
+    `${API_BASE_URL}/remediation/${query ? `?${query}` : ""}`,
   );
   const result = await parseResponse<RemediationListResponse>(
     response,
@@ -86,7 +86,7 @@ export async function getRemediationItems(
 }
 
 export async function getReviewDecisionHistory(): Promise<ReviewDecisionHistoryItem[]> {
-  const response = await fetch(`${BASE_URL}/remediation/history`);
+  const response = await fetch(`${API_BASE_URL}/remediation/history`);
   const result = await parseResponse<HistoryListResponse>(
     response,
     "Unable to load reviewer decision history.",
@@ -100,7 +100,7 @@ export async function updateRemediationStatus(
   comment?: string | null,
   actionedBy?: string | null,
 ): Promise<void> {
-  const response = await fetch(`${BASE_URL}/remediation/${itemId}/status`, {
+  const response = await fetch(`${API_BASE_URL}/remediation/${itemId}/status`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status, comment: comment ?? null, actionedBy: actionedBy ?? null }),
