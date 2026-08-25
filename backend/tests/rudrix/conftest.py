@@ -1,4 +1,3 @@
-\
 import os
 import sys
 from pathlib import Path
@@ -12,10 +11,15 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.schemas.chat import ChatHistoryMessage, ChatRequest
 
+
 def live_tests_enabled() -> bool:
     return os.getenv("RUN_RUDRIX_LIVE_TESTS", "").strip().lower() in {
-        "1", "true", "yes", "on",
+        "1",
+        "true",
+        "yes",
+        "on",
     }
+
 
 @pytest.fixture
 def chat_request_factory():
@@ -35,7 +39,9 @@ def chat_request_factory():
             ],
             useReasoningModel=reasoning,
         )
+
     return _build
+
 
 @pytest.fixture
 def require_live_rudrix():
@@ -45,9 +51,11 @@ def require_live_rudrix():
             "and the local IdentityAI database."
         )
 
+
 @pytest.fixture
 def db_session(require_live_rudrix):
     from app.database.session import SessionLocal
+
     db = SessionLocal()
     try:
         yield db
