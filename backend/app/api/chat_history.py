@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.ai.agent_service import (
     run_identity_agent,
 )
+from app.auth import get_current_user
 from app.database.session import get_db
 from app.schemas.chat import (
     ChatRequest,
@@ -32,6 +33,9 @@ from app.services.chat_history_service import (
 router = APIRouter(
     prefix="/chat-history",
     tags=["Chat History"],
+    dependencies=[
+        Depends(get_current_user),
+    ],
 )
 
 
@@ -40,7 +44,6 @@ class RenameConversationRequest(BaseModel):
         min_length=1,
         max_length=60,
     )
-
 
 
 class RegenerateConversationRequest(BaseModel):
@@ -88,10 +91,6 @@ def generate_chat_title(
     conversation_id: str,
     db: Session = Depends(get_db),
 ):
-    """
-    Generate a concise AI title for a persisted
-    conversation using the first user/assistant exchange.
-    """
     try:
         result = (
             generate_ai_conversation_title(
@@ -139,13 +138,6 @@ def regenerate_last_response(
     payload: RegenerateConversationRequest,
     db: Session = Depends(get_db),
 ):
-    """
-    Re-run the final user message without creating a second
-    copy of that user message in conversation history.
-
-    The previous assistant response for that turn is replaced
-    only after the new model response succeeds.
-    """
     try:
         context = (
             get_regeneration_context(
