@@ -1,6 +1,5 @@
 import type { AuthUser } from "../auth/types";
-
-const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+import { API_BASE_URL } from "../config/api";
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -16,7 +15,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function login(username: string, password: string): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/auth/login`, {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     credentials: "include",
     headers: {
@@ -34,7 +33,7 @@ export async function login(username: string, password: string): Promise<AuthUse
 }
 
 export async function getCurrentUser(): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/auth/me`, {
+  const response = await fetch(`${API_BASE_URL}/auth/me`, {
     credentials: "include",
   });
 
@@ -47,7 +46,7 @@ export async function getCurrentUser(): Promise<AuthUser> {
 }
 
 export async function logout(): Promise<void> {
-  await fetch(`${API_URL}/auth/logout`, {
+  await fetch(`${API_BASE_URL}/auth/logout`, {
     method: "POST",
     credentials: "include",
   });
