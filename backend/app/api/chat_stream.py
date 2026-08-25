@@ -60,6 +60,31 @@ def _event(
     )
 
 
+def _next_authorized_event(
+    iterator,
+    permissions: frozenset[str],
+):
+    """
+    Advance the Rudrix generator with RBAC active only for this
+    individual generator step.
+
+    Starlette may resume a synchronous StreamingResponse iterator in a
+    different worker context after every yield. A ContextVar token therefore
+    must be created and reset within the same call instead of being retained
+    across streaming yield boundaries.
+    """
+    token = set_rudrix_permissions(
+        permissions
+    )
+
+    try:
+        return next(iterator)
+    finally:
+        reset_rudrix_permissions(
+            token
+        )
+
+
 @router.post("/stream")
 def stream_chat(
     payload: ChatRequest,
@@ -84,9 +109,6 @@ def stream_chat(
 
     def generate():
         committed = False
-        permission_token = set_rudrix_permissions(
-            user_permissions
-        )
 
         try:
             yield _event(
@@ -96,13 +118,22 @@ def stream_chat(
             )
 
             final_response = None
-
-            for event in (
+            agent_events = iter(
                 run_identity_agent_stream(
                     db=db,
                     request=request,
                 )
-            ):
+            )
+
+            while True:
+                try:
+                    event = _next_authorized_event(
+                        agent_events,
+                        user_permissions,
+                    )
+                except StopIteration:
+                    break
+
                 event_type = (
                     event.get(
                         "type"
@@ -233,11 +264,6 @@ def stream_chat(
                 message=(
                     "AI assistant streaming request failed."
                 ),
-            )
-
-        finally:
-            reset_rudrix_permissions(
-                permission_token
             )
 
     return StreamingResponse(
