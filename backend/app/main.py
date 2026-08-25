@@ -19,6 +19,7 @@ from app.api.knowledge import router as knowledge_router
 from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
+from app.api.reports import router as reports_router
 from app.api.review import router as review_router
 from app.api.remediation import router as remediation_router
 from app.api.roles import router as roles_router
@@ -77,6 +78,7 @@ app.include_router(ai_health_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(detect_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
 app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
