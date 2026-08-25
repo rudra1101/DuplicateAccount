@@ -2,6 +2,11 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from jwt import ExpiredSignatureError, InvalidTokenError
 
+from app.ai.authorization import (
+    permissions_for_user,
+    reset_rudrix_permissions,
+    set_rudrix_permissions,
+)
 from app.auth.security import decode_access_token
 from app.database.session import SessionLocal
 from app.db_models.user import UserRecord
@@ -33,12 +38,21 @@ async def authentication_middleware(request: Request, call_next):
         return JSONResponse(status_code=401, content={"detail": "Session expired or invalid."})
 
     db = SessionLocal()
+    permission_token = None
+
     try:
         user = db.get(UserRecord, user_id)
         if user is None or not user.is_active:
             return JSONResponse(status_code=401, content={"detail": "Account unavailable."})
 
         request.state.user = user
+
+        permission_token = set_rudrix_permissions(
+            permissions_for_user(user)
+        )
+
         return await call_next(request)
     finally:
+        if permission_token is not None:
+            reset_rudrix_permissions(permission_token)
         db.close()
