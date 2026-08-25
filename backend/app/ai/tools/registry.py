@@ -2,7 +2,10 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.ai.authorization import has_rudrix_permission
+from app.ai.authorization import (
+    get_rudrix_permissions,
+    has_rudrix_permission,
+)
 from app.ai.tools.base import (
     BaseAITool,
 )
@@ -50,10 +53,19 @@ class AIToolRegistry:
         self,
         name: str,
     ) -> bool:
+        permissions = get_rudrix_permissions()
+
+        # Direct internal calls and isolated tests run without a request
+        # authorization context. Authenticated API requests always set one.
+        if permissions is None:
+            return True
+
         permission = TOOL_PERMISSION_MAP.get(name)
 
+        # Fail closed for any future tool that has not been explicitly
+        # assigned to an RBAC permission.
         if permission is None:
-            return True
+            return False
 
         return has_rudrix_permission(permission)
 
