@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:8000/api";
+import { API_BASE_URL } from "../config/api";
 
 export interface MlLabelSummary {
   totalUsableLabels: number;
@@ -107,12 +107,12 @@ async function parseResponse<T>(
 }
 
 export async function getMlDashboard(): Promise<MlDashboardResponse> {
-  const response = await fetch(`${API_URL}/ml/dashboard`);
+  const response = await fetch(`${API_BASE_URL}/ml/dashboard`);
   return parseResponse<MlDashboardResponse>(response, "Unable to load ML dashboard.");
 }
 
 export async function getReviewerFeedbackAnalytics(): Promise<ReviewerFeedbackAnalytics> {
-  const response = await fetch(`${API_URL}/ml/analytics/reviewer-feedback`);
+  const response = await fetch(`${API_BASE_URL}/ml/analytics/reviewer-feedback`);
   return parseResponse<ReviewerFeedbackAnalytics>(
     response,
     "Unable to load reviewer feedback analytics.",
@@ -120,7 +120,7 @@ export async function getReviewerFeedbackAnalytics(): Promise<ReviewerFeedbackAn
 }
 
 export async function getEvidenceCalibrationAnalytics(): Promise<EvidenceCalibrationAnalytics> {
-  const response = await fetch(`${API_URL}/ml/analytics/evidence-calibration`);
+  const response = await fetch(`${API_BASE_URL}/ml/analytics/evidence-calibration`);
   return parseResponse<EvidenceCalibrationAnalytics>(
     response,
     "Unable to load evidence calibration analytics.",
@@ -128,7 +128,7 @@ export async function getEvidenceCalibrationAnalytics(): Promise<EvidenceCalibra
 }
 
 export async function trainMlModel(): Promise<TrainModelResponse> {
-  const response = await fetch(`${API_URL}/ml/train`, { method: "POST" });
+  const response = await fetch(`${API_BASE_URL}/ml/train`, { method: "POST" });
   return parseResponse<TrainModelResponse>(response, "Unable to train the ML model.");
 }
 
@@ -136,7 +136,7 @@ export async function getMlCurrentModel(): Promise<{
   available: boolean;
   model: TrainModelMetadata | null;
 }> {
-  const response = await fetch(`${API_URL}/ml/current`);
+  const response = await fetch(`${API_BASE_URL}/ml/current`);
   return parseResponse<{ available: boolean; model: TrainModelMetadata | null }>(
     response,
     "Unable to load the current ML model.",
@@ -144,6 +144,6 @@ export async function getMlCurrentModel(): Promise<{
 }
 
 export async function getMlLabelSummary(): Promise<MlLabelSummary> {
-  const response = await fetch(`${API_URL}/ml/labels/summary`);
+  const response = await fetch(`${API_BASE_URL}/ml/labels/summary`);
   return parseResponse<MlLabelSummary>(response, "Unable to load ML label summary.");
 }
