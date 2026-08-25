@@ -28,6 +28,10 @@ VALID_PERIODS = {
     "yearly",
 }
 
+DASHBOARD_TOP_APPLICATIONS = 10
+DASHBOARD_RECENT_SCANS = 6
+DASHBOARD_TREND_POINTS = 60
+
 
 def normalize_application_name(
     value: str | None,
@@ -405,6 +409,9 @@ def get_scan_trend(
             is not None
         ]
 
+    if len(scans) > DASHBOARD_TREND_POINTS:
+        scans = scans[-DASHBOARD_TREND_POINTS:]
+
     integration_ids = {
         int(scan.integration_id)
         for scan in scans
@@ -480,6 +487,7 @@ def build_empty_dashboard_response(
             "highConfidenceMatches": 0,
         },
         "applications": [],
+        "applicationCount": 0,
         "trend": [],
     }
 
@@ -545,7 +553,7 @@ def build_dashboard_response(
         period=period,
     )
 
-    scan_summaries = [
+    all_scan_summaries = [
         {
             "id": scan.id,
             "integrationId": (
@@ -630,7 +638,7 @@ def build_dashboard_response(
                 else None
             ),
         },
-        "scans": scan_summaries,
+        "scans": all_scan_summaries[:DASHBOARD_RECENT_SCANS],
         "summary": {
             "accountsScanned": sum(
                 int(
@@ -671,8 +679,7 @@ def build_dashboard_response(
                 for scan in latest_scans
             ),
         },
-        "applications": (
-            application_statistics
-        ),
+        "applications": application_statistics[:DASHBOARD_TOP_APPLICATIONS],
+        "applicationCount": len(application_statistics),
         "trend": trend,
     }
