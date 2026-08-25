@@ -16,6 +16,11 @@ from sqlalchemy.orm import Session
 from app.ai.agent_service import (
     run_identity_agent_stream,
 )
+from app.ai.authorization import (
+    permissions_for_user,
+    reset_rudrix_permissions,
+    set_rudrix_permissions,
+)
 from app.auth import get_current_user
 from app.database.session import (
     get_db,
@@ -59,6 +64,7 @@ def _event(
 def stream_chat(
     payload: ChatRequest,
     db: Session = Depends(get_db),
+    user=Depends(get_current_user),
 ):
     conversation_id = (
         payload.conversationId
@@ -74,8 +80,13 @@ def stream_chat(
         }
     )
 
+    user_permissions = permissions_for_user(user)
+
     def generate():
         committed = False
+        permission_token = set_rudrix_permissions(
+            user_permissions
+        )
 
         try:
             yield _event(
@@ -222,6 +233,11 @@ def stream_chat(
                 message=(
                     "AI assistant streaming request failed."
                 ),
+            )
+
+        finally:
+            reset_rudrix_permissions(
+                permission_token
             )
 
     return StreamingResponse(
