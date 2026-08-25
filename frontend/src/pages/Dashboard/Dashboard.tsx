@@ -7,6 +7,7 @@ import {
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
@@ -16,12 +17,20 @@ import {
   MenuItem,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Typography,
 } from "@mui/material";
 
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import type {
   SelectChangeEvent,
 } from "@mui/material/Select";
+import { useNavigate } from "react-router-dom";
 
 import PageContainer from "../../components/common/PageContainer";
 import KpiCard from "../../components/dashboard/KpiCard";
@@ -54,6 +63,8 @@ function isDashboardPeriod(
 
 
 const Dashboard = () => {
+  const navigate = useNavigate();
+
   const [
     period,
     setPeriod,
@@ -116,7 +127,7 @@ const Dashboard = () => {
         }
       };
 
-    loadDashboard();
+    void loadDashboard();
 
     return () => {
       cancelled = true;
@@ -229,6 +240,8 @@ const Dashboard = () => {
     summary,
     scan,
     scans,
+    applications,
+    applicationCount,
   } = dashboard;
 
 
@@ -259,9 +272,9 @@ const Dashboard = () => {
             color="text.secondary"
             sx={{ mt: 0.5 }}
           >
-            Combined analytics from
-            the latest completed scan
-            of every integration.
+            Enterprise overview of duplicate risk,
+            recent scans and applications requiring
+            the most attention.
           </Typography>
 
           <Typography
@@ -293,86 +306,59 @@ const Dashboard = () => {
           </Typography>
         </Box>
 
-        <FormControl
-          size="small"
-          sx={{
-            minWidth: 190,
-          }}
+        <Stack
+          direction="row"
+          spacing={1.5}
+          alignItems="center"
+          flexWrap="wrap"
+          useFlexGap
         >
-          <Select
-            value={period}
-            onChange={
-              handlePeriodChange
-            }
+          <Button
+            variant="outlined"
+            endIcon={<ArrowForwardIcon />}
+            onClick={() => navigate("/integrations")}
           >
-            <MenuItem value="daily">
-              Last 24 Hours
-            </MenuItem>
+            View Integrations
+          </Button>
 
-            <MenuItem value="weekly">
-              Last 7 Days
-            </MenuItem>
-
-            <MenuItem value="monthly">
-              Last 30 Days
-            </MenuItem>
-
-            <MenuItem value="yearly">
-              Last 12 Months
-            </MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
-
-      <Stack
-        direction="row"
-        spacing={1}
-        useFlexGap
-        flexWrap="wrap"
-        sx={{ mb: 3 }}
-      >
-        {scans.map(
-          (scanItem) => (
-            <Chip
-              key={[
-                scanItem.integrationId
-                  ?? "legacy",
-                scanItem.id,
-              ].join(":")}
-              label={
-                `${
-                  scanItem.integrationName
-                    ?? (
-                      scanItem.integrationId
-                        ? (
-                          `Integration #${
-                            scanItem.integrationId
-                          }`
-                        )
-                        : "Legacy"
-                    )
-                } · Scan #${scanItem.id}`
+          <FormControl
+            size="small"
+            sx={{
+              minWidth: 190,
+            }}
+          >
+            <Select
+              value={period}
+              onChange={
+                handlePeriodChange
               }
-              variant="outlined"
-              color="primary"
-              size="small"
-            />
-          ),
-        )}
-      </Stack>
+            >
+              <MenuItem value="daily">
+                Last 24 Hours
+              </MenuItem>
+
+              <MenuItem value="weekly">
+                Last 7 Days
+              </MenuItem>
+
+              <MenuItem value="monthly">
+                Last 30 Days
+              </MenuItem>
+
+              <MenuItem value="yearly">
+                Last 12 Months
+              </MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
+      </Box>
 
       <Grid
         container
         spacing={3}
         sx={{ mb: 4 }}
       >
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            lg: 2.4,
-          }}
-        >
+        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
           <KpiCard
             title="Accounts Scanned"
             value={Number(
@@ -383,13 +369,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            lg: 2.4,
-          }}
-        >
+        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
           <KpiCard
             title="Integrations"
             value={
@@ -400,13 +380,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            lg: 2.4,
-          }}
-        >
+        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
           <KpiCard
             title="Applications"
             value={
@@ -417,13 +391,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            lg: 2.4,
-          }}
-        >
+        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
           <KpiCard
             title="Duplicate Groups"
             value={
@@ -434,13 +402,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid
-          size={{
-            xs: 12,
-            sm: 6,
-            lg: 2.4,
-          }}
-        >
+        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
           <KpiCard
             title="High Confidence"
             value={
@@ -458,170 +420,140 @@ const Dashboard = () => {
         spacing={3}
         sx={{ mb: 3 }}
       >
-        {scans.map(
-          (scanItem) => (
-            <Grid
-              key={
-                `scan-summary-${scanItem.id}`
-              }
-              size={{
-                xs: 12,
-                md: 6,
-                lg: 4,
-              }}
-            >
-              <Card
-                variant="outlined"
-                sx={{
-                  borderRadius: 3,
-                  height: "100%",
-                }}
-              >
-                <CardContent>
-                  <Typography
-                    variant="h6"
-                    fontWeight={700}
-                  >
-                    {scanItem.integrationName
-                      ?? (
-                        scanItem.integrationId
-                          ? (
-                            `Integration #${
-                              scanItem.integrationId
-                            }`
-                          )
-                          : "Legacy Scan"
-                      )}
-                  </Typography>
+        <Grid size={{ xs: 12, lg: 7 }}>
+          <Card
+            variant="outlined"
+            sx={{ borderRadius: 3, height: "100%" }}
+          >
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 3, py: 2.5 }}>
+                <Typography variant="h6" fontWeight={700}>
+                  Applications Requiring Attention
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Top {applications.length} applications ranked by duplicate accounts
+                  {applicationCount > applications.length
+                    ? ` out of ${applicationCount.toLocaleString()} affected applications.`
+                    : "."}
+                </Typography>
+              </Box>
 
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 0.5 }}
-                  >
-                    {scanItem.filename}
-                  </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: "action.hover" }}>
+                      <TableCell sx={{ fontWeight: 700 }}>Application</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Duplicate Accounts</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Groups</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Highest Confidence</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {applications.map((application, index) => (
+                      <TableRow key={application.application} hover>
+                        <TableCell>
+                          <Stack direction="row" spacing={1.25} alignItems="center">
+                            <Chip
+                              label={index + 1}
+                              size="small"
+                              variant="outlined"
+                              sx={{ minWidth: 34 }}
+                            />
+                            <Typography fontWeight={600}>
+                              {application.application || "Unknown Application"}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell align="right">
+                          {application.duplicateAccounts.toLocaleString()}
+                        </TableCell>
+                        <TableCell align="right">
+                          {application.duplicateGroups.toLocaleString()}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Chip
+                            size="small"
+                            label={`${Math.round(application.highestConfidence)}%`}
+                            color={application.highestConfidence >= 95 ? "error" : "warning"}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        </Grid>
 
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{
-                      display: "block",
-                      mt: 0.5,
-                    }}
-                  >
-                    Scan #{scanItem.id}
+        <Grid size={{ xs: 12, lg: 5 }}>
+          <Card
+            variant="outlined"
+            sx={{ borderRadius: 3, height: "100%" }}
+          >
+            <CardContent sx={{ p: 0 }}>
+              <Box sx={{ px: 3, py: 2.5 }}>
+                <Typography variant="h6" fontWeight={700}>
+                  Recent Integration Scans
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                  Latest scan activity only. The dashboard intentionally avoids listing every integration.
+                </Typography>
+              </Box>
 
-                    {scanItem.createdAt
-                      ? (
-                        ` · ${formatDateTime(
-                          scanItem.createdAt,
-                          "Asia/Kolkata",
-                        )}`
-                      )
-                      : ""}
-                  </Typography>
-
-                  <Box
-                    sx={{
-                      mt: 2,
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(2, 1fr)",
-                      gap: 1.5,
-                    }}
-                  >
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                      >
-                        Accounts
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {Number(
-                          scanItem
-                            .accountsScanned
-                          ?? 0,
-                        ).toLocaleString()}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                      >
-                        Applications
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {scanItem
-                          .applications
-                          ?? 0}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                      >
-                        Duplicate Groups
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {scanItem
-                          .duplicateGroups
-                          ?? 0}
-                      </Typography>
-                    </Box>
-
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                      >
-                        Duplicate Accounts
-                      </Typography>
-
-                      <Typography
-                        fontWeight={700}
-                      >
-                        {scanItem
-                          .duplicateAccounts
-                          ?? 0}
-                      </Typography>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ),
-        )}
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: "action.hover" }}>
+                      <TableCell sx={{ fontWeight: 700 }}>Integration</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>Duplicates</TableCell>
+                      <TableCell sx={{ fontWeight: 700 }}>Last Scan</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {scans.map((scanItem) => (
+                      <TableRow key={scanItem.id} hover>
+                        <TableCell>
+                          <Typography fontWeight={600}>
+                            {scanItem.integrationName
+                              ?? (scanItem.integrationId
+                                ? `Integration #${scanItem.integrationId}`
+                                : "Legacy Scan")}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Scan #{scanItem.id}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          {Number(scanItem.duplicateAccounts ?? 0).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {scanItem.createdAt
+                              ? formatDateTime(scanItem.createdAt, "Asia/Kolkata")
+                              : "—"}
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CardContent>
+          </Card>
+        </Grid>
       </Grid>
 
       <Grid
         container
         spacing={3}
       >
-        <Grid
-          size={{
-            xs: 12,
-            lg: 8,
-          }}
-        >
+        <Grid size={{ xs: 12, lg: 8 }}>
           <Card
             sx={{
               borderRadius: 3,
-              boxShadow: 3,
+              boxShadow: 2,
               height: 430,
             }}
           >
@@ -663,8 +595,7 @@ const Dashboard = () => {
                 color="text.secondary"
                 sx={{ mb: 2 }}
               >
-                Completed integration scans
-                for the selected period.
+                Recent completed scans for the selected period.
               </Typography>
 
               <Box sx={{ height: 315 }}>
@@ -676,16 +607,11 @@ const Dashboard = () => {
           </Card>
         </Grid>
 
-        <Grid
-          size={{
-            xs: 12,
-            lg: 4,
-          }}
-        >
+        <Grid size={{ xs: 12, lg: 4 }}>
           <Card
             sx={{
               borderRadius: 3,
-              boxShadow: 3,
+              boxShadow: 2,
               height: 430,
             }}
           >
@@ -701,7 +627,7 @@ const Dashboard = () => {
                 fontWeight={600}
                 sx={{ mb: 1 }}
               >
-                Duplicate Source Distribution
+                Top Duplicate Sources
               </Typography>
 
               <Typography
@@ -709,9 +635,7 @@ const Dashboard = () => {
                 color="text.secondary"
                 sx={{ mb: 2 }}
               >
-                Duplicate accounts by
-                application across the latest
-                scan of every integration.
+                Distribution across the highest-risk applications only.
               </Typography>
 
               <Box
