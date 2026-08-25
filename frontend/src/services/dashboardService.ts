@@ -1,4 +1,4 @@
-const API_URL = "http://127.0.0.1:8000/api";
+import { API_BASE_URL } from "../config/api";
 
 export type DashboardPeriod =
   | "daily"
@@ -65,7 +65,7 @@ export async function getDashboardSummary(
   period: DashboardPeriod = "daily",
 ): Promise<DashboardResponse> {
   const response = await fetch(
-    `${API_URL}/dashboard/?period=${period}`,
+    `${API_BASE_URL}/dashboard/?period=${period}`,
   );
 
   if (!response.ok) {
