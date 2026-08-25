@@ -2,9 +2,29 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.ai.authorization import has_rudrix_permission
 from app.ai.tools.base import (
     BaseAITool,
 )
+
+
+TOOL_PERMISSION_MAP: dict[str, str] = {
+    "get_dashboard_summary": "dashboard.view",
+    "list_integrations": "integration.view",
+    "get_integration_details": "integration.view",
+    "get_operations_summary": "operations.view",
+    "search_operations": "operations.view",
+    "get_latest_execution": "operations.view",
+    "get_execution_details": "operations.view",
+    "get_duplicate_summary": "duplicate.view",
+    "search_duplicate_groups": "duplicate.view",
+    "get_duplicate_group_details": "duplicate.view",
+    "get_review_statistics": "duplicate.view",
+    "get_confidence_breakdown": "duplicate.view",
+    "get_training_label_summary": "ml.view",
+    "search_knowledge_base": "knowledge.view",
+    "list_knowledge_documents": "knowledge.view",
+}
 
 
 class AIToolRegistry:
@@ -26,6 +46,17 @@ class AIToolRegistry:
 
         self._tools[tool.name] = tool
 
+    def _is_authorized(
+        self,
+        name: str,
+    ) -> bool:
+        permission = TOOL_PERMISSION_MAP.get(name)
+
+        if permission is None:
+            return True
+
+        return has_rudrix_permission(permission)
+
     def get(
         self,
         name: str,
@@ -37,6 +68,9 @@ class AIToolRegistry:
                 f"Unknown AI tool: {name}"
             )
 
+        if not self._is_authorized(name):
+            raise PermissionError("Access denied.")
+
         return tool
 
     def definitions(
@@ -45,6 +79,7 @@ class AIToolRegistry:
         return [
             tool.to_openai_definition()
             for tool in self._tools.values()
+            if self._is_authorized(tool.name)
         ]
 
     def execute(
