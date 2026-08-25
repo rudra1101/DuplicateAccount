@@ -1,4 +1,4 @@
-const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+import { API_BASE_URL } from "../config/api";
 
 export type MatchType = "EXACT" | "FUZZY" | "CONTAINS" | "NONE";
 export type NormalizationType =
@@ -89,7 +89,7 @@ export async function getIntegrationApplications(
   integrationId: number,
 ): Promise<ApplicationSchemaResponse[]> {
   const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/applications/`,
+    `${API_BASE_URL}/integrations/${integrationId}/applications/`,
   );
   return parseResponse<ApplicationSchemaResponse[]>(
     response,
@@ -102,7 +102,7 @@ export async function saveIntegrationApplications(
   applications: ApplicationInput[],
 ): Promise<ApplicationSchemaResponse[]> {
   const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/applications/`,
+    `${API_BASE_URL}/integrations/${integrationId}/applications/`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -120,7 +120,7 @@ export async function generateMatchingPolicy(
   attributes: SchemaAttributeInput[],
 ): Promise<GeneratedMatchingPolicy> {
   const response = await fetch(
-    `${API_URL}/matching-policy/generate`,
+    `${API_BASE_URL}/matching-policy/generate`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
