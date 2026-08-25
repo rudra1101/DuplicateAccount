@@ -1,6 +1,5 @@
 import type { AuthUser } from "../auth/types";
-
-const API_URL = `${window.location.protocol}//${window.location.hostname}:8000/api`;
+import { API_BASE_URL } from "../config/api";
 
 export interface CreateUserPayload {
   username: string;
@@ -11,13 +10,13 @@ export interface CreateUserPayload {
 }
 
 export async function getUsers(): Promise<AuthUser[]> {
-  const response = await fetch(`${API_URL}/users/`, { credentials: "include" });
+  const response = await fetch(`${API_BASE_URL}/users/`, { credentials: "include" });
   if (!response.ok) throw new Error("Unable to load users.");
   return response.json();
 }
 
 export async function createUser(payload: CreateUserPayload): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/users/`, {
+  const response = await fetch(`${API_BASE_URL}/users/`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
@@ -29,7 +28,7 @@ export async function createUser(payload: CreateUserPayload): Promise<AuthUser> 
 }
 
 export async function updateUserRole(userId: number, role: string): Promise<AuthUser> {
-  const response = await fetch(`${API_URL}/users/${userId}/role`, {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}/role`, {
     method: "PUT",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
