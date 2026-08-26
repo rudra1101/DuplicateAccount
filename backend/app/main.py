@@ -20,6 +20,7 @@ from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
 from app.api.reports import router as reports_router
+from app.api.scheduled_reports import router as scheduled_reports_router
 from app.api.review import router as review_router
 from app.api.remediation import router as remediation_router
 from app.api.roles import router as roles_router
@@ -32,6 +33,7 @@ from app.database.base import Base
 from app.database.session import SessionLocal, engine
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
+from app.services.scheduled_report_scheduler import register_scheduled_report
 
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
@@ -45,6 +47,7 @@ with SessionLocal() as db:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler_service.start()
+    register_scheduled_report()
     try:
         yield
     finally:
@@ -78,7 +81,6 @@ app.include_router(ai_health_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(detect_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
-app.include_router(reports_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
 app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
@@ -87,6 +89,8 @@ app.include_router(application_schemas_router, prefix="/api")
 app.include_router(matching_policy_router, prefix="/api")
 app.include_router(job_schedules_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")
+app.include_router(reports_router, prefix="/api")
+app.include_router(scheduled_reports_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(ml_router, prefix="/api")
 app.include_router(vector_search_router, prefix="/api")
