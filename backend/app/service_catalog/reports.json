@@ -1,7 +1,8 @@
 {
   "service": {"key":"report","name":"Reports","description":"Reporting and analytics","category":"Reports","route":"/reports","icon":"report","enabled":true,"sortOrder":30},
   "permissions": [
-    {"code":"report.view","name":"View reports"}
+    {"code":"report.view","name":"View reports"},
+    {"code":"report.manage_schedule","name":"Manage scheduled executive reports"}
   ],
   "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["report.view"]}
 }
