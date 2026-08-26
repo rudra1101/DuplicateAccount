@@ -34,6 +34,7 @@ import {
   type ReportFilters,
   type ReportPreview,
 } from "../../services/reportService";
+import ScheduledExecutiveReportCard from "./ScheduledExecutiveReportCard";
 
 
 const DECISIONS = [
@@ -192,6 +193,8 @@ function Reports() {
       </Box>
 
       {error && <Alert severity="error">{error}</Alert>}
+
+      <ScheduledExecutiveReportCard />
 
       <Card variant="outlined">
         <CardContent>
