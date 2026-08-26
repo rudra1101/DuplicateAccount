@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,7 @@ class ScheduledReportUpdate(BaseModel):
     enabled: bool = True
     frequency: str = Field(pattern="^(WEEKLY|MONTHLY|QUARTERLY)$")
     includeAdmins: bool = True
-    recipientEmails: list[EmailStr] = []
+    recipientEmails: list[str] = []
     selectedColumns: list[str] = []
 
 
@@ -51,7 +51,7 @@ def update_schedule(
             enabled=payload.enabled,
             frequency=payload.frequency,
             include_admins=payload.includeAdmins,
-            recipient_emails=[str(item) for item in payload.recipientEmails],
+            recipient_emails=payload.recipientEmails,
             selected_columns=payload.selectedColumns,
         )
         register_scheduled_report()
