@@ -38,12 +38,24 @@ def _to_naive_utc(value: datetime | None) -> datetime | None:
     return value.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
 
+def _persist_next_run() -> None:
+    db = SessionLocal()
+    try:
+        config = get_or_create_scheduled_report_config(db)
+        job = scheduler_service.scheduler.get_job(REPORT_JOB_ID)
+        config.next_run_at = _to_naive_utc(job.next_run_time if job else None)
+        db.commit()
+    finally:
+        db.close()
+
+
 def run_scheduled_duplicate_report() -> None:
     db = SessionLocal()
     try:
         send_scheduled_duplicate_report(db)
     finally:
         db.close()
+        _persist_next_run()
 
 
 def register_scheduled_report() -> None:
