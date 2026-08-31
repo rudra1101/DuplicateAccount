@@ -115,7 +115,7 @@ jobs:
         run: npm run build
 
   container-builds:
-    name: Compose validation + container builds
+    name: Compose + monitoring + container builds
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -142,7 +142,15 @@ jobs:
           EOF
 
       - name: Validate Docker Compose configuration
-        run: docker compose --env-file backend/.env config --quiet
+        run: docker compose --env-file backend/.env --profile monitoring config --quiet
+
+      - name: Validate Prometheus configuration and alert rules
+        run: >-
+          docker run --rm
+          --entrypoint /bin/promtool
+          -v "$PWD/ops/prometheus:/etc/prometheus:ro"
+          prom/prometheus:v3.5.0
+          check config /etc/prometheus/prometheus.yml
 
       - name: Build backend container
         run: docker build -t identityai-backend:ci ./backend
