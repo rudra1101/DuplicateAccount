@@ -1,4 +1,17 @@
 .env
-*.joblib
+.env.*
+!.env.example
+
+# Local databases and migration backups
+*.db
+*.sqlite
+*.sqlite3
+
+# Python runtime/cache artifacts
 __pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated ML/vector artifacts
+*.joblib
 accounts.faiss
