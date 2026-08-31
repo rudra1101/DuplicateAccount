@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -47,7 +49,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
         secure=settings.auth_cookie_secure,
         samesite=settings.auth_cookie_samesite,
         path="/",
-        max_age=int(__import__("os").getenv("AUTH_ACCESS_TOKEN_MINUTES", "480")) * 60,
+        max_age=int(os.getenv("AUTH_ACCESS_TOKEN_MINUTES", "480")) * 60,
     )
 
     return AuthResponse(user=serialize(user))
