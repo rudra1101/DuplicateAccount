@@ -12,7 +12,7 @@ from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.remediation_item import RemediationItemRecord
 from app.db_models.scan import ScanRecord
-from app.db_models.scheduled_report import ScheduledReportConfigRecord
+from app.db_models.scheduled_report import ScheduledReportConfigRecord, ScheduledReportRunRecord
 from app.db_models.user import UserRecord
 from app.services.email_service import send_email
 
@@ -77,6 +77,30 @@ def serialize_config(config: ScheduledReportConfigRecord) -> dict:
         "lastError": config.last_error,
         "nextRunAt": config.next_run_at.isoformat() if config.next_run_at else None,
     }
+
+
+def serialize_run(run: ScheduledReportRunRecord) -> dict:
+    return {
+        "id": run.id,
+        "reportName": run.report_name,
+        "filename": run.filename,
+        "status": run.status,
+        "testMode": run.test_mode,
+        "recipients": list(run.recipients or []),
+        "snapshot": dict(run.snapshot or {}),
+        "rowCount": run.row_count,
+        "errorMessage": run.error_message,
+        "generatedAt": run.generated_at.isoformat() if run.generated_at else None,
+    }
+
+
+def list_scheduled_report_runs(db: Session, *, limit: int = 50) -> list[dict]:
+    runs = db.scalars(
+        select(ScheduledReportRunRecord)
+        .order_by(ScheduledReportRunRecord.generated_at.desc(), ScheduledReportRunRecord.id.desc())
+        .limit(max(1, min(limit, 200)))
+    ).all()
+    return [serialize_run(run) for run in runs]
 
 
 def update_config(
@@ -214,6 +238,23 @@ def send_scheduled_duplicate_report(db: Session, *, test_mode: bool = False) -> 
     columns = list(config.selected_columns or DEFAULT_COLUMNS)
     rows = _detail_rows(db)
     csv_content = _csv_for_columns(rows, columns)
+    generated_at = datetime.utcnow()
+    filename = f"duplicate_risk_report_{generated_at.strftime('%Y%m%d_%H%M%S')}.csv"
+
+    run = ScheduledReportRunRecord(
+        report_name="Executive Duplicate Risk Report",
+        filename=filename,
+        status="GENERATED",
+        test_mode=test_mode,
+        recipients=recipients,
+        snapshot=snapshot,
+        row_count=len(rows),
+        csv_content=csv_content,
+        generated_at=generated_at,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
 
     subject_prefix = "TEST - " if test_mode else ""
     subject = f"{subject_prefix}IdentityAI Duplicate Risk Report"
@@ -246,21 +287,26 @@ def send_scheduled_duplicate_report(db: Session, *, test_mode: bool = False) -> 
             subject=subject,
             text_body=text_body,
             html_body=html_body,
-            attachment_name=f"duplicate_risk_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv",
+            attachment_name=filename,
             attachment_content=csv_content,
         )
+        run.status = "SENT"
+        run.error_message = None
         if not test_mode:
-            config.last_sent_at = datetime.utcnow()
+            config.last_sent_at = generated_at
         config.last_status = "SENT"
         config.last_error = None
         db.commit()
     except Exception as exc:
+        run.status = "EMAIL_FAILED"
+        run.error_message = str(exc)
         config.last_status = "FAILED"
         config.last_error = str(exc)
         db.commit()
         raise
 
     return {
+        "run": serialize_run(run),
         "recipients": recipients,
         "snapshot": snapshot,
         "unresolvedRows": len(rows),

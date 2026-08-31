@@ -29,3 +29,23 @@ class ScheduledReportConfigRecord(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+
+class ScheduledReportRunRecord(Base):
+    __tablename__ = "scheduled_report_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_name: Mapped[str] = mapped_column(
+        String(150), nullable=False, default="Executive Duplicate Risk Report"
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="GENERATED", index=True)
+    test_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    recipients: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    csv_content: Mapped[str] = mapped_column(Text, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow, index=True
+    )
