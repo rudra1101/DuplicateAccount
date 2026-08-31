@@ -76,7 +76,33 @@ PostgreSQL logs:
 docker compose --env-file backend/.env logs -f postgres
 ```
 
-## 4. Stop the stack
+## 4. Optional Prometheus monitoring
+
+Start the stack with the monitoring profile:
+
+```powershell
+docker compose --env-file backend/.env --profile monitoring up --build -d
+```
+
+Prometheus is then available locally at:
+
+```text
+http://localhost:9090
+```
+
+It scrapes the backend `/metrics` endpoint over the internal Docker network and loads the alert rules from `ops/prometheus/alerts.yml`.
+
+The default alert set covers:
+
+- backend unavailable;
+- HTTP 5xx rate above 5% for 10 minutes;
+- p95 request latency above 2 seconds for 10 minutes;
+- scheduler stopped for 5 minutes;
+- database connection pool above 80% utilization for 10 minutes.
+
+In an actual production environment, Prometheus and alert delivery should be integrated with the organization's monitoring and access-control platform instead of exposing the monitoring UI publicly.
+
+## 5. Stop the stack
 
 ```powershell
 docker compose --env-file backend/.env down
@@ -92,13 +118,13 @@ docker compose --env-file backend/.env down -v
 
 Do not use `-v` if the Docker PostgreSQL data must be retained.
 
-## 5. Important data note
+## 6. Important data note
 
 The Docker PostgreSQL volume is a separate database from PostgreSQL installed directly on your Windows machine. Starting the Docker stack does not copy your existing local IdentityAI PostgreSQL data into the container database.
 
 For initial container testing, an empty migrated schema is expected. Data migration/import should be handled explicitly before using the Docker database as the authoritative environment.
 
-## 6. Actual production settings
+## 7. Actual production settings
 
 For a real HTTPS deployment, update the same `backend/.env` with production-safe values before deployment:
 
