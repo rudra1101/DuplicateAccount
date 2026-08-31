@@ -28,6 +28,57 @@ IN_PROGRESS = Gauge(
     ["method"],
 )
 
+DATABASE_POOL_SIZE = Gauge(
+    "identityai_database_pool_size",
+    "Configured SQLAlchemy connection pool size.",
+)
+DATABASE_POOL_CHECKED_OUT = Gauge(
+    "identityai_database_pool_checked_out",
+    "SQLAlchemy database connections currently checked out.",
+)
+DATABASE_POOL_OVERFLOW = Gauge(
+    "identityai_database_pool_overflow",
+    "Current SQLAlchemy connection pool overflow.",
+)
+SCHEDULER_RUNNING = Gauge(
+    "identityai_scheduler_running",
+    "Whether the IdentityAI scheduler is running (1=yes, 0=no).",
+)
+SCHEDULER_JOBS = Gauge(
+    "identityai_scheduler_jobs",
+    "Number of registered scheduler jobs.",
+)
+INTEGRATIONS = Gauge(
+    "identityai_integrations",
+    "Integration count by state.",
+    ["state"],
+)
+EXECUTIONS = Gauge(
+    "identityai_job_executions",
+    "Job execution count by status.",
+    ["status"],
+)
+SCANS = Gauge(
+    "identityai_scans_total_current",
+    "Current number of scan records.",
+)
+ACCOUNTS = Gauge(
+    "identityai_accounts_total_current",
+    "Current number of account records.",
+)
+DUPLICATE_GROUPS = Gauge(
+    "identityai_duplicate_groups_total_current",
+    "Current number of duplicate groups.",
+)
+DUPLICATE_CANDIDATES = Gauge(
+    "identityai_duplicate_candidates_total_current",
+    "Current number of duplicate candidates.",
+)
+PENDING_REMEDIATION = Gauge(
+    "identityai_pending_remediation_total_current",
+    "Current number of remediation items pending action.",
+)
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -141,6 +192,37 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         },
         headers={"X-Request-ID": request_id},
     )
+
+
+def update_operational_gauges(snapshot: dict) -> None:
+    database = snapshot.get("database", {})
+    pool = database.get("pool", {})
+
+    if pool.get("size") is not None:
+        DATABASE_POOL_SIZE.set(pool["size"])
+    if pool.get("checkedOut") is not None:
+        DATABASE_POOL_CHECKED_OUT.set(pool["checkedOut"])
+    if pool.get("overflow") is not None:
+        DATABASE_POOL_OVERFLOW.set(pool["overflow"])
+
+    scheduler = snapshot.get("scheduler", {})
+    SCHEDULER_RUNNING.set(1 if scheduler.get("running") else 0)
+    SCHEDULER_JOBS.set(int(scheduler.get("registeredJobs", 0) or 0))
+
+    application = snapshot.get("application", {})
+    integrations = application.get("integrations", {})
+    for state in ("total", "enabled", "disabled"):
+        INTEGRATIONS.labels(state=state).set(int(integrations.get(state, 0) or 0))
+
+    executions = application.get("executions", {})
+    for status in ("total", "running", "completed", "failed"):
+        EXECUTIONS.labels(status=status).set(int(executions.get(status, 0) or 0))
+
+    SCANS.set(int(application.get("scans", 0) or 0))
+    ACCOUNTS.set(int(application.get("accounts", 0) or 0))
+    DUPLICATE_GROUPS.set(int(application.get("duplicateGroups", 0) or 0))
+    DUPLICATE_CANDIDATES.set(int(application.get("duplicateCandidates", 0) or 0))
+    PENDING_REMEDIATION.set(int(application.get("pendingRemediation", 0) or 0))
 
 
 def metrics_response() -> Response:
