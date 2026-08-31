@@ -16,7 +16,7 @@ import RemediationQueue from "../pages/remediation/RemediationQueue";
 import UploadAccounts from "../pages/upload/UploadAccounts";
 import Integrations from "../pages/integrations/Integrations";
 import AddIntegration from "../pages/integrations/AddIntegration";
-import Operations from "../pages/operations/Operations";
+import OperationsWorkspace from "../pages/operations/OperationsWorkspace";
 import MlTrainingDashboard from "../pages/ml/MlTrainingDashboard";
 import ReviewerAnalytics from "../pages/ml/ReviewerAnalytics";
 import KnowledgeBase from "../pages/knowledge/KnowledgeBase";
@@ -58,7 +58,7 @@ const AppRoutes = () => {
           </Route>
 
           <Route element={<PermissionRoute anyOf={["operations.view"]} />}>
-            <Route path="operations" element={<Operations />} />
+            <Route path="operations" element={<OperationsWorkspace />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
