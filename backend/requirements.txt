@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 sqlalchemy
+alembic>=1.16,<2
 python-dotenv
 python-multipart
 rapidfuzz
