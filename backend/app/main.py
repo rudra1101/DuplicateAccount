@@ -31,6 +31,12 @@ from app.api.vector_search import router as vector_search_router
 from app.auth.middleware import authentication_middleware
 from app.database.base import Base
 from app.database.session import IS_SQLITE, SessionLocal, engine
+from app.observability import (
+    configure_logging,
+    metrics_response,
+    observability_middleware,
+    unhandled_exception_handler,
+)
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 from app.services.scheduled_report_scheduler import register_scheduled_report
@@ -38,6 +44,8 @@ from app.services.scheduled_report_scheduler import register_scheduled_report
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
 
+
+configure_logging()
 
 # SQLite remains a lightweight backwards-compatible fallback for local/test use.
 # PostgreSQL schema changes are owned by Alembic and must be applied with
@@ -65,7 +73,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_exception_handler(Exception, unhandled_exception_handler)
 app.middleware("http")(authentication_middleware)
+app.middleware("http")(observability_middleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -77,6 +87,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    return metrics_response()
+
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
