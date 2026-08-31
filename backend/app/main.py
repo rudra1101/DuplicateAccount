@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.ai_health import router as ai_health_router
 from app.api.application_schemas import router as application_schemas_router
@@ -29,6 +30,7 @@ from app.api.upload import router as upload_router
 from app.api.users import router as users_router
 from app.api.vector_search import router as vector_search_router
 from app.auth.middleware import authentication_middleware
+from app.config import get_runtime_settings, validate_runtime_configuration
 from app.database.base import Base
 from app.database.session import IS_SQLITE, SessionLocal, engine
 from app.observability import (
@@ -39,6 +41,7 @@ from app.observability import (
     unhandled_exception_handler,
     update_operational_gauges,
 )
+from app.security_headers import security_headers_middleware
 from app.services.monitoring_service import get_system_status
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
@@ -49,6 +52,8 @@ import app.db_models  # noqa: F401
 
 
 configure_logging()
+settings = get_runtime_settings()
+validate_runtime_configuration(settings)
 
 # SQLite remains a lightweight backwards-compatible fallback for local/test use.
 # PostgreSQL schema changes are owned by Alembic and must be applied with
@@ -79,16 +84,20 @@ app = FastAPI(
 app.add_exception_handler(Exception, unhandled_exception_handler)
 app.middleware("http")(authentication_middleware)
 app.middleware("http")(observability_middleware)
+if settings.security_headers_enabled:
+    app.middleware("http")(security_headers_middleware)
 
 app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=list(settings.allowed_hosts),
+)
+app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=list(settings.cors_origins),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID", "Content-Disposition", "X-Report-Total"],
 )
 
 
