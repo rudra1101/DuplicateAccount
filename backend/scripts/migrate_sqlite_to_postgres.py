@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, create_engine, delete, func, insert, select, text
+from sqlalchemy import MetaData, and_, create_engine, delete, func, insert, select, text
 
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -57,6 +59,125 @@ def print_counts(title: str, counts: dict[str, int]) -> None:
         print(f"{table_name:32} {count:>10}")
 
 
+def find_source_orphans(source_engine, metadata: MetaData) -> dict[str, list[dict[str, object]]]:
+    """Find simple single-column FK violations already present in SQLite.
+
+    Older SQLite runs may contain rows written while FK enforcement was disabled.
+    PostgreSQL will correctly reject those rows, so surface them before copying.
+    """
+    issues: dict[str, list[dict[str, object]]] = defaultdict(list)
+
+    with source_engine.connect() as connection:
+        for child in metadata.sorted_tables:
+            for fk_constraint in child.foreign_key_constraints:
+                elements = list(fk_constraint.elements)
+                if len(elements) != 1:
+                    continue
+
+                element = elements[0]
+                child_column = element.parent
+                parent_column = element.column
+                parent = parent_column.table
+
+                orphan_condition = and_(
+                    child_column.is_not(None),
+                    parent_column.is_(None),
+                )
+                stmt = (
+                    select(child_column, func.count().label("row_count"))
+                    .select_from(
+                        child.outerjoin(parent, child_column == parent_column)
+                    )
+                    .where(orphan_condition)
+                    .group_by(child_column)
+                )
+
+                rows = connection.execute(stmt).mappings().all()
+                if not rows:
+                    continue
+
+                key = f"{child.name}.{child_column.name}->{parent.name}.{parent_column.name}"
+                issues[key].extend(dict(row) for row in rows)
+
+    return dict(issues)
+
+
+def print_source_orphans(issues: dict[str, list[dict[str, object]]]) -> None:
+    if not issues:
+        print("\nSource foreign-key preflight: no orphaned rows found.")
+        return
+
+    print("\nSource foreign-key preflight found legacy orphaned rows")
+    print("--------------------------------------------------------")
+    for relationship, rows in issues.items():
+        total_rows = sum(int(row.get("row_count", 0)) for row in rows)
+        print(f"{relationship}: {len(rows)} missing parent key(s), {total_rows} child row(s)")
+
+
+def recover_missing_chat_conversations(
+    source_engine,
+    target_engine,
+    source_metadata: MetaData,
+    target_metadata: MetaData,
+) -> int:
+    """Reconstruct missing chat-conversation parents without dropping messages.
+
+    A legacy SQLite database may contain chat_messages whose conversation_id has
+    no corresponding chat_conversations row. PostgreSQL enforces the FK. Create
+    a minimal parent using the orphaned message's earliest timestamp so all chat
+    history survives the migration with referential integrity restored.
+    """
+    if "chat_messages" not in source_metadata.tables or "chat_conversations" not in source_metadata.tables:
+        return 0
+
+    source_messages = source_metadata.tables["chat_messages"]
+    source_conversations = source_metadata.tables["chat_conversations"]
+    target_conversations = target_metadata.tables["chat_conversations"]
+
+    stmt = (
+        select(
+            source_messages.c.conversation_id,
+            func.min(source_messages.c.created_at).label("first_message_at"),
+            func.max(source_messages.c.created_at).label("last_message_at"),
+        )
+        .select_from(
+            source_messages.outerjoin(
+                source_conversations,
+                source_messages.c.conversation_id == source_conversations.c.id,
+            )
+        )
+        .where(source_conversations.c.id.is_(None))
+        .group_by(source_messages.c.conversation_id)
+    )
+
+    with source_engine.connect() as source_connection:
+        orphan_groups = source_connection.execute(stmt).mappings().all()
+
+    if not orphan_groups:
+        return 0
+
+    payload = []
+    for row in orphan_groups:
+        created_at = row["first_message_at"] or datetime.utcnow()
+        updated_at = row["last_message_at"] or created_at
+        payload.append(
+            {
+                "id": row["conversation_id"],
+                "title": "Recovered Conversation",
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+
+    with target_engine.begin() as target_connection:
+        target_connection.execute(insert(target_conversations), payload)
+
+    print(
+        f"chat_conversations               recovered {len(payload)} missing parent conversation(s)"
+    )
+    return len(payload)
+
+
 def reset_postgres_sequences(target_engine, metadata: MetaData) -> None:
     if target_engine.dialect.name != "postgresql":
         return
@@ -68,7 +189,11 @@ def reset_postgres_sequences(target_engine, metadata: MetaData) -> None:
                 continue
 
             column = primary_keys[0]
-            if not getattr(column.type, "python_type", None) is int:
+            try:
+                python_type = column.type.python_type
+            except (NotImplementedError, AttributeError):
+                continue
+            if python_type is not int:
                 continue
 
             sequence_name = connection.scalar(
@@ -111,6 +236,37 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
     source_counts = row_counts(source_engine, source_metadata)
     print_counts("SQLite source counts", source_counts)
 
+    orphan_issues = find_source_orphans(source_engine, source_metadata)
+    print_source_orphans(orphan_issues)
+
+    supported_orphan_relationship = "chat_messages.conversation_id->chat_conversations.id"
+    unsupported_orphans = {
+        relationship: rows
+        for relationship, rows in orphan_issues.items()
+        if relationship != supported_orphan_relationship
+    }
+    if unsupported_orphans:
+        raise RuntimeError(
+            "Source contains foreign-key orphan(s) that require explicit repair before migration: "
+            + ", ".join(sorted(unsupported_orphans))
+        )
+
+    target_counts_before = row_counts(target_engine, target_metadata)
+    populated_target_tables = {
+        name: count
+        for name, count in target_counts_before.items()
+        if name != "alembic_version" and count > 0
+    }
+    if populated_target_tables and not truncate_target:
+        details = ", ".join(
+            f"{name}={count}" for name, count in sorted(populated_target_tables.items())
+        )
+        raise RuntimeError(
+            "PostgreSQL already contains partially migrated application data ("
+            + details
+            + "). Re-run with --execute --truncate-target to restart the copy safely."
+        )
+
     if truncate_target:
         print("\nClearing target tables in reverse dependency order...")
         with target_engine.begin() as target_connection:
@@ -119,6 +275,8 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
                 target_connection.execute(delete(target_table))
 
     print("\nCopying rows...")
+    recovered_chat_conversations = 0
+
     with source_engine.connect() as source_connection:
         for source_table in source_metadata.sorted_tables:
             target_table = target_metadata.tables[source_table.name]
@@ -141,24 +299,46 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
 
             print(f"{source_table.name:32} copied {copied}/{total}")
 
+            if source_table.name == "chat_conversations":
+                recovered_chat_conversations = recover_missing_chat_conversations(
+                    source_engine,
+                    target_engine,
+                    source_metadata,
+                    target_metadata,
+                )
+
     reset_postgres_sequences(target_engine, target_metadata)
 
     target_counts = row_counts(target_engine, target_metadata)
     print_counts("PostgreSQL target counts", target_counts)
 
+    expected_counts = dict(source_counts)
+    if recovered_chat_conversations:
+        expected_counts["chat_conversations"] += recovered_chat_conversations
+        print(
+            "\nValidation note: chat_conversations target includes "
+            f"{recovered_chat_conversations} recovered parent row(s) required to preserve orphaned SQLite chat messages."
+        )
+
     mismatches = {
-        table: (source_counts[table], target_counts.get(table, -1))
-        for table in source_counts
-        if source_counts[table] != target_counts.get(table)
+        table: (expected_counts[table], target_counts.get(table, -1))
+        for table in expected_counts
+        if expected_counts[table] != target_counts.get(table)
     }
 
     if mismatches:
         print("\nROW COUNT VALIDATION FAILED")
-        for table, (source_count, target_count) in mismatches.items():
-            print(f"{table}: source={source_count}, target={target_count}")
+        for table, (expected_count, target_count) in mismatches.items():
+            print(f"{table}: expected={expected_count}, target={target_count}")
         raise SystemExit(2)
 
+    post_migration_orphans = find_source_orphans(target_engine, target_metadata)
+    if post_migration_orphans:
+        print_source_orphans(post_migration_orphans)
+        raise RuntimeError("PostgreSQL foreign-key validation found orphaned rows after migration.")
+
     print("\nRow-count validation passed for every migrated table.")
+    print("PostgreSQL foreign-key validation passed.")
 
 
 def main() -> None:
@@ -179,6 +359,7 @@ def main() -> None:
     source_metadata = MetaData()
     source_metadata.reflect(bind=source_engine)
     print_counts("SQLite source counts", row_counts(source_engine, source_metadata))
+    print_source_orphans(find_source_orphans(source_engine, source_metadata))
 
     target_metadata = MetaData()
     target_metadata.reflect(bind=target_engine)
