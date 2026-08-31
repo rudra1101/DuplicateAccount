@@ -87,9 +87,31 @@ services:
     networks:
       - identityai_internal
 
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - identityai_prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - identityai_internal
+
 networks:
   identityai_internal:
     driver: bridge
 
 volumes:
   identityai_postgres_data:
+  identityai_prometheus_data:
