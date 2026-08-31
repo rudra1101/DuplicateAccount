@@ -61,6 +61,11 @@ export default function ScheduledReportHistoryCard() {
 
   useEffect(() => {
     void loadHistory();
+    const refreshAfterGeneration = () => void loadHistory(true);
+    window.addEventListener("scheduled-report-generated", refreshAfterGeneration);
+    return () => {
+      window.removeEventListener("scheduled-report-generated", refreshAfterGeneration);
+    };
   }, [loadHistory]);
 
   const handleDownload = async (run: ScheduledReportRun) => {
