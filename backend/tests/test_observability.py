@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 
+from app.database.session import SessionLocal
 from app.main import app
+from app.services.monitoring_service import get_system_status
 
 
 client = TestClient(app)
@@ -28,7 +30,21 @@ def test_readiness_checks_database():
     assert "X-Request-ID" in response.headers
 
 
-def test_metrics_endpoint_exposes_identityai_http_metrics():
+def test_system_status_snapshot_contains_runtime_and_domain_metrics():
+    with SessionLocal() as db:
+        payload = get_system_status(db)
+
+    assert payload["database"]["status"] == "healthy"
+    assert "backend" in payload["database"]
+    assert "pool" in payload["database"]
+    assert "registeredJobs" in payload["scheduler"]
+    assert "integrations" in payload["application"]
+    assert "executions" in payload["application"]
+    assert isinstance(payload["application"]["accounts"], int)
+    assert isinstance(payload["application"]["duplicateCandidates"], int)
+
+
+def test_metrics_endpoint_exposes_identityai_http_and_operational_metrics():
     client.get("/api/health/live")
     response = client.get("/metrics")
 
@@ -36,6 +52,11 @@ def test_metrics_endpoint_exposes_identityai_http_metrics():
     assert "identityai_http_requests_total" in response.text
     assert "identityai_http_request_duration_seconds" in response.text
     assert "identityai_http_requests_in_progress" in response.text
+    assert "identityai_scheduler_running" in response.text
+    assert "identityai_integrations" in response.text
+    assert "identityai_job_executions" in response.text
+    assert "identityai_accounts_total_current" in response.text
+    assert "identityai_duplicate_candidates_total_current" in response.text
 
 
 def test_unauthenticated_api_response_still_has_request_id():
