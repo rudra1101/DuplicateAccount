@@ -20,6 +20,25 @@ def test_liveness_is_public_and_echoes_request_id():
     assert response.headers["X-Request-ID"] == request_id
 
 
+def test_liveness_response_has_security_headers():
+    response = client.get("/api/health/live")
+
+    assert response.status_code == 200
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["X-Frame-Options"] == "DENY"
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert "camera=()" in response.headers["Permissions-Policy"]
+
+
+def test_untrusted_host_is_rejected():
+    response = client.get(
+        "/api/health/live",
+        headers={"Host": "attacker.example"},
+    )
+
+    assert response.status_code == 400
+
+
 def test_readiness_checks_database():
     response = client.get("/api/health/ready")
 
