@@ -35,6 +35,7 @@ import {
   type ReportPreview,
 } from "../../services/reportService";
 import ScheduledExecutiveReportCard from "./ScheduledExecutiveReportCard";
+import ScheduledReportHistoryCard from "./ScheduledReportHistoryCard";
 
 
 const DECISIONS = [
@@ -195,6 +196,7 @@ function Reports() {
       {error && <Alert severity="error">{error}</Alert>}
 
       <ScheduledExecutiveReportCard />
+      <ScheduledReportHistoryCard />
 
       <Card variant="outlined">
         <CardContent>
