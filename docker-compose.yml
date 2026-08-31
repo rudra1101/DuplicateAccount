@@ -29,7 +29,11 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-identityai}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-identityai}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: ${POSTGRES_DB:-identityai}
+      DATABASE_USER: ${POSTGRES_USER:-identityai}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
       APP_ENV: ${APP_ENV:-development}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,testserver}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
