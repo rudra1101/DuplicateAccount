@@ -35,6 +35,44 @@ export interface OperationExecution {
   completedAt: string | null;
 }
 
+export interface SystemStatus {
+  status: "healthy" | "degraded";
+  generatedAt: string;
+  database: {
+    status: string;
+    backend: string;
+    pool: {
+      size: number | null;
+      checkedOut: number | null;
+      checkedIn: number | null;
+      overflow: number | null;
+    };
+  };
+  scheduler: {
+    status: string;
+    running: boolean;
+    registeredJobs: number;
+    jobs: Array<{
+      id: string;
+      name: string;
+      nextRunTime: string | null;
+    }>;
+  };
+  application: {
+    integrations: {
+      total: number;
+      enabled: number;
+      disabled: number;
+    };
+    executions: OperationSummary;
+    scans: number;
+    accounts: number;
+    duplicateGroups: number;
+    duplicateCandidates: number;
+    pendingRemediation: number;
+  };
+}
+
 interface OperationFilters {
   status?: OperationStatus | "";
   integrationId?: number | null;
@@ -81,6 +119,17 @@ Promise<OperationSummary> {
   return parseResponse<OperationSummary>(
     response,
     "Unable to load operations summary."
+  );
+}
+
+export async function getSystemStatus(): Promise<SystemStatus> {
+  const response = await fetch(
+    `${API_BASE_URL}/operations/system-status`
+  );
+
+  return parseResponse<SystemStatus>(
+    response,
+    "Unable to load system status."
   );
 }
 
