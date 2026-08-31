@@ -25,7 +25,7 @@ AUTH_COOKIE_SAMESITE=lax
 SECURITY_HEADERS_ENABLED=true
 ```
 
-`docker-compose.yml` overrides the backend `DATABASE_URL` only inside the backend container so it can reach the Docker PostgreSQL service at hostname `postgres`. Your existing local `DATABASE_URL` can remain unchanged for non-Docker development.
+Inside Docker, Compose passes the PostgreSQL host, user, database, and password as separate environment values. The backend builds the SQLAlchemy connection URL safely, so special password characters do not require manual URL encoding. Your existing local `DATABASE_URL` can remain unchanged for non-Docker development.
 
 ## 2. Start the stack
 
