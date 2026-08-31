@@ -4,7 +4,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import Engine, URL, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 
@@ -44,7 +44,50 @@ def _default_sqlite_url() -> str:
     return f"sqlite:///{path.as_posix()}"
 
 
+def _structured_database_url() -> str | None:
+    """Build a PostgreSQL URL from separate environment values when requested.
+
+    Containers can set DATABASE_HOST to opt into this path. Keeping the password
+    separate avoids manual URL encoding problems for characters such as @, :, /
+    and #. Local development continues to use DATABASE_URL unchanged when no
+    structured host override is present.
+    """
+    host = str(os.getenv("DATABASE_HOST", "") or "").strip()
+    if not host:
+        return None
+
+    username = str(os.getenv("DATABASE_USER", "") or "").strip()
+    password = str(os.getenv("DATABASE_PASSWORD", "") or "")
+    database = str(os.getenv("DATABASE_NAME", "") or "").strip()
+    port_raw = str(os.getenv("DATABASE_PORT", "5432") or "5432").strip()
+
+    if not username:
+        raise RuntimeError("DATABASE_USER is required when DATABASE_HOST is configured.")
+    if not database:
+        raise RuntimeError("DATABASE_NAME is required when DATABASE_HOST is configured.")
+    if not password:
+        raise RuntimeError("DATABASE_PASSWORD is required when DATABASE_HOST is configured.")
+
+    try:
+        port = int(port_raw)
+    except ValueError as exc:
+        raise RuntimeError("DATABASE_PORT must be an integer.") from exc
+
+    return URL.create(
+        drivername="postgresql+psycopg",
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+    ).render_as_string(hide_password=False)
+
+
 def _resolve_database_url() -> str:
+    structured_url = _structured_database_url()
+    if structured_url:
+        return structured_url
+
     configured_url = str(os.getenv("DATABASE_URL", "") or "").strip()
     return configured_url or _default_sqlite_url()
 

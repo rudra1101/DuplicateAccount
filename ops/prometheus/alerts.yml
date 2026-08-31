@@ -1,0 +1,59 @@
+groups:
+  - name: identityai-runtime
+    rules:
+      - alert: IdentityAIBackendDown
+        expr: up{job="identityai-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: IdentityAI backend is unreachable
+          description: Prometheus has been unable to scrape the IdentityAI backend for at least 2 minutes.
+
+      - alert: IdentityAIHighServerErrorRate
+        expr: |
+          sum(rate(identityai_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(identityai_http_requests_total[5m])), 0.001)
+          > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: IdentityAI HTTP 5xx rate is high
+          description: More than 5% of IdentityAI HTTP requests have returned 5xx responses for 10 minutes.
+
+      - alert: IdentityAIHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(identityai_http_request_duration_seconds_bucket[5m]))
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: IdentityAI p95 HTTP latency is high
+          description: IdentityAI p95 request latency has exceeded 2 seconds for 10 minutes.
+
+      - alert: IdentityAISchedulerStopped
+        expr: identityai_scheduler_running == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: IdentityAI scheduler is not running
+          description: The application scheduler has reported a stopped state for at least 5 minutes.
+
+      - alert: IdentityAIDatabasePoolNearCapacity
+        expr: |
+          identityai_database_pool_checked_out
+          /
+          clamp_min(identityai_database_pool_size, 1)
+          > 0.80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: IdentityAI database pool is near capacity
+          description: More than 80% of the configured SQLAlchemy pool has been checked out for 10 minutes.

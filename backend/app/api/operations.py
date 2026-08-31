@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database.session import get_db
+from app.services.monitoring_service import get_system_status
 from app.services.operations_service import (
     get_operation,
     get_operations,
@@ -35,6 +36,19 @@ def operations_summary(
             detail=(
                 "Unable to load operations summary."
             ),
+        ) from exc
+
+
+@router.get("/system-status")
+def system_status(
+    db: Session = Depends(get_db),
+):
+    try:
+        return get_system_status(db)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Unable to load system status.",
         ) from exc
 
 
