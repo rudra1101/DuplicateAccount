@@ -2,21 +2,26 @@ from collections.abc import Generator
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ENV_FILE = BASE_DIR / ".env"
+
+# Load the backend environment file explicitly so database configuration does
+# not depend on the directory from which Uvicorn/pytest was started.
+load_dotenv(ENV_FILE)
 
 
-def _resolve_database_path() -> Path:
-    """Resolve the SQLite runtime path.
+def _resolve_sqlite_database_path() -> Path:
+    """Resolve the legacy SQLite runtime path.
 
-    IDENTITYAI_DATABASE_PATH can point to a database outside the repository
-    (recommended when the project lives in OneDrive/Dropbox/other synced
-    folders). If it is not set, preserve the existing repository-local path so
-    current installations continue to work unchanged.
+    IDENTITYAI_DATABASE_PATH is kept for backward compatibility while the
+    application transitions to DATABASE_URL. If DATABASE_URL is not supplied,
+    the existing SQLite database remains the default.
     """
     configured_path = str(
         os.getenv("IDENTITYAI_DATABASE_PATH", "")
@@ -34,31 +39,54 @@ def _resolve_database_path() -> Path:
     return path
 
 
-DATABASE_PATH = _resolve_database_path()
-DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
+def _default_sqlite_url() -> str:
+    path = _resolve_sqlite_database_path()
+    return f"sqlite:///{path.as_posix()}"
 
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={
+def _resolve_database_url() -> str:
+    configured_url = str(os.getenv("DATABASE_URL", "") or "").strip()
+    return configured_url or _default_sqlite_url()
+
+
+DATABASE_URL = _resolve_database_url()
+DATABASE_BACKEND = make_url(DATABASE_URL).get_backend_name()
+IS_SQLITE = DATABASE_BACKEND == "sqlite"
+IS_POSTGRESQL = DATABASE_BACKEND == "postgresql"
+
+
+engine_options: dict[str, object] = {
+    "pool_pre_ping": True,
+}
+
+if IS_SQLITE:
+    engine_options["connect_args"] = {
         "check_same_thread": False,
         # Wait for a concurrent writer instead of immediately failing with
         # sqlite3.OperationalError: database is locked.
         "timeout": 30,
-    },
-    pool_pre_ping=True,
+    }
+else:
+    # PostgreSQL and other network databases use SQLAlchemy's normal pooled
+    # connections. Keep stale connections from lingering indefinitely.
+    engine_options.update(
+        {
+            "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+            "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "20")),
+            "pool_recycle": int(os.getenv("DB_POOL_RECYCLE_SECONDS", "1800")),
+        }
+    )
+
+
+engine = create_engine(
+    DATABASE_URL,
+    **engine_options,
 )
 
 
 @event.listens_for(Engine, "connect")
-def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
-    """Configure connection-local SQLite settings safely.
-
-    Do not execute PRAGMA journal_mode=WAL here. Changing journal mode is a
-    database-wide operation that can itself require an exclusive lock. Running
-    it for every pooled connection can therefore prevent the application from
-    starting when another process has the database open.
-    """
+def _configure_database_connection(dbapi_connection, connection_record) -> None:
+    """Apply connection-local settings only when the driver is SQLite."""
     del connection_record
 
     module_name = dbapi_connection.__class__.__module__.lower()
