@@ -33,10 +33,13 @@ from app.database.base import Base
 from app.database.session import IS_SQLITE, SessionLocal, engine
 from app.observability import (
     configure_logging,
+    logger,
     metrics_response,
     observability_middleware,
     unhandled_exception_handler,
+    update_operational_gauges,
 )
+from app.services.monitoring_service import get_system_status
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 from app.services.scheduled_report_scheduler import register_scheduled_report
@@ -91,6 +94,13 @@ app.add_middleware(
 
 @app.get("/metrics", include_in_schema=False)
 def metrics():
+    # Metrics must remain scrapeable even if a domain/database snapshot fails.
+    try:
+        with SessionLocal() as db:
+            update_operational_gauges(get_system_status(db))
+    except Exception:
+        logger.exception("operational_metric_refresh_failed")
+
     return metrics_response()
 
 
