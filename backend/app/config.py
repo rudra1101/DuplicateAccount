@@ -77,9 +77,9 @@ def validate_runtime_configuration(settings: RuntimeSettings) -> None:
     if settings.auth_cookie_samesite == "none" and not settings.auth_cookie_secure:
         problems.append("SameSite=None requires secure authentication cookies")
 
-    if not settings.cors_origins:
-        problems.append("CORS_ORIGINS must contain at least one explicit production origin")
-    elif any(origin == "*" or "localhost" in origin or "127.0.0.1" in origin for origin in settings.cors_origins):
+    # Same-origin deployments behind a reverse proxy do not require CORS at all.
+    # When origins are configured, keep them explicit and production-safe.
+    if any(origin == "*" or "localhost" in origin or "127.0.0.1" in origin for origin in settings.cors_origins):
         problems.append("CORS_ORIGINS must not use wildcard or localhost origins in production")
 
     if not settings.allowed_hosts:
