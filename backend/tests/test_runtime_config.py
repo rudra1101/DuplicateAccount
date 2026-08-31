@@ -52,3 +52,18 @@ def test_production_accepts_explicit_secure_configuration(monkeypatch):
 
     assert settings.is_production is True
     assert settings.auth_cookie_secure is True
+
+
+def test_production_accepts_same_origin_without_cors(monkeypatch):
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("AUTH_SECRET_KEY", "x" * 48)
+    monkeypatch.setenv("AUTH_COOKIE_SECURE", "true")
+    monkeypatch.setenv("AUTH_COOKIE_SAMESITE", "lax")
+    monkeypatch.setenv("CORS_ORIGINS", "")
+    monkeypatch.setenv("ALLOWED_HOSTS", "identity.example.com")
+    monkeypatch.setattr(config, "IS_POSTGRESQL", True)
+
+    settings = config.get_runtime_settings()
+    config.validate_runtime_configuration(settings)
+
+    assert settings.cors_origins == ()
