@@ -30,7 +30,7 @@ from app.api.users import router as users_router
 from app.api.vector_search import router as vector_search_router
 from app.auth.middleware import authentication_middleware
 from app.database.base import Base
-from app.database.session import SessionLocal, engine
+from app.database.session import IS_SQLITE, SessionLocal, engine
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 from app.services.scheduled_report_scheduler import register_scheduled_report
@@ -39,7 +39,12 @@ import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
 
 
-Base.metadata.create_all(bind=engine)
+# SQLite remains a lightweight backwards-compatible fallback for local/test use.
+# PostgreSQL schema changes are owned by Alembic and must be applied with
+# `alembic upgrade head` before application startup.
+if IS_SQLITE:
+    Base.metadata.create_all(bind=engine)
+
 with SessionLocal() as db:
     seed_rbac(db)
 
