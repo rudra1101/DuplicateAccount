@@ -13,6 +13,13 @@ from sqlalchemy import MetaData, and_, create_engine, delete, func, insert, sele
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BACKEND_DIR / ".env")
 
+CHAT_ORPHAN_RELATIONSHIP = "chat_messages.conversation_id->chat_conversations.id"
+KNOWLEDGE_ORPHAN_RELATIONSHIP = "knowledge_chunks.document_id->knowledge_documents.id"
+SUPPORTED_ORPHAN_RELATIONSHIPS = {
+    CHAT_ORPHAN_RELATIONSHIP,
+    KNOWLEDGE_ORPHAN_RELATIONSHIP,
+}
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -60,11 +67,7 @@ def print_counts(title: str, counts: dict[str, int]) -> None:
 
 
 def find_source_orphans(source_engine, metadata: MetaData) -> dict[str, list[dict[str, object]]]:
-    """Find simple single-column FK violations already present in SQLite.
-
-    Older SQLite runs may contain rows written while FK enforcement was disabled.
-    PostgreSQL will correctly reject those rows, so surface them before copying.
-    """
+    """Find simple single-column FK violations already present in a database."""
     issues: dict[str, list[dict[str, object]]] = defaultdict(list)
 
     with source_engine.connect() as connection:
@@ -79,16 +82,15 @@ def find_source_orphans(source_engine, metadata: MetaData) -> dict[str, list[dic
                 parent_column = element.column
                 parent = parent_column.table
 
-                orphan_condition = and_(
-                    child_column.is_not(None),
-                    parent_column.is_(None),
-                )
                 stmt = (
                     select(child_column, func.count().label("row_count"))
-                    .select_from(
-                        child.outerjoin(parent, child_column == parent_column)
+                    .select_from(child.outerjoin(parent, child_column == parent_column))
+                    .where(
+                        and_(
+                            child_column.is_not(None),
+                            parent_column.is_(None),
+                        )
                     )
-                    .where(orphan_condition)
                     .group_by(child_column)
                 )
 
@@ -120,13 +122,7 @@ def recover_missing_chat_conversations(
     source_metadata: MetaData,
     target_metadata: MetaData,
 ) -> int:
-    """Reconstruct missing chat-conversation parents without dropping messages.
-
-    A legacy SQLite database may contain chat_messages whose conversation_id has
-    no corresponding chat_conversations row. PostgreSQL enforces the FK. Create
-    a minimal parent using the orphaned message's earliest timestamp so all chat
-    history survives the migration with referential integrity restored.
-    """
+    """Reconstruct missing chat-conversation parents without dropping messages."""
     if "chat_messages" not in source_metadata.tables or "chat_conversations" not in source_metadata.tables:
         return 0
 
@@ -174,6 +170,73 @@ def recover_missing_chat_conversations(
 
     print(
         f"chat_conversations               recovered {len(payload)} missing parent conversation(s)"
+    )
+    return len(payload)
+
+
+def recover_missing_knowledge_documents(
+    source_engine,
+    target_engine,
+    source_metadata: MetaData,
+    target_metadata: MetaData,
+) -> int:
+    """Reconstruct missing knowledge-document parents without dropping chunks."""
+    if "knowledge_chunks" not in source_metadata.tables or "knowledge_documents" not in source_metadata.tables:
+        return 0
+
+    source_chunks = source_metadata.tables["knowledge_chunks"]
+    source_documents = source_metadata.tables["knowledge_documents"]
+    target_documents = target_metadata.tables["knowledge_documents"]
+
+    stmt = (
+        select(
+            source_chunks.c.document_id,
+            func.count().label("chunk_count"),
+            func.coalesce(func.sum(source_chunks.c.character_count), 0).label("character_count"),
+            func.min(source_chunks.c.created_at).label("first_chunk_at"),
+            func.max(source_chunks.c.created_at).label("last_chunk_at"),
+        )
+        .select_from(
+            source_chunks.outerjoin(
+                source_documents,
+                source_chunks.c.document_id == source_documents.c.id,
+            )
+        )
+        .where(source_documents.c.id.is_(None))
+        .group_by(source_chunks.c.document_id)
+    )
+
+    with source_engine.connect() as source_connection:
+        orphan_groups = source_connection.execute(stmt).mappings().all()
+
+    if not orphan_groups:
+        return 0
+
+    payload = []
+    for row in orphan_groups:
+        document_id = int(row["document_id"])
+        created_at = row["first_chunk_at"] or datetime.utcnow()
+        updated_at = row["last_chunk_at"] or created_at
+        payload.append(
+            {
+                "id": document_id,
+                "name": f"Recovered Knowledge Document {document_id}",
+                "original_filename": f"recovered-knowledge-document-{document_id}.txt",
+                "content_type": "text/plain",
+                "status": "READY",
+                "chunk_count": int(row["chunk_count"] or 0),
+                "character_count": int(row["character_count"] or 0),
+                "error_message": "Parent document metadata was missing in legacy SQLite data and was reconstructed during PostgreSQL migration.",
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+        )
+
+    with target_engine.begin() as target_connection:
+        target_connection.execute(insert(target_documents), payload)
+
+    print(
+        f"knowledge_documents              recovered {len(payload)} missing parent document(s)"
     )
     return len(payload)
 
@@ -239,11 +302,10 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
     orphan_issues = find_source_orphans(source_engine, source_metadata)
     print_source_orphans(orphan_issues)
 
-    supported_orphan_relationship = "chat_messages.conversation_id->chat_conversations.id"
     unsupported_orphans = {
         relationship: rows
         for relationship, rows in orphan_issues.items()
-        if relationship != supported_orphan_relationship
+        if relationship not in SUPPORTED_ORPHAN_RELATIONSHIPS
     }
     if unsupported_orphans:
         raise RuntimeError(
@@ -276,6 +338,7 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
 
     print("\nCopying rows...")
     recovered_chat_conversations = 0
+    recovered_knowledge_documents = 0
 
     with source_engine.connect() as source_connection:
         for source_table in source_metadata.sorted_tables:
@@ -306,6 +369,13 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
                     source_metadata,
                     target_metadata,
                 )
+            elif source_table.name == "knowledge_documents":
+                recovered_knowledge_documents = recover_missing_knowledge_documents(
+                    source_engine,
+                    target_engine,
+                    source_metadata,
+                    target_metadata,
+                )
 
     reset_postgres_sequences(target_engine, target_metadata)
 
@@ -318,6 +388,12 @@ def migrate(source_engine, target_engine, batch_size: int, truncate_target: bool
         print(
             "\nValidation note: chat_conversations target includes "
             f"{recovered_chat_conversations} recovered parent row(s) required to preserve orphaned SQLite chat messages."
+        )
+    if recovered_knowledge_documents:
+        expected_counts["knowledge_documents"] += recovered_knowledge_documents
+        print(
+            "Validation note: knowledge_documents target includes "
+            f"{recovered_knowledge_documents} recovered parent row(s) required to preserve orphaned SQLite knowledge chunks."
         )
 
     mismatches = {
