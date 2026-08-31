@@ -117,20 +117,25 @@ function ScheduledExecutiveReportCard() {
     updateConfig("selectedColumns", Array.from(selected));
   };
 
+  const saveSchedule = async (): Promise<ScheduledReportConfig> => {
+    const saved = await updateScheduledReport({
+      enabled: config.enabled,
+      frequency: config.frequency,
+      includeAdmins: config.includeAdmins,
+      recipientEmails: recipients,
+      selectedColumns: config.selectedColumns,
+    });
+    setConfig(saved);
+    setRecipientText(saved.recipientEmails.join(", "));
+    return saved;
+  };
+
   const handleSave = async () => {
     try {
       setSaving(true);
       setMessage("");
       setError("");
-      const saved = await updateScheduledReport({
-        enabled: config.enabled,
-        frequency: config.frequency,
-        includeAdmins: config.includeAdmins,
-        recipientEmails: recipients,
-        selectedColumns: config.selectedColumns,
-      });
-      setConfig(saved);
-      setRecipientText(saved.recipientEmails.join(", "));
+      await saveSchedule();
       setMessage("Scheduled report settings saved.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save scheduled report settings.");
@@ -144,10 +149,12 @@ function ScheduledExecutiveReportCard() {
       setTesting(true);
       setMessage("");
       setError("");
-      await handleSave();
+      await saveSchedule();
       await sendScheduledReportTest();
-      setMessage("Test report sent successfully.");
+      window.dispatchEvent(new Event("scheduled-report-generated"));
+      setMessage("Test report sent successfully and added to report history.");
     } catch (err) {
+      window.dispatchEvent(new Event("scheduled-report-generated"));
       setError(err instanceof Error ? err.message : "Unable to send test report.");
     } finally {
       setTesting(false);
