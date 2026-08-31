@@ -29,11 +29,11 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      DATABASE_NAME: ${POSTGRES_DB:-identityai}
-      DATABASE_USER: ${POSTGRES_USER:-identityai}
-      DATABASE_PASSWORD: ${POSTGRES_PASSWORD}
+      DATABASE_HOST: ${DATABASE_HOST:-postgres}
+      DATABASE_PORT: ${DATABASE_PORT:-5432}
+      DATABASE_NAME: ${DATABASE_NAME:-identityai}
+      DATABASE_USER: ${DATABASE_USER:-identityai}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-${POSTGRES_PASSWORD}}
       APP_ENV: ${APP_ENV:-development}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1,backend,testserver}
       CORS_ORIGINS: ${CORS_ORIGINS:-}
