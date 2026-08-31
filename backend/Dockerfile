@@ -15,7 +15,9 @@ RUN python -m pip install --upgrade pip \
 
 COPY --chown=identityai:identityai . .
 
-RUN chmod +x /app/docker-entrypoint.sh
+# Normalize Windows CRLF checkouts before executing the Linux entrypoint.
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+    && chmod +x /app/docker-entrypoint.sh
 
 USER identityai
 
