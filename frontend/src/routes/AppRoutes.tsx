@@ -11,7 +11,7 @@ import Admin from "../pages/Admin/Admin";
 import Settings from "../pages/Settings/Settings";
 import LoginPage from "../pages/Login/LoginPage";
 import ReviewQueue from "../pages/Review/ReviewQueue";
-import ApplicationReview from "../pages/review/ApplicationReview";
+import ApplicationReview from "../pages/Review/ApplicationReview";
 import RemediationQueue from "../pages/remediation/RemediationQueue";
 import UploadAccounts from "../pages/upload/UploadAccounts";
 import Integrations from "../pages/integrations/Integrations";
