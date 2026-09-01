@@ -24,6 +24,7 @@ from app.db_models.role_permission import RolePermissionRecord
 from app.db_models.service import ServiceRecord
 from app.db_models.user import UserRecord
 from app.db_models.scheduled_report import ScheduledReportConfigRecord, ScheduledReportRunRecord
+from app.db_models.application_settings import ApplicationSettingsRecord
 
 __all__ = [
     "AccountRecord",
@@ -53,4 +54,5 @@ __all__ = [
     "UserRecord",
     "ScheduledReportConfigRecord",
     "ScheduledReportRunRecord",
+    "ApplicationSettingsRecord",
 ]
