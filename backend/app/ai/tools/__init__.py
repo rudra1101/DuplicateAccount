@@ -1,3 +1,8 @@
+from app.ai.tools.action_tools import (
+    CreateRemediationTicketTool,
+    GenerateReportTool,
+    NavigateAppTool,
+)
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
 )
@@ -13,20 +18,18 @@ from app.ai.tools.operations_tools import (
 )
 from app.ai.tools.registry import AIToolRegistry
 from app.ai.tools.review_tools import (
+    GetConfidenceBreakdownTool,
     GetDuplicateGroupDetailsTool,
     GetDuplicateSummaryTool,
     GetReviewStatisticsTool,
     SearchDuplicateGroupsTool,
-    GetConfidenceBreakdownTool,
-
 )
 from app.ai.tools.training_tools import (
     GetTrainingLabelSummaryTool,
 )
-
 from app.ai.tools.knowledge_tools import (
-    SearchKnowledgeBaseTool,
     ListKnowledgeDocumentsTool,
+    SearchKnowledgeBaseTool,
 )
 
 
@@ -53,5 +56,8 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(SearchKnowledgeBaseTool())
     registry.register(ListKnowledgeDocumentsTool())
 
+    registry.register(GenerateReportTool())
+    registry.register(CreateRemediationTicketTool())
+    registry.register(NavigateAppTool())
 
     return registry
