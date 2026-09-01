@@ -37,7 +37,7 @@ const menuItems = [
   { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", permissions: ["user.view", "role.view"] },
   { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload", permissions: ["upload.manage"] },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
-  { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.view"] },
+  { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.manage"] },
   { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
   { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
   { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"] },
