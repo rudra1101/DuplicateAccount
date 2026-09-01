@@ -44,6 +44,14 @@ export interface ServiceDeskSettingsUpdate extends Omit<ServiceDeskSettings, "se
   clearSecret?: boolean;
 }
 
+export interface RemediationSlaSettings {
+  enabled: boolean;
+  slaHours: number;
+  warningHours: number;
+  autoEscalate: boolean;
+  escalationEmails: string[];
+}
+
 export interface BrandingSettings {
   customLogo: boolean;
   filename: string | null;
@@ -117,6 +125,25 @@ export async function saveServiceDeskSettings(
     body: JSON.stringify(payload),
   });
   return expectJson<ServiceDeskSettings>(response, "Unable to save Service Desk settings.");
+}
+
+export async function getRemediationSlaSettings(): Promise<RemediationSlaSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/remediation-sla`, {
+    credentials: "include",
+  });
+  return expectJson<RemediationSlaSettings>(response, "Unable to load remediation SLA settings.");
+}
+
+export async function saveRemediationSlaSettings(
+  payload: RemediationSlaSettings,
+): Promise<RemediationSlaSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/remediation-sla`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return expectJson<RemediationSlaSettings>(response, "Unable to save remediation SLA settings.");
 }
 
 export async function getBrandingSettings(): Promise<BrandingSettings> {
