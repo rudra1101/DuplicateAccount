@@ -22,6 +22,7 @@ import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "../../auth/AuthContext";
+import { getReportEmailTemplates, type ReportEmailTemplate } from "../../services/reportEmailTemplateService";
 import {
   getScheduledReport,
   sendScheduledReportTest,
@@ -41,9 +42,11 @@ function formatDate(value: string | null): string {
 function ScheduledExecutiveReportCard() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission("report.manage_schedule");
+  const canManageTemplates = hasPermission("report.manage_templates");
 
   const [config, setConfig] = useState<ScheduledReportConfig | null>(null);
   const [snapshot, setSnapshot] = useState<ExecutiveDuplicateSnapshot | null>(null);
+  const [templates, setTemplates] = useState<ReportEmailTemplate[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -55,7 +58,7 @@ function ScheduledExecutiveReportCard() {
     if (!canManage) return;
 
     let active = true;
-    void (async () => {
+    const load = async () => {
       try {
         setLoading(true);
         const result = await getScheduledReport();
@@ -63,6 +66,11 @@ function ScheduledExecutiveReportCard() {
         setConfig(result.config);
         setSnapshot(result.snapshot);
         setRecipientText(result.config.recipientEmails.join(", "));
+
+        if (canManageTemplates) {
+          const templateResult = await getReportEmailTemplates();
+          if (active) setTemplates(templateResult.templates.filter((item) => item.isActive));
+        }
       } catch (err) {
         if (active) {
           setError(err instanceof Error ? err.message : "Unable to load scheduled report settings.");
@@ -70,12 +78,16 @@ function ScheduledExecutiveReportCard() {
       } finally {
         if (active) setLoading(false);
       }
-    })();
+    };
 
+    void load();
+    const refreshTemplates = () => void load();
+    window.addEventListener("report-email-templates-changed", refreshTemplates);
     return () => {
       active = false;
+      window.removeEventListener("report-email-templates-changed", refreshTemplates);
     };
-  }, [canManage]);
+  }, [canManage, canManageTemplates]);
 
   const recipients = useMemo(
     () => recipientText
@@ -124,6 +136,7 @@ function ScheduledExecutiveReportCard() {
       includeAdmins: config.includeAdmins,
       recipientEmails: recipients,
       selectedColumns: config.selectedColumns,
+      emailTemplateId: config.emailTemplateId,
     });
     setConfig(saved);
     setRecipientText(saved.recipientEmails.join(", "));
@@ -174,8 +187,7 @@ function ScheduledExecutiveReportCard() {
                 </Typography>
               </Stack>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Platform-managed duplicate posture report. Admins can configure delivery frequency,
-                recipients, and detail columns; the core risk summary is always included.
+                Configure delivery frequency, recipients, email template, and CSV detail columns.
               </Typography>
             </Box>
             <Chip
@@ -218,6 +230,27 @@ function ScheduledExecutiveReportCard() {
               <MenuItem value="WEEKLY">Weekly</MenuItem>
               <MenuItem value="MONTHLY">Monthly</MenuItem>
               <MenuItem value="QUARTERLY">Quarterly</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth>
+            <InputLabel>Email Template</InputLabel>
+            <Select
+              value={config.emailTemplateId ?? ""}
+              label="Email Template"
+              onChange={(event) =>
+                updateConfig(
+                  "emailTemplateId",
+                  event.target.value === "" ? null : Number(event.target.value),
+                )
+              }
+            >
+              <MenuItem value="">System default template</MenuItem>
+              {templates.map((template) => (
+                <MenuItem key={template.id} value={template.id}>
+                  {template.name}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
 
