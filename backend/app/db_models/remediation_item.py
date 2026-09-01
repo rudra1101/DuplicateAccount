@@ -45,6 +45,10 @@ class RemediationItemRecord(Base):
     ticket_last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ticket_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    sla_escalated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sla_notification_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
