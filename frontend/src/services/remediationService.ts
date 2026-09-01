@@ -9,6 +9,7 @@ export type RemediationStatus =
 
 export type RemediationAction = "DISABLE" | "DELETE";
 export type RemediationTarget = "ACCOUNT_1" | "ACCOUNT_2";
+export type RemediationSlaStatus = "NONE" | "ON_TRACK" | "WARNING" | "OVERDUE" | "ESCALATED";
 
 export interface RemediationFilters {
   status?: RemediationStatus | "ALL";
@@ -19,6 +20,7 @@ export interface RemediationFilters {
   remediationAction?: RemediationAction | "ALL";
   ticketStatus?: string;
   hasTicket?: boolean | null;
+  slaStatus?: Exclude<RemediationSlaStatus, "NONE"> | "ALL";
 }
 
 export interface BulkActionResult {
@@ -51,6 +53,11 @@ export interface RemediationItem {
   ticketCreatedAt: string | null;
   ticketLastSyncedAt: string | null;
   ticketError: string | null;
+  slaStatus: RemediationSlaStatus;
+  slaDueAt: string | null;
+  slaEscalatedAt: string | null;
+  slaNotificationSentAt: string | null;
+  slaSecondsRemaining: number | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -105,6 +112,7 @@ export async function getRemediationItems(filters: RemediationFilters = {}): Pro
   if (filters.remediationAction && filters.remediationAction !== "ALL") params.set("remediationAction", filters.remediationAction);
   if (filters.ticketStatus?.trim()) params.set("ticketStatus", filters.ticketStatus.trim());
   if (filters.hasTicket !== null && filters.hasTicket !== undefined) params.set("hasTicket", String(filters.hasTicket));
+  if (filters.slaStatus && filters.slaStatus !== "ALL") params.set("slaStatus", filters.slaStatus);
   const query = params.toString();
   const response = await fetch(`${API_BASE_URL}/remediation/${query ? `?${query}` : ""}`, { credentials: "include" });
   const result = await parseResponse<RemediationListResponse>(response, "Unable to load remediation queue.");

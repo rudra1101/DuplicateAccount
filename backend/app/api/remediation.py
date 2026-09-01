@@ -57,6 +57,7 @@ def remediation_queue(
     remediation_action: str | None = Query(default=None, alias="remediationAction"),
     ticket_status: str | None = Query(default=None, alias="ticketStatus"),
     has_ticket: bool | None = Query(default=None, alias="hasTicket"),
+    sla_status: str | None = Query(default=None, alias="slaStatus"),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("remediation.view")),
 ):
@@ -71,6 +72,7 @@ def remediation_queue(
             remediation_action=remediation_action,
             ticket_status=ticket_status,
             has_ticket=has_ticket,
+            sla_status=sla_status,
         )
         return {"count": len(items), "items": items}
     except ValueError as exc:

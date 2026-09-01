@@ -9,6 +9,13 @@ from sqlalchemy.orm import Session
 from app.db_models.integration import IntegrationRecord
 from app.db_models.remediation_item import RemediationItemRecord
 from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
+from app.services.remediation_sla_service import (
+    VALID_SLA_FILTERS,
+    assign_due_at,
+    calculate_sla_state,
+    remediation_sla_settings_response,
+    serialize_sla,
+)
 from app.services.review_pair_feedback_service import normalize_pair_keys, upsert_pair_feedback
 
 
@@ -74,6 +81,7 @@ def record_review_decision(
     )
 
     if normalized_decision == "DUPLICATE":
+        reset_sla = False
         if existing is None:
             existing = RemediationItemRecord(
                 integration_id=integration_id,
@@ -83,8 +91,10 @@ def record_review_decision(
                 status="PENDING_ACTION",
             )
             db.add(existing)
+            reset_sla = True
         elif existing.status in {"IGNORED", "FAILED"} and not existing.service_desk_ticket_id:
             existing.status = "PENDING_ACTION"
+            reset_sla = True
 
         existing.account_1_data = data_1
         existing.account_2_data = data_2
@@ -92,13 +102,20 @@ def record_review_decision(
         existing.reviewer_name = (reviewer_name or "").strip() or None
         existing.review_comment = (comment or "").strip() or None
         existing.updated_at = _utc_now()
+        assign_due_at(db, existing, reset=reset_sla)
     elif existing is not None and normalized_decision in {"NOT_DUPLICATE", "UNCERTAIN"}:
         existing.status = "IGNORED"
         existing.action_comment = f"Removed from active remediation after reviewer decision: {normalized_decision}."
         existing.updated_at = _utc_now()
 
 
-def _serialize_remediation(record: RemediationItemRecord, integration_name: str | None = None) -> dict[str, Any]:
+def _serialize_remediation(
+    record: RemediationItemRecord,
+    integration_name: str | None = None,
+    *,
+    sla_enabled: bool = False,
+    warning_hours: int = 24,
+) -> dict[str, Any]:
     return {
         "id": record.id,
         "integrationId": record.integration_id,
@@ -122,6 +139,7 @@ def _serialize_remediation(record: RemediationItemRecord, integration_name: str 
         "ticketCreatedAt": record.ticket_created_at.isoformat() if record.ticket_created_at else None,
         "ticketLastSyncedAt": record.ticket_last_synced_at.isoformat() if record.ticket_last_synced_at else None,
         "ticketError": record.ticket_error,
+        **serialize_sla(record, enabled=sla_enabled, warning_hours=warning_hours),
         "createdAt": record.created_at.isoformat() if record.created_at else None,
         "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
     }
@@ -138,9 +156,16 @@ def list_remediation_items(
     remediation_action: str | None = None,
     ticket_status: str | None = None,
     has_ticket: bool | None = None,
+    sla_status: str | None = None,
 ) -> list[dict[str, Any]]:
     if min_confidence is not None and max_confidence is not None and min_confidence > max_confidence:
         raise ValueError("Minimum confidence cannot be greater than maximum confidence.")
+
+    normalized_sla_status = None
+    if sla_status:
+        normalized_sla_status = sla_status.strip().upper()
+        if normalized_sla_status not in VALID_SLA_FILTERS:
+            raise ValueError("Invalid SLA status.")
 
     query = select(RemediationItemRecord)
     if status:
@@ -179,6 +204,18 @@ def list_remediation_items(
             query.order_by(RemediationItemRecord.updated_at.desc(), RemediationItemRecord.id.desc())
         ).all()
     )
+    sla_settings = remediation_sla_settings_response(db)
+    if normalized_sla_status:
+        records = [
+            record
+            for record in records
+            if calculate_sla_state(
+                record,
+                warning_hours=int(sla_settings["warningHours"]),
+                enabled=bool(sla_settings["enabled"]),
+            ) == normalized_sla_status
+        ]
+
     integration_ids = {record.integration_id for record in records}
     names = {
         row.id: row.name
@@ -189,7 +226,15 @@ def list_remediation_items(
         ).all()
     } if integration_ids else {}
 
-    return [_serialize_remediation(record, names.get(record.integration_id)) for record in records]
+    return [
+        _serialize_remediation(
+            record,
+            names.get(record.integration_id),
+            sla_enabled=bool(sla_settings["enabled"]),
+            warning_hours=int(sla_settings["warningHours"]),
+        )
+        for record in records
+    ]
 
 
 def list_decision_history(db: Session, *, limit: int = 200) -> list[dict[str, Any]]:
@@ -245,9 +290,6 @@ def update_remediation_status(
     record.updated_at = _utc_now()
 
     if normalized == "IGNORED":
-        # Ignore from Remediation means "send this pair back for review" rather
-        # than "permanently not a duplicate". Passing UNCERTAIN removes any
-        # durable DUPLICATE pair feedback while preserving the audit history.
         upsert_pair_feedback(
             db,
             integration_id=record.integration_id,

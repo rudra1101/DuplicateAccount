@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 from app.auth import require_permission
 from app.database.session import get_db
 from app.services.email_service import send_email
+from app.services.remediation_sla_service import (
+    remediation_sla_settings_response,
+    update_remediation_sla_settings,
+)
 from app.services.service_desk_service import (
     service_desk_settings_response,
     update_service_desk_settings,
@@ -59,6 +63,14 @@ class ServiceDeskSettingsUpdate(BaseModel):
     completedStatuses: list[str] = ["completed", "resolved", "closed"]
     payloadTemplate: str
     verifyTls: bool = True
+
+
+class RemediationSlaSettingsUpdate(BaseModel):
+    enabled: bool = False
+    slaHours: int = Field(default=72, ge=1, le=24 * 365)
+    warningHours: int = Field(default=24, ge=0)
+    autoEscalate: bool = True
+    escalationEmails: list[EmailStr] = []
 
 
 @router.get(
@@ -146,6 +158,36 @@ def put_service_desk_settings(
             verify_tls=payload.verifyTls,
         )
         return service_desk_settings_response(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/remediation-sla",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def get_remediation_sla_settings(db: Session = Depends(get_db)):
+    return remediation_sla_settings_response(db)
+
+
+@router.put(
+    "/remediation-sla",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def put_remediation_sla_settings(
+    payload: RemediationSlaSettingsUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        update_remediation_sla_settings(
+            db,
+            enabled=payload.enabled,
+            sla_hours=payload.slaHours,
+            warning_hours=payload.warningHours,
+            auto_escalate=payload.autoEscalate,
+            escalation_emails=[str(item) for item in payload.escalationEmails],
+        )
+        return remediation_sla_settings_response(db)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

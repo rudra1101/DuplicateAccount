@@ -33,9 +33,10 @@ import {
   type SmtpSettings,
 } from "../../services/settingsService";
 import EmailTemplatesCard from "./EmailTemplatesCard";
+import RemediationSlaSettingsCard from "./RemediationSlaSettingsCard";
 import ServiceDeskSettingsCard from "./ServiceDeskSettingsCard";
 
-type SettingsTab = "smtp" | "branding" | "emailTemplates" | "serviceDesk";
+type SettingsTab = "smtp" | "branding" | "emailTemplates" | "serviceDesk" | "remediationSla";
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("smtp");
@@ -200,6 +201,7 @@ const Settings = () => {
           <Tab value="branding" label="Branding" />
           <Tab value="emailTemplates" label="Email Templates" />
           <Tab value="serviceDesk" label="Service Desk" />
+          <Tab value="remediationSla" label="Remediation SLA" />
         </Tabs>
       </Card>
 
@@ -265,6 +267,7 @@ const Settings = () => {
 
       {activeTab === "emailTemplates" && <EmailTemplatesCard />}
       {activeTab === "serviceDesk" && <ServiceDeskSettingsCard />}
+      {activeTab === "remediationSla" && <RemediationSlaSettingsCard />}
     </Stack>
   );
 };

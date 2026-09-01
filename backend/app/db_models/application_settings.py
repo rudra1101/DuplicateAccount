@@ -40,6 +40,12 @@ class ApplicationSettingsRecord(Base):
     )
     service_desk_verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    remediation_sla_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    remediation_sla_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=72)
+    remediation_warning_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
+    remediation_auto_escalate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    remediation_escalation_emails: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
     logo_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     logo_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     logo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
