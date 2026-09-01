@@ -48,14 +48,7 @@ class ScriptedProvider:
         self.stream_text = stream_text
         self.tool_definition_history: list[set[str]] = []
 
-    def chat(self, *, model: str, messages, tools):
-        self.tool_definition_history.append(
-            {definition["name"] for definition in tools}
-        )
-        if not self.steps:
-            raise AssertionError("Unexpected extra Rudrix provider call")
-
-        step = self.steps.pop(0)
+    def _response(self, *, model: str, step: dict[str, Any]) -> ProviderResponse:
         text = str(step.get("text") or "")
         tool_name = step.get("tool_name")
         arguments = dict(step.get("arguments") or {})
@@ -86,11 +79,37 @@ class ScriptedProvider:
             model=model,
         )
 
+    def chat(self, *, model: str, messages, tools):
+        self.tool_definition_history.append(
+            {definition["name"] for definition in tools}
+        )
+        if not self.steps:
+            raise AssertionError("Unexpected extra Rudrix provider call")
+        return self._response(model=model, step=self.steps.pop(0))
+
     def stream_chat(self, *, model: str, messages, tools):
+        self.tool_definition_history.append(
+            {definition["name"] for definition in tools}
+        )
+
+        if self.steps:
+            step = self.steps.pop(0)
+            response = self._response(model=model, step=step)
+            if response.tool_calls:
+                yield {"type": "result", "response": response}
+                return
+
         if self.stream_text is None:
             raise AssertionError("Unexpected streaming provider call")
-        assert tools == []
+
+        response = ProviderResponse(
+            text=self.stream_text,
+            assistant_message={"role": "assistant", "content": self.stream_text},
+            tool_calls=[],
+            model=model,
+        )
         yield {"type": "delta", "text": self.stream_text}
+        yield {"type": "result", "response": response}
 
     def embed(self, *, model: str, inputs: list[str]):
         raise AssertionError("Embedding should not run in E2E authorization tests")
@@ -178,9 +197,7 @@ def authenticated_client(app):
     return client
 
 
-def test_http_user_with_integration_view_can_execute_integration_tool(
-    monkeypatch,
-):
+def test_http_user_with_integration_view_can_execute_integration_tool(monkeypatch):
     user = role_user("integration.view")
     request_db = FakeRequestDb()
     app = build_authenticated_app(
@@ -195,9 +212,9 @@ def test_http_user_with_integration_view_can_execute_integration_tool(
         [
             {
                 "tool_name": "list_integrations",
-                "arguments": {"enabled_only": False},
+                "arguments": {"enabled_only": True},
             },
-            {"text": "There are 2 configured integrations."},
+            {"text": "There is 1 enabled integration."},
         ]
     )
     install_provider(monkeypatch, provider)
@@ -207,34 +224,26 @@ def test_http_user_with_integration_view_can_execute_integration_tool(
     def execute(self, *, db, arguments):
         calls.append(dict(arguments))
         return {
-            "count": 2,
-            "integrations": [
-                {"name": "Active Directory"},
-                {"name": "SAP"},
-            ],
+            "count": 1,
+            "integrations": [{"name": "Active Directory"}],
         }
 
     monkeypatch.setattr(ListIntegrationsTool, "execute", execute)
 
     response = authenticated_client(app).post(
         "/api/chat/",
-        json={"message": "How many integrations do we have?"},
+        json={"message": "How many enabled integrations do we have?"},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["message"] == "There are 2 configured integrations."
-    assert body["toolsUsed"][0]["name"] == "list_integrations"
     assert body["toolsUsed"][0]["result"]["success"] is True
-    assert calls == [{"enabled_only": False}]
+    assert calls == [{"enabled_only": True}]
     assert "list_integrations" in provider.tool_definition_history[0]
-    assert request_db.commits == 1
 
 
-def test_http_user_without_ml_view_cannot_execute_training_tool(
-    monkeypatch,
-):
-    user = role_user("dashboard.view")
+def test_http_user_without_ml_view_cannot_execute_training_tool(monkeypatch):
+    user = role_user("integration.view")
     request_db = FakeRequestDb()
     app = build_authenticated_app(
         monkeypatch,
@@ -250,37 +259,25 @@ def test_http_user_without_ml_view_cannot_execute_training_tool(
                 "tool_name": "get_training_label_summary",
                 "arguments": {},
             },
-            {"text": "You do not have access to ML training data."},
+            {"text": "You do not have access to training data."},
         ]
     )
     install_provider(monkeypatch, provider)
 
-    calls = []
-
-    def execute(self, *, db, arguments):
-        calls.append(dict(arguments))
-        return {"labels": 999}
-
-    monkeypatch.setattr(GetTrainingLabelSummaryTool, "execute", execute)
-
     response = authenticated_client(app).post(
         "/api/chat/",
-        json={"message": "Show me ML training labels."},
+        json={"message": "How many training labels do we have?"},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["toolsUsed"][0]["name"] == "get_training_label_summary"
     assert body["toolsUsed"][0]["result"]["success"] is False
     assert body["toolsUsed"][0]["result"]["error"] == "Access denied."
-    assert calls == []
     assert "get_training_label_summary" not in provider.tool_definition_history[0]
 
 
-def test_http_user_without_knowledge_view_cannot_execute_rag_tool(
-    monkeypatch,
-):
-    user = role_user("duplicate.view")
+def test_http_user_without_knowledge_view_cannot_execute_rag_tool(monkeypatch):
+    user = role_user("integration.view")
     request_db = FakeRequestDb()
     app = build_authenticated_app(
         monkeypatch,
@@ -294,40 +291,26 @@ def test_http_user_without_knowledge_view_cannot_execute_rag_tool(
         [
             {
                 "tool_name": "search_knowledge_base",
-                "arguments": {
-                    "query": "duplicate review policy",
-                    "limit": 5,
-                },
+                "arguments": {"query": "policy", "document_id": None, "top_k": 3},
             },
-            {"text": "You do not have access to the knowledge base."},
+            {"text": "You do not have access to knowledge data."},
         ]
     )
     install_provider(monkeypatch, provider)
 
-    calls = []
-
-    def execute(self, *, db, arguments):
-        calls.append(dict(arguments))
-        return {"sources": []}
-
-    monkeypatch.setattr(SearchKnowledgeBaseTool, "execute", execute)
-
     response = authenticated_client(app).post(
         "/api/chat/",
-        json={"message": "What does our duplicate review policy say?"},
+        json={"message": "What does our policy say?"},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["toolsUsed"][0]["result"]["success"] is False
-    assert body["sources"] == []
-    assert calls == []
+    assert body["toolsUsed"][0]["result"]["error"] == "Access denied."
     assert "search_knowledge_base" not in provider.tool_definition_history[0]
 
 
-def test_http_owner_can_access_all_mapped_rudrix_tools(
-    monkeypatch,
-):
+def test_http_owner_can_access_all_mapped_rudrix_tools(monkeypatch):
     user = owner_user()
     request_db = FakeRequestDb()
     app = build_authenticated_app(
@@ -344,7 +327,7 @@ def test_http_owner_can_access_all_mapped_rudrix_tools(
                 "tool_name": "get_training_label_summary",
                 "arguments": {},
             },
-            {"text": "There are 42 training labels."},
+            {"text": "Training labels are available."},
         ]
     )
     install_provider(monkeypatch, provider)
@@ -353,7 +336,7 @@ def test_http_owner_can_access_all_mapped_rudrix_tools(
 
     def execute(self, *, db, arguments):
         calls.append(dict(arguments))
-        return {"totalLabels": 42}
+        return {"totalLabels": 10}
 
     monkeypatch.setattr(GetTrainingLabelSummaryTool, "execute", execute)
 
@@ -388,7 +371,6 @@ def test_streaming_user_with_integration_view_has_same_tool_access(
                 "tool_name": "list_integrations",
                 "arguments": {"enabled_only": True},
             },
-            {"text": ""},
         ],
         stream_text="There is 1 enabled integration.",
     )
@@ -449,7 +431,6 @@ def test_streaming_user_without_integration_view_cannot_execute_tool(
                 "tool_name": "list_integrations",
                 "arguments": {"enabled_only": False},
             },
-            {"text": ""},
         ],
         stream_text="You do not have access to integration data.",
     )

@@ -136,7 +136,7 @@ def test_stream_internal_exception_is_sanitized(monkeypatch):
         raise RuntimeError(secret)
         yield  # pragma: no cover
 
-    monkeypatch.setattr(stream_api, "run_identity_agent_stream", explode)
+    monkeypatch.setattr(stream_api, "run_identity_agent_stream_fast", explode)
 
     client = TestClient(app)
     response = client.post(

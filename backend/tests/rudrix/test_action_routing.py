@@ -37,7 +37,7 @@ def test_navigation_request_routes_to_navigation_tool():
 
 
 def test_plain_explanation_avoids_tool_schema_overhead():
-    names = _selected_names("Explain the difference between deterministic and probabilistic matching")
+    names = _selected_names("Explain deterministic versus probabilistic identity resolution")
     assert names == set()
 
 
