@@ -11,6 +11,8 @@ from app.ai.tools.base import (
 )
 
 
+AUTHENTICATED_TOOL = "__authenticated__"
+
 TOOL_PERMISSION_MAP: dict[str, str] = {
     "get_dashboard_summary": "dashboard.view",
     "list_integrations": "integration.view",
@@ -27,6 +29,11 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "get_training_label_summary": "ml.view",
     "search_knowledge_base": "knowledge.view",
     "list_knowledge_documents": "knowledge.view",
+    "generate_report": "report.view",
+    "create_remediation_ticket": "remediation.manage",
+    # Navigation performs destination-specific RBAC inside the tool itself.
+    # Chat API requests are already authenticated before Rudrix executes.
+    "navigate_app": AUTHENTICATED_TOOL,
 }
 
 
@@ -66,6 +73,9 @@ class AIToolRegistry:
         # assigned to an RBAC permission.
         if permission is None:
             return False
+
+        if permission == AUTHENTICATED_TOOL:
+            return True
 
         return has_rudrix_permission(permission)
 
