@@ -2,6 +2,7 @@ from app.ai.tools.action_tools import (
     CreateRemediationTicketTool,
     GenerateReportTool,
     NavigateAppTool,
+    SearchRemediationItemsTool,
 )
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
@@ -57,6 +58,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(ListKnowledgeDocumentsTool())
 
     registry.register(GenerateReportTool())
+    registry.register(SearchRemediationItemsTool())
     registry.register(CreateRemediationTicketTool())
     registry.register(NavigateAppTool())
 
