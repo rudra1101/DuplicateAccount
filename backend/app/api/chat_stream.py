@@ -13,8 +13,8 @@ from fastapi.responses import (
 )
 from sqlalchemy.orm import Session
 
-from app.ai.agent_service import (
-    run_identity_agent_stream,
+from app.ai.fast_agent_service import (
+    run_identity_agent_stream_fast,
 )
 from app.ai.authorization import (
     permissions_for_user,
@@ -119,7 +119,7 @@ def stream_chat(
 
             final_response = None
             agent_events = iter(
-                run_identity_agent_stream(
+                run_identity_agent_stream_fast(
                     db=db,
                     request=request,
                 )
