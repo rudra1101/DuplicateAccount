@@ -68,11 +68,28 @@ def update_remediation_sla_settings(
             raise ValueError(f"Invalid escalation email address: {value}") from exc
 
     settings = get_or_create_application_settings(db)
+    was_enabled = bool(settings.remediation_sla_enabled)
     settings.remediation_sla_enabled = enabled
     settings.remediation_sla_hours = sla_hours
     settings.remediation_warning_hours = warning_hours
     settings.remediation_auto_escalate = auto_escalate
     settings.remediation_escalation_emails = ",".join(dict.fromkeys(cleaned_emails))
+
+    if enabled:
+        active_records = list(
+            db.scalars(
+                select(RemediationItemRecord).where(
+                    RemediationItemRecord.status.in_(ACTIVE_SLA_STATUSES)
+                )
+            ).all()
+        )
+        now = _utc_now()
+        for record in active_records:
+            if record.sla_due_at is None or not was_enabled:
+                record.sla_due_at = now + timedelta(hours=sla_hours)
+                record.sla_escalated_at = None
+                record.sla_notification_sent_at = None
+
     db.commit()
     db.refresh(settings)
     return settings
