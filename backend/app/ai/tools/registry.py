@@ -30,6 +30,7 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "search_knowledge_base": "knowledge.view",
     "list_knowledge_documents": "knowledge.view",
     "generate_report": "report.view",
+    "search_remediation_items": "remediation.view",
     "create_remediation_ticket": "remediation.manage",
     # Navigation performs destination-specific RBAC inside the tool itself.
     # Chat API requests are already authenticated before Rudrix executes.
