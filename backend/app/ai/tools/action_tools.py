@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.authorization import has_rudrix_permission
 from app.ai.tools.base import BaseAITool
+from app.services.remediation_service import list_remediation_items
 from app.services.report_service import REPORT_CATALOG, build_report
 from app.services.service_desk_service import create_ticket
 
@@ -124,6 +126,129 @@ class GenerateReportTool(BaseAITool):
                 "filters": filters,
                 "autoExecute": False,
             },
+        }
+
+
+class SearchRemediationItemsTool(BaseAITool):
+    name = "search_remediation_items"
+
+    description = (
+        "Search CURRENT duplicate-account remediation items so Rudrix can locate "
+        "the correct remediation item ID before creating a Service Desk ticket. "
+        "Use this when the user identifies an application, username, email, or "
+        "account but does not provide the remediation item ID. This tool is read-only."
+    )
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "search": {
+                "type": ["string", "null"],
+                "description": "Username, email, account key, or other account text.",
+            },
+            "application": {
+                "type": ["string", "null"],
+                "description": "Optional application name filter.",
+            },
+            "status": {
+                "type": ["string", "null"],
+                "enum": [
+                    "PENDING_ACTION",
+                    "TICKET_OPEN",
+                    "ACTIONED",
+                    "IGNORED",
+                    "FAILED",
+                    None,
+                ],
+            },
+            "minimum_confidence": {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": 100,
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+            },
+        },
+        "required": [
+            "search",
+            "application",
+            "status",
+            "minimum_confidence",
+            "limit",
+        ],
+        "additionalProperties": False,
+    }
+
+    def execute(
+        self,
+        *,
+        db: Session,
+        arguments: dict[str, Any],
+    ) -> Any:
+        status = str(arguments.get("status") or "").strip().upper() or None
+        application = str(arguments.get("application") or "").strip() or None
+        minimum_confidence = arguments.get("minimum_confidence")
+        limit = max(1, min(int(arguments.get("limit") or 10), 20))
+        search = str(arguments.get("search") or "").strip().lower()
+
+        items = list_remediation_items(
+            db,
+            status=status,
+            application=application,
+            min_confidence=(
+                float(minimum_confidence)
+                if minimum_confidence is not None
+                else None
+            ),
+        )
+
+        if search:
+            filtered: list[dict[str, Any]] = []
+            for item in items:
+                searchable = " ".join(
+                    [
+                        str(item.get("account1Key") or ""),
+                        str(item.get("account2Key") or ""),
+                        json.dumps(item.get("account1") or {}, default=str),
+                        json.dumps(item.get("account2") or {}, default=str),
+                    ]
+                ).lower()
+                if search in searchable:
+                    filtered.append(item)
+            items = filtered
+
+        results = []
+        for item in items[:limit]:
+            account1 = item.get("account1") or {}
+            account2 = item.get("account2") or {}
+            results.append(
+                {
+                    "remediationItemId": item.get("id"),
+                    "integrationId": item.get("integrationId"),
+                    "integrationName": item.get("integrationName"),
+                    "application": item.get("application"),
+                    "confidence": item.get("confidence"),
+                    "status": item.get("status"),
+                    "ticketId": item.get("ticketId"),
+                    "account1": {
+                        "key": item.get("account1Key"),
+                        "username": account1.get("username"),
+                        "email": account1.get("email"),
+                    },
+                    "account2": {
+                        "key": item.get("account2Key"),
+                        "username": account2.get("username"),
+                        "email": account2.get("email"),
+                    },
+                }
+            )
+
+        return {
+            "count": len(results),
+            "items": results,
         }
 
 
