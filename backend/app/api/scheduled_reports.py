@@ -31,6 +31,7 @@ class ScheduledReportUpdate(BaseModel):
     includeAdmins: bool = True
     recipientEmails: list[str] = []
     selectedColumns: list[str] = []
+    emailTemplateId: int | None = None
 
 
 @router.get("", dependencies=[Depends(require_permission("report.manage_schedule"))])
@@ -55,6 +56,7 @@ def update_schedule(
             include_admins=payload.includeAdmins,
             recipient_emails=payload.recipientEmails,
             selected_columns=payload.selectedColumns,
+            email_template_id=payload.emailTemplateId,
         )
         register_scheduled_report()
         db.refresh(config)
