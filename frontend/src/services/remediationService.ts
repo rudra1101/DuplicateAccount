@@ -2,9 +2,13 @@ import { API_BASE_URL } from "../config/api";
 
 export type RemediationStatus =
   | "PENDING_ACTION"
+  | "TICKET_OPEN"
   | "ACTIONED"
   | "IGNORED"
   | "FAILED";
+
+export type RemediationAction = "DISABLE" | "DELETE";
+export type RemediationTarget = "ACCOUNT_1" | "ACCOUNT_2";
 
 export interface RemediationItem {
   id: number;
@@ -21,6 +25,14 @@ export interface RemediationItem {
   status: RemediationStatus;
   actionComment: string | null;
   actionedBy: string | null;
+  remediationAction: RemediationAction | null;
+  targetAccountKey: string | null;
+  ticketId: string | null;
+  ticketStatus: string | null;
+  ticketUrl: string | null;
+  ticketCreatedAt: string | null;
+  ticketLastSyncedAt: string | null;
+  ticketError: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -31,7 +43,7 @@ export interface ReviewDecisionHistoryItem {
   application: string;
   account1Key: string;
   account2Key: string;
-  decision: "DUPLICATE" | "NOT_DUPLICATE" | "UNCERTAIN";
+  decision: "DUPLICATE" | "NOT_DUPLICATE" | "UNCERTAIN" | "REMEDIATED";
   confidence: number | null;
   reviewerName: string | null;
   comment: string | null;
@@ -77,6 +89,7 @@ export async function getRemediationItems(
   const query = params.toString();
   const response = await fetch(
     `${API_BASE_URL}/remediation/${query ? `?${query}` : ""}`,
+    { credentials: "include" },
   );
   const result = await parseResponse<RemediationListResponse>(
     response,
@@ -86,7 +99,7 @@ export async function getRemediationItems(
 }
 
 export async function getReviewDecisionHistory(): Promise<ReviewDecisionHistoryItem[]> {
-  const response = await fetch(`${API_BASE_URL}/remediation/history`);
+  const response = await fetch(`${API_BASE_URL}/remediation/history`, { credentials: "include" });
   const result = await parseResponse<HistoryListResponse>(
     response,
     "Unable to load reviewer decision history.",
@@ -102,8 +115,32 @@ export async function updateRemediationStatus(
 ): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/remediation/${itemId}/status`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status, comment: comment ?? null, actionedBy: actionedBy ?? null }),
   });
   await parseResponse(response, "Unable to update remediation item.");
+}
+
+export async function createRemediationTicket(
+  itemId: number,
+  target: RemediationTarget,
+  action: RemediationAction,
+  requestedBy?: string | null,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/remediation/${itemId}/ticket`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, action, requestedBy: requestedBy ?? null }),
+  });
+  await parseResponse(response, "Unable to create Service Desk ticket.");
+}
+
+export async function syncRemediationTicket(itemId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/remediation/${itemId}/ticket/sync`, {
+    method: "POST",
+    credentials: "include",
+  });
+  await parseResponse(response, "Unable to synchronize Service Desk ticket.");
 }
