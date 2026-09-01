@@ -1,7 +1,8 @@
 {
   "service": {"key":"settings","name":"Settings","description":"Application settings","category":"Settings","route":"/settings","icon":"settings","enabled":true,"sortOrder":70},
   "permissions": [
-    {"code":"settings.view","name":"View settings"}
+    {"code":"settings.view","name":"View settings"},
+    {"code":"settings.manage","name":"Manage application settings","description":"Configure SMTP and application branding"}
   ],
-  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":["settings.view"]}
+  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
 }

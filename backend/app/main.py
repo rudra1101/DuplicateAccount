@@ -26,6 +26,7 @@ from app.api.review import router as review_router
 from app.api.remediation import router as remediation_router
 from app.api.roles import router as roles_router
 from app.api.scans import router as scans_router
+from app.api.settings import router as settings_router
 from app.api.upload import router as upload_router
 from app.api.users import router as users_router
 from app.api.vector_search import router as vector_search_router
@@ -131,6 +132,7 @@ app.include_router(job_schedules_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(scheduled_reports_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(ml_router, prefix="/api")
 app.include_router(vector_search_router, prefix="/api")
