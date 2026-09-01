@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterator
 from typing import Any
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.agent_service import (
@@ -14,6 +16,7 @@ from app.ai.agent_service import (
 from app.ai.config import get_ai_settings
 from app.ai.providers.factory import AIProviderFactory
 from app.ai.tools import create_ai_tool_registry
+from app.db_models.integration import IntegrationRecord
 from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
 
 
@@ -27,6 +30,30 @@ TERMINAL_ACTION_TOOLS = {
 # evaluation time while preserving enough context for natural follow-ups.
 MAX_CONTEXT_MESSAGES = 12
 
+_REPORT_REFERENCES = (
+    "those",
+    "these",
+    "them",
+    "same",
+    "that data",
+    "this data",
+    "those accounts",
+    "these accounts",
+    "those results",
+    "these results",
+)
+
+_EXPLICIT_REPORT_SUBJECTS = (
+    "account inventory",
+    "duplicate candidate",
+    "duplicate candidates",
+    "review decision",
+    "review decisions",
+    "remediation",
+    "execution",
+    "executions",
+)
+
 
 def _tool_names(tool_calls: list[Any]) -> set[str]:
     names: set[str] = set()
@@ -38,6 +65,22 @@ def _tool_names(tool_calls: list[Any]) -> set[str]:
         if isinstance(name, str) and name:
             names.add(name)
     return names
+
+
+def _tool_call_parts(call: Any) -> tuple[str | None, dict[str, Any] | None]:
+    if isinstance(call, dict):
+        name = call.get("name")
+        arguments = call.get("arguments")
+    else:
+        name = getattr(call, "name", None)
+        arguments = getattr(call, "arguments", None)
+
+    if not isinstance(name, str):
+        name = None
+    if not isinstance(arguments, dict):
+        arguments = None
+
+    return name, arguments
 
 
 def _terminal_action_message(
@@ -73,6 +116,162 @@ def _routing_text(request) -> str:
     for message in list(request.history or [])[-4:]:
         pieces.append(str(message.content or ""))
     return " ".join(pieces).lower()
+
+
+def _recent_followup_text(request) -> str:
+    return "\n".join(
+        str(message.content or "")
+        for message in list(request.history or [])[-2:]
+    )
+
+
+def _is_referential_report_request(request) -> bool:
+    current = str(request.message or "").strip().lower()
+    if not current:
+        return False
+
+    report_intent = any(
+        term in current
+        for term in ("report", "export", "csv", "download", "spreadsheet")
+    )
+    if not report_intent:
+        return False
+
+    if any(subject in current for subject in _EXPLICIT_REPORT_SUBJECTS):
+        return False
+
+    return any(reference in current for reference in _REPORT_REFERENCES)
+
+
+def _infer_followup_report_type(context: str) -> str | None:
+    text = context.lower()
+
+    if "duplicate" in text or "confidence" in text:
+        return "duplicate_candidates"
+    if "remediation" in text or "remediat" in text:
+        return "remediation"
+    if "review decision" in text or "reviewed" in text or "reviewer" in text:
+        return "review_decisions"
+    if "execution" in text or "job" in text or "scan run" in text:
+        return "executions"
+    if "account inventory" in text:
+        return "accounts"
+
+    return None
+
+
+def _extract_followup_integration_name(context: str) -> str | None:
+    patterns = (
+        r"\bthe\s+(.+?)\s+integration\s+(?:has|have|contains|shows)\b",
+        r"\bintegration\s+['\"]?([^'\"\n.,]+)['\"]?\s+(?:has|have|contains|shows)\b",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, context, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group(1).strip(" :,-")
+        if value:
+            return value
+
+    return None
+
+
+def _extract_followup_confidence(context: str) -> float | None:
+    patterns = (
+        r"(?:above|over|more than|greater than)\s*(\d+(?:\.\d+)?)\s*%",
+        r"(?:at least|minimum|>=)\s*(\d+(?:\.\d+)?)\s*%",
+        r"(\d+(?:\.\d+)?)\s*%\s*(?:confidence|or higher|and above)",
+    )
+
+    for pattern in patterns:
+        match = re.search(pattern, context, flags=re.IGNORECASE)
+        if not match:
+            continue
+        try:
+            value = float(match.group(1))
+        except (TypeError, ValueError):
+            continue
+        if 0 <= value <= 100:
+            return value
+
+    return None
+
+
+def _resolve_integration_id(db: Session, name: str) -> int | None:
+    normalized = name.strip().lower()
+    aliases = {
+        "ad": "active directory",
+        "azure ad": "entra",
+        "azure active directory": "entra",
+        "snow": "servicenow",
+        "service now": "servicenow",
+    }
+    normalized = aliases.get(normalized, normalized)
+
+    exact = db.scalars(
+        select(IntegrationRecord)
+        .where(func.lower(IntegrationRecord.name) == normalized)
+        .limit(1)
+    ).first()
+    if exact is not None:
+        return int(exact.id)
+
+    partial = db.scalars(
+        select(IntegrationRecord)
+        .where(func.lower(IntegrationRecord.name).like(f"%{normalized}%"))
+        .order_by(IntegrationRecord.name.asc())
+        .limit(1)
+    ).first()
+    if partial is not None:
+        return int(partial.id)
+
+    return None
+
+
+def _apply_report_followup_context(
+    *,
+    db: Session,
+    request,
+    tool_calls: list[Any],
+) -> None:
+    """Keep anaphoric report requests tied to the previous live-data scope.
+
+    Local models can reinterpret phrases such as "generate a report for those
+    accounts" as a fresh Account Inventory request even when the immediately
+    preceding answer was about duplicate accounts in one integration. This
+    guard only activates for explicitly referential report requests and only
+    fills/repairs scope from the immediately preceding user+assistant exchange.
+    """
+
+    if not _is_referential_report_request(request):
+        return
+
+    context = _recent_followup_text(request)
+    inferred_report_type = _infer_followup_report_type(context)
+    integration_name = _extract_followup_integration_name(context)
+    confidence = _extract_followup_confidence(context)
+
+    for call in tool_calls:
+        name, arguments = _tool_call_parts(call)
+        if name != "generate_report" or arguments is None:
+            continue
+
+        if inferred_report_type:
+            arguments["report_type"] = inferred_report_type
+
+        raw_filters = arguments.get("filters")
+        if not isinstance(raw_filters, dict):
+            raw_filters = {}
+            arguments["filters"] = raw_filters
+
+        if integration_name and not raw_filters.get("integrationId"):
+            integration_id = _resolve_integration_id(db, integration_name)
+            if integration_id is not None:
+                raw_filters["integrationId"] = integration_id
+
+        if confidence is not None and raw_filters.get("minimumConfidence") is None:
+            raw_filters["minimumConfidence"] = confidence
 
 
 def _select_definitions(
@@ -274,6 +473,12 @@ def run_identity_agent_stream_fast(
                 tool_calls = fallback_calls
 
         if tool_calls:
+            _apply_report_followup_context(
+                db=db,
+                request=request,
+                tool_calls=tool_calls,
+            )
+
             # A native/fallback tool call should not have emitted user-visible
             # content. Keep the assistant tool-call turn for the next iteration.
             messages.append(provider_response.assistant_message)
