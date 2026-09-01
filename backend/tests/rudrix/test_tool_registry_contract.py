@@ -17,6 +17,10 @@ EXPECTED_TOOLS = {
     "get_confidence_breakdown",
     "search_knowledge_base",
     "list_knowledge_documents",
+    "generate_report",
+    "search_remediation_items",
+    "create_remediation_ticket",
+    "navigate_app",
 }
 
 
