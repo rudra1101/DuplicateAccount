@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db_models.integration import IntegrationRecord
 from app.db_models.remediation_item import RemediationItemRecord
 from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
-from app.services.review_pair_feedback_service import normalize_pair_keys
+from app.services.review_pair_feedback_service import normalize_pair_keys, upsert_pair_feedback
 
 
 VALID_REMEDIATION_STATUSES = {
@@ -236,8 +236,33 @@ def update_remediation_status(
         raise ValueError("Invalid remediation status.")
     if record.status == "TICKET_OPEN" and normalized == "ACTIONED":
         raise ValueError("Ticket-driven remediation is completed only when the Service Desk ticket reaches a configured completed status.")
+
+    if normalized == "IGNORED":
+        if record.service_desk_ticket_id:
+            raise ValueError("A remediation item with an existing Service Desk ticket cannot be returned to Review Queue by Ignore.")
+
+        # IGNORE in Remediation means "send this pair back for review", not a
+        # durable NOT_DUPLICATE decision. Passing UNCERTAIN removes any durable
+        # DUPLICATE/NOT_DUPLICATE feedback for the pair so future scans can
+        # surface it for human review again.
+        upsert_pair_feedback(
+            db,
+            integration_id=record.integration_id,
+            application=record.application,
+            account_1_key=record.account_1_key,
+            account_2_key=record.account_2_key,
+            decision="UNCERTAIN",
+            comment="Returned to Review Queue from Remediation.",
+            reviewer_name=(actioned_by or "").strip() or None,
+        )
+        record.action_comment = (
+            (action_comment or "").strip()
+            or "Ignored in Remediation and returned to Review Queue for another decision."
+        )
+    else:
+        record.action_comment = (action_comment or "").strip() or None
+
     record.status = normalized
-    record.action_comment = (action_comment or "").strip() or None
     record.actioned_by = (actioned_by or "").strip() or None
     record.updated_at = _utc_now()
     db.commit()
