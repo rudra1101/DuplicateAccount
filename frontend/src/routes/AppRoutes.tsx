@@ -49,7 +49,7 @@ const AppRoutes = () => {
             <Route path="remediation" element={<RemediationQueue />} />
           </Route>
 
-          <Route element={<PermissionRoute anyOf={["settings.view"]} />}>
+          <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
             <Route path="settings" element={<Settings />} />
           </Route>
 
