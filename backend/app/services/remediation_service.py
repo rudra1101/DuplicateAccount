@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db_models.integration import IntegrationRecord
@@ -19,6 +19,7 @@ VALID_REMEDIATION_STATUSES = {
     "IGNORED",
     "FAILED",
 }
+VALID_REMEDIATION_ACTIONS = {"DISABLE", "DELETE"}
 
 
 def _utc_now() -> datetime:
@@ -132,7 +133,15 @@ def list_remediation_items(
     status: str | None = None,
     integration_id: int | None = None,
     application: str | None = None,
+    min_confidence: float | None = None,
+    max_confidence: float | None = None,
+    remediation_action: str | None = None,
+    ticket_status: str | None = None,
+    has_ticket: bool | None = None,
 ) -> list[dict[str, Any]]:
+    if min_confidence is not None and max_confidence is not None and min_confidence > max_confidence:
+        raise ValueError("Minimum confidence cannot be greater than maximum confidence.")
+
     query = select(RemediationItemRecord)
     if status:
         normalized = status.strip().upper()
@@ -142,7 +151,28 @@ def list_remediation_items(
     if integration_id is not None:
         query = query.where(RemediationItemRecord.integration_id == integration_id)
     if application:
-        query = query.where(RemediationItemRecord.application == application)
+        application_value = application.strip().lower()
+        if application_value:
+            query = query.where(func.lower(RemediationItemRecord.application).contains(application_value))
+    if min_confidence is not None:
+        query = query.where(RemediationItemRecord.confidence >= min_confidence)
+    if max_confidence is not None:
+        query = query.where(RemediationItemRecord.confidence <= max_confidence)
+    if remediation_action:
+        normalized_action = remediation_action.strip().upper()
+        if normalized_action not in VALID_REMEDIATION_ACTIONS:
+            raise ValueError("Invalid remediation action.")
+        query = query.where(RemediationItemRecord.remediation_action == normalized_action)
+    if ticket_status:
+        ticket_status_value = ticket_status.strip().lower()
+        if ticket_status_value:
+            query = query.where(
+                func.lower(RemediationItemRecord.service_desk_ticket_status).contains(ticket_status_value)
+            )
+    if has_ticket is True:
+        query = query.where(RemediationItemRecord.service_desk_ticket_id.is_not(None))
+    elif has_ticket is False:
+        query = query.where(RemediationItemRecord.service_desk_ticket_id.is_(None))
 
     records = list(
         db.scalars(
