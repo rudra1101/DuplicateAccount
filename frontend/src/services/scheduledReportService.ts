@@ -13,6 +13,7 @@ export interface ScheduledReportConfig {
   includeAdmins: boolean;
   recipientEmails: string[];
   selectedColumns: string[];
+  emailTemplateId: number | null;
   availableColumns: ScheduledReportColumn[];
   timezone: string;
   lastSentAt: string | null;
@@ -42,6 +43,7 @@ export interface ScheduledReportUpdate {
   includeAdmins: boolean;
   recipientEmails: string[];
   selectedColumns: string[];
+  emailTemplateId: number | null;
 }
 
 export interface ScheduledReportRun {

@@ -17,6 +17,7 @@ class ScheduledReportConfigRecord(Base):
     include_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     recipient_emails: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     selected_columns: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    email_template_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     timezone: Mapped[str] = mapped_column(String(100), nullable=False, default="Asia/Kolkata")
     last_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(30), nullable=True)

@@ -20,6 +20,7 @@ from app.api.knowledge import router as knowledge_router
 from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
+from app.api.report_email_templates import router as report_email_templates_router
 from app.api.reports import router as reports_router
 from app.api.scheduled_reports import router as scheduled_reports_router
 from app.api.review import router as review_router
@@ -132,6 +133,7 @@ app.include_router(job_schedules_router, prefix="/api")
 app.include_router(operations_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(scheduled_reports_router, prefix="/api")
+app.include_router(report_email_templates_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(ml_router, prefix="/api")
