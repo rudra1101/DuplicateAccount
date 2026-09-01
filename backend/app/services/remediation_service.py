@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.db_models.integration import IntegrationRecord
 from app.db_models.remediation_item import RemediationItemRecord
 from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
-from app.services.review_pair_feedback_service import normalize_pair_keys
+from app.services.review_pair_feedback_service import normalize_pair_keys, upsert_pair_feedback
 
 
 VALID_REMEDIATION_STATUSES = {
@@ -236,10 +236,30 @@ def update_remediation_status(
         raise ValueError("Invalid remediation status.")
     if record.status == "TICKET_OPEN" and normalized == "ACTIONED":
         raise ValueError("Ticket-driven remediation is completed only when the Service Desk ticket reaches a configured completed status.")
+    if normalized == "IGNORED" and record.service_desk_ticket_id:
+        raise ValueError("A remediation item with an existing Service Desk ticket cannot be ignored.")
+
     record.status = normalized
     record.action_comment = (action_comment or "").strip() or None
     record.actioned_by = (actioned_by or "").strip() or None
     record.updated_at = _utc_now()
+
+    if normalized == "IGNORED":
+        # Ignore from Remediation means "send this pair back for review" rather
+        # than "permanently not a duplicate". Passing UNCERTAIN removes any
+        # durable DUPLICATE pair feedback while preserving the audit history.
+        upsert_pair_feedback(
+            db,
+            integration_id=record.integration_id,
+            application=record.application,
+            account_1_key=record.account_1_key,
+            account_2_key=record.account_2_key,
+            decision="UNCERTAIN",
+            comment=record.action_comment or "Returned to Review Queue from remediation.",
+            reviewer_name=record.actioned_by,
+            source_review_candidate_id=None,
+        )
+
     db.commit()
     db.refresh(record)
     return {
