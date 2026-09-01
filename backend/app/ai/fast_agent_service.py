@@ -23,6 +23,10 @@ TERMINAL_ACTION_TOOLS = {
     "navigate_app",
 }
 
+# Keeping fewer historical messages materially reduces local-model prompt
+# evaluation time while preserving enough context for natural follow-ups.
+MAX_CONTEXT_MESSAGES = 12
+
 
 def _tool_names(tool_calls: list[Any]) -> set[str]:
     names: set[str] = set()
@@ -56,6 +60,129 @@ def _terminal_action_message(
     return "\n\n".join(messages)
 
 
+def _trim_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if len(messages) <= MAX_CONTEXT_MESSAGES + 1:
+        return messages
+
+    # Always preserve the system prompt and the most recent conversation turns.
+    return [messages[0], *messages[-MAX_CONTEXT_MESSAGES:]]
+
+
+def _routing_text(request) -> str:
+    pieces = [str(request.message or "")]
+    for message in list(request.history or [])[-4:]:
+        pieces.append(str(message.content or ""))
+    return " ".join(pieces).lower()
+
+
+def _select_definitions(
+    definitions: list[dict[str, Any]],
+    request,
+) -> list[dict[str, Any]]:
+    """Send only likely-relevant tools to the local model.
+
+    Tool schemas consume prompt tokens and increase tool-selection latency.
+    Routing is deliberately broad: overlapping domains can expose several tools,
+    while a normal conversational/IAM explanation can run with no tool schema.
+    """
+
+    text = _routing_text(request)
+    selected: set[str] = set()
+
+    def has(*terms: str) -> bool:
+        return any(term in text for term in terms)
+
+    if has(
+        "report", "export", "csv", "download", "spreadsheet",
+    ):
+        selected.add("generate_report")
+
+    if has(
+        "ticket", "service desk", "servicedesk", "remediation",
+        "remediate", "disable account", "delete account",
+    ):
+        selected.update(
+            {
+                "search_remediation_items",
+                "create_remediation_ticket",
+            }
+        )
+
+    if has(
+        "navigate", "take me", "go to", "open the", "open ",
+        "show page", "page for", "screen",
+    ):
+        selected.add("navigate_app")
+
+    if has(
+        "dashboard", "overall", "system summary", "total accounts",
+        "total applications", "how many accounts", "how many applications",
+        "how many duplicate", "most duplicates", "high confidence matches",
+    ):
+        selected.add("get_dashboard_summary")
+
+    if has(
+        "integration", "connector", "source connection",
+    ):
+        selected.update(
+            {
+                "list_integrations",
+                "get_integration_details",
+            }
+        )
+
+    if has(
+        "execution", "job", "scan status", "latest scan", "run status",
+        "running", "failed run", "failed execution", "operations",
+    ):
+        selected.update(
+            {
+                "get_operations_summary",
+                "search_operations",
+                "get_latest_execution",
+                "get_execution_details",
+            }
+        )
+
+    if has(
+        "duplicate", "confidence", "review", "candidate", "match",
+    ):
+        selected.update(
+            {
+                "get_duplicate_summary",
+                "search_duplicate_groups",
+                "get_duplicate_group_details",
+                "get_review_statistics",
+                "get_confidence_breakdown",
+            }
+        )
+
+    if has(
+        "training label", "training data", "ml training", "model training",
+    ):
+        selected.add("get_training_label_summary")
+
+    if has(
+        "knowledge", "document", "policy", "procedure", "runbook",
+        "standard", "manual", "documentation", "guidance",
+    ):
+        selected.update(
+            {
+                "search_knowledge_base",
+                "list_knowledge_documents",
+            }
+        )
+
+    if not selected:
+        return []
+
+    return [
+        definition
+        for definition in definitions
+        if str(definition.get("name") or "") in selected
+    ]
+
+
 def run_identity_agent_stream_fast(
     *,
     db: Session,
@@ -85,8 +212,8 @@ def run_identity_agent_stream_fast(
         else settings.fast_model
     )
 
-    messages = build_messages(request)
-    definitions = registry.definitions()
+    messages = _trim_messages(build_messages(request))
+    definitions = _select_definitions(registry.definitions(), request)
     allowed_tools = {definition["name"] for definition in definitions}
 
     tool_history: list[ToolInvocationResponse] = []
@@ -138,7 +265,7 @@ def run_identity_agent_stream_fast(
 
         tool_calls = list(provider_response.tool_calls or [])
 
-        if not tool_calls:
+        if not tool_calls and allowed_tools:
             fallback_calls = extract_text_tool_calls(
                 provider_response.text,
                 allowed_tools,
