@@ -30,7 +30,7 @@ class SmtpSettingsUpdate(BaseModel):
     port: int = Field(default=587, ge=1, le=65535)
     username: str = ""
     password: str | None = None
-    fromEmail: EmailStr | None = None
+    fromEmail: str = ""
     useTls: bool = True
     clearPassword: bool = False
 
@@ -63,7 +63,7 @@ def put_smtp_settings(
             port=payload.port,
             username=payload.username,
             password=payload.password,
-            from_email=str(payload.fromEmail or ""),
+            from_email=payload.fromEmail,
             use_tls=payload.useTls,
             clear_password=payload.clearPassword,
         )
@@ -132,7 +132,7 @@ async def upload_branding_logo(
     if len(data) > MAX_LOGO_BYTES:
         raise HTTPException(status_code=400, detail="Logo must be 2 MB or smaller.")
 
-    settings = save_logo(
+    save_logo(
         db,
         filename=logo.filename or "logo",
         mime_type=mime_type,
