@@ -1,4 +1,4 @@
-import { type MouseEvent, useEffect, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useState } from "react";
 
 import {
   Alert,
@@ -41,6 +41,7 @@ import ExecutionHistoryDrawer from "../../components/integrations/ExecutionHisto
 import ScanAccountsDrawer from "../../components/integrations/ScanAccountsDrawer";
 import {
   deleteIntegration,
+  getIntegrationExecutions,
   getIntegrationSchedule,
   getIntegrations,
   runIntegration,
@@ -50,6 +51,7 @@ import {
 } from "../../services/integrationService";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const RUNNING_POLL_INTERVAL_MS = 3000;
 
 type EnabledFilter = "all" | "enabled" | "disabled";
 
@@ -67,10 +69,10 @@ const Integrations = () => {
 
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [schedules, setSchedules] = useState<Record<number, JobSchedule | null>>({});
+  const [runningIds, setRunningIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [testingId, setTestingId] = useState<number | null>(null);
-  const [runningId, setRunningId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Integration | null>(null);
   const [scheduleTarget, setScheduleTarget] = useState<Integration | null>(null);
   const [historyTarget, setHistoryTarget] = useState<Integration | null>(null);
@@ -95,13 +97,43 @@ const Integrations = () => {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const loadIntegrations = async () => {
+  const loadRunningStates = useCallback(async (items: Integration[]) => {
+    const results = await Promise.all(
+      items.map(async (integration) => {
+        try {
+          const executions = await getIntegrationExecutions(integration.id, 1);
+          return {
+            integrationId: integration.id,
+            running: executions[0]?.status === "RUNNING",
+          };
+        } catch (executionError) {
+          console.warn(
+            `Unable to load execution state for integration ${integration.id}:`,
+            executionError,
+          );
+          return { integrationId: integration.id, running: false };
+        }
+      }),
+    );
+
+    setRunningIds(
+      new Set(
+        results
+          .filter((item) => item.running)
+          .map((item) => item.integrationId),
+      ),
+    );
+  }, []);
+
+  const loadIntegrations = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
 
       const enabled =
-        enabledFilter === "all" ? undefined : enabledFilter === "enabled";
+        enabledFilter === "all"
+          ? undefined
+          : enabledFilter === "enabled";
 
       const data = await getIntegrations(page + 1, pageSize, search, enabled);
       setIntegrations(data.items);
@@ -112,16 +144,62 @@ const Integrations = () => {
         scheduleMap[integration.id] = integration.schedule;
       });
       setSchedules(scheduleMap);
+
+      await loadRunningStates(data.items);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load integrations.");
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load integrations.",
+      );
     } finally {
       setLoading(false);
     }
-  };
+  }, [enabledFilter, loadRunningStates, page, pageSize, search]);
 
   useEffect(() => {
     void loadIntegrations();
-  }, [page, pageSize, search, enabledFilter]);
+  }, [loadIntegrations]);
+
+  useEffect(() => {
+    if (runningIds.size === 0) return;
+
+    const poll = async () => {
+      const ids = Array.from(runningIds);
+      const results = await Promise.all(
+        ids.map(async (integrationId) => {
+          try {
+            const executions = await getIntegrationExecutions(integrationId, 1);
+            return {
+              integrationId,
+              running: executions[0]?.status === "RUNNING",
+            };
+          } catch (executionError) {
+            console.warn(
+              `Unable to poll execution state for integration ${integrationId}:`,
+              executionError,
+            );
+            return { integrationId, running: true };
+          }
+        }),
+      );
+
+      setRunningIds((current) => {
+        const next = new Set(current);
+        results.forEach(({ integrationId, running }) => {
+          if (running) next.add(integrationId);
+          else next.delete(integrationId);
+        });
+        return next;
+      });
+    };
+
+    const timer = window.setInterval(() => {
+      void poll();
+    }, RUNNING_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [runningIds]);
 
   const handleTest = async (integration: Integration) => {
     if (!canTest) return;
@@ -131,7 +209,11 @@ const Integrations = () => {
       setMessage(result.message);
       setMessageType(result.success ? "success" : "error");
     } catch (testError) {
-      setMessage(testError instanceof Error ? testError.message : "Connection test failed.");
+      setMessage(
+        testError instanceof Error
+          ? testError.message
+          : "Connection test failed.",
+      );
       setMessageType("error");
     } finally {
       setTestingId(null);
@@ -139,34 +221,56 @@ const Integrations = () => {
   };
 
   const handleRun = async (integration: Integration) => {
-    if (!canRun) return;
+    if (!canRun || runningIds.has(integration.id)) return;
+
+    setRunningIds((current) => new Set(current).add(integration.id));
+
     try {
-      setRunningId(integration.id);
       const result = await runIntegration(integration.id);
       setMessage(
-        `${result.sourceFileName ?? "File"} processed successfully. ` +
-          `${result.accountsScanned.toLocaleString()} accounts scanned, ` +
-          `${result.duplicateGroups.toLocaleString()} duplicate groups found.`,
+        `${result.sourceFileName ?? "File"} processed successfully. `
+          + `${result.accountsScanned.toLocaleString()} accounts scanned, `
+          + `${result.duplicateGroups.toLocaleString()} duplicate groups found.`,
       );
       setMessageType("success");
 
-      if (result.scanId) {
-        setSelectedScanId(result.scanId);
-      }
+      if (result.scanId) setSelectedScanId(result.scanId);
 
       if (canSchedule) {
         try {
           const updatedSchedule = await getIntegrationSchedule(integration.id);
-          setSchedules((current) => ({ ...current, [integration.id]: updatedSchedule }));
+          setSchedules((current) => ({
+            ...current,
+            [integration.id]: updatedSchedule,
+          }));
         } catch {
           // An integration can be run without a schedule.
         }
       }
     } catch (runError) {
-      setMessage(runError instanceof Error ? runError.message : "Integration execution failed.");
+      setMessage(
+        runError instanceof Error
+          ? runError.message
+          : "Integration execution failed.",
+      );
       setMessageType("error");
     } finally {
-      setRunningId(null);
+      try {
+        const executions = await getIntegrationExecutions(integration.id, 1);
+        const stillRunning = executions[0]?.status === "RUNNING";
+        setRunningIds((current) => {
+          const next = new Set(current);
+          if (stillRunning) next.add(integration.id);
+          else next.delete(integration.id);
+          return next;
+        });
+      } catch {
+        setRunningIds((current) => {
+          const next = new Set(current);
+          next.delete(integration.id);
+          return next;
+        });
+      }
     }
   };
 
@@ -185,24 +289,40 @@ const Integrations = () => {
         await loadIntegrations();
       }
     } catch (deleteError) {
-      setMessage(deleteError instanceof Error ? deleteError.message : "Unable to delete integration.");
+      setMessage(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete integration.",
+      );
       setMessageType("error");
       setDeleteTarget(null);
     }
   };
 
-  const handleScheduleSaved = (integrationId: number, schedule: JobSchedule | null) => {
+  const handleScheduleSaved = (
+    integrationId: number,
+    schedule: JobSchedule | null,
+  ) => {
     setSchedules((current) => ({ ...current, [integrationId]: schedule }));
     setIntegrations((current) =>
       current.map((integration) =>
-        integration.id === integrationId ? { ...integration, schedule } : integration,
+        integration.id === integrationId
+          ? { ...integration, schedule }
+          : integration,
       ),
     );
-    setMessage(schedule ? "Schedule saved successfully." : "Schedule deleted successfully.");
+    setMessage(
+      schedule
+        ? "Schedule saved successfully."
+        : "Schedule deleted successfully.",
+    );
     setMessageType("success");
   };
 
-  const openActions = (event: MouseEvent<HTMLElement>, integration: Integration) => {
+  const openActions = (
+    event: MouseEvent<HTMLElement>,
+    integration: Integration,
+  ) => {
     setMenuAnchor(event.currentTarget);
     setMenuTarget(integration);
   };
@@ -212,7 +332,9 @@ const Integrations = () => {
     setMenuTarget(null);
   };
 
-  const runMenuAction = (action: (integration: Integration) => void) => {
+  const runMenuAction = (
+    action: (integration: Integration) => void,
+  ) => {
     if (!menuTarget) return;
     const target = menuTarget;
     closeActions();
@@ -224,6 +346,10 @@ const Integrations = () => {
     if (!schedule.enabled) return "Disabled";
     return schedule.name || schedule.cronExpression || "Scheduled";
   };
+
+  const menuTargetRunning = menuTarget
+    ? runningIds.has(menuTarget.id)
+    : false;
 
   return (
     <PageContainer title="Integrations">
@@ -245,7 +371,11 @@ const Integrations = () => {
         </Box>
 
         {canCreate && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate("/integrations/new")}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => navigate("/integrations/new")}
+          >
             Add Integration
           </Button>
         )}
@@ -261,7 +391,9 @@ const Integrations = () => {
             sx={{ minWidth: { xs: "100%", sm: 320 } }}
             slotProps={{
               input: {
-                startAdornment: <SearchIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} />,
+                startAdornment: (
+                  <SearchIcon fontSize="small" sx={{ mr: 1, color: "text.secondary" }} />
+                ),
               },
             }}
           />
@@ -324,6 +456,7 @@ const Integrations = () => {
               ) : (
                 integrations.map((integration) => {
                   const schedule = schedules[integration.id];
+                  const isRunning = runningIds.has(integration.id);
                   return (
                     <TableRow key={integration.id} hover>
                       <TableCell>
@@ -336,9 +469,15 @@ const Integrations = () => {
                       <TableCell>
                         <Chip
                           size="small"
-                          label={integration.enabled ? "Enabled" : "Disabled"}
-                          color={integration.enabled ? "success" : "default"}
-                          variant={integration.enabled ? "filled" : "outlined"}
+                          label={
+                            isRunning
+                              ? "Running"
+                              : integration.enabled
+                                ? "Enabled"
+                                : "Disabled"
+                          }
+                          color={isRunning || integration.enabled ? "success" : "default"}
+                          variant={isRunning || integration.enabled ? "filled" : "outlined"}
                         />
                       </TableCell>
                       <TableCell>
@@ -389,10 +528,10 @@ const Integrations = () => {
       <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={closeActions}>
         {canRun && (
           <MenuItem
-            disabled={!menuTarget?.enabled || runningId === menuTarget?.id}
+            disabled={!menuTarget?.enabled || menuTargetRunning}
             onClick={() => runMenuAction((integration) => void handleRun(integration))}
           >
-            {runningId === menuTarget?.id ? "Running..." : "Run Now"}
+            {menuTargetRunning ? "Running..." : "Run Now"}
           </MenuItem>
         )}
         {canTest && (
@@ -453,7 +592,9 @@ const Integrations = () => {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button color="error" variant="contained" onClick={confirmDelete}>Delete</Button>
+            <Button color="error" variant="contained" onClick={() => void confirmDelete()}>
+              Delete
+            </Button>
           </DialogActions>
         </Dialog>
       )}
