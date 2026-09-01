@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 
 from cryptography.fernet import Fernet, InvalidToken
+from email_validator import EmailNotValidError, validate_email
 from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
@@ -153,6 +154,11 @@ def update_smtp_settings(
         raise ValueError("SMTP host is required when SMTP is enabled.")
     if enabled and not from_email:
         raise ValueError("From email is required when SMTP is enabled.")
+    if enabled:
+        try:
+            validate_email(from_email, check_deliverability=False)
+        except EmailNotValidError as exc:
+            raise ValueError("From email is not a valid email address.") from exc
 
     settings = get_or_create_application_settings(db)
     settings.smtp_enabled = enabled
