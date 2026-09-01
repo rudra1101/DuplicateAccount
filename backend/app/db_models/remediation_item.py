@@ -35,6 +35,16 @@ class RemediationItemRecord(Base):
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_ACTION", index=True)
     action_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     actioned_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    remediation_action: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_account_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    service_desk_ticket_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    service_desk_ticket_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    service_desk_ticket_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    ticket_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
