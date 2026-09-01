@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from "react";
 import LogoutIcon from "@mui/icons-material/Logout";
 import {
   AppBar,
@@ -11,10 +12,41 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
+import {
+  customLogoUrl,
+  getBrandingSettings,
+} from "../../services/settingsService";
+
+const DEFAULT_LOGO = "/nusummit-logo.svg";
 
 const Header = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const [logoSrc, setLogoSrc] = useState(DEFAULT_LOGO);
+
+  const refreshBranding = useCallback(async () => {
+    try {
+      const branding = await getBrandingSettings();
+      setLogoSrc(
+        branding.customLogo
+          ? customLogoUrl(branding.updatedAt)
+          : DEFAULT_LOGO,
+      );
+    } catch {
+      setLogoSrc(DEFAULT_LOGO);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshBranding();
+    const handleBrandingUpdated = () => {
+      void refreshBranding();
+    };
+    window.addEventListener("identityai-branding-updated", handleBrandingUpdated);
+    return () => {
+      window.removeEventListener("identityai-branding-updated", handleBrandingUpdated);
+    };
+  }, [refreshBranding]);
 
   const handleLogout = async () => {
     await logout();
@@ -41,8 +73,9 @@ const Header = () => {
       >
         <Box
           component="img"
-          src="/nusummit-logo.svg"
-          alt="NuSummit Cybersecurity"
+          src={logoSrc}
+          alt="IdentityAI"
+          onError={() => setLogoSrc(DEFAULT_LOGO)}
           sx={{
             height: { xs: 38, sm: 44 },
             width: "auto",
