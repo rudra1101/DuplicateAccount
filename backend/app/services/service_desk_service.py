@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from sqlalchemy import select
@@ -121,18 +121,33 @@ def update_service_desk_settings(db: Session, **values: Any) -> None:
     if auth_type not in VALID_AUTH_TYPES:
         raise ValueError("Auth type must be NONE, BEARER, or BASIC.")
     base_url = str(values["base_url"]).strip().rstrip("/")
+    if base_url:
+        parsed_url = urlparse(base_url)
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+            raise ValueError("Service Desk base URL must be a valid HTTP or HTTPS URL.")
     if values["enabled"] and not base_url:
         raise ValueError("Base URL is required when Service Desk is enabled.")
     if values["enabled"] and not str(values["create_path"]).strip():
         raise ValueError("Create ticket path is required.")
     if values["enabled"] and "{ticket_id}" not in str(values["status_path"]):
         raise ValueError("Status path must contain {ticket_id}.")
+    if values["enabled"] and auth_type in {"BEARER", "BASIC"}:
+        settings_existing = get_application_settings(db)
+        secret_available = bool(values.get("secret")) or bool(
+            settings_existing and settings_existing.service_desk_secret_encrypted and not values.get("clear_secret")
+        )
+        if not secret_available:
+            raise ValueError("A token or password is required for the selected Service Desk authentication method.")
     try:
         parsed = json.loads(str(values["payload_template"]))
         if not isinstance(parsed, dict):
             raise ValueError
     except Exception as exc:
         raise ValueError("Ticket payload template must be a valid JSON object.") from exc
+
+    completed = sorted({str(item).strip().lower() for item in values["completed_statuses"] if str(item).strip()})
+    if values["enabled"] and not completed:
+        raise ValueError("At least one completed ticket status is required.")
 
     settings = get_or_create_application_settings(db)
     settings.service_desk_enabled = bool(values["enabled"])
@@ -145,14 +160,30 @@ def update_service_desk_settings(db: Session, **values: Any) -> None:
     settings.service_desk_ticket_id_field = str(values["ticket_id_field"]).strip() or "id"
     settings.service_desk_ticket_status_field = str(values["ticket_status_field"]).strip() or "status"
     settings.service_desk_ticket_url_field = str(values["ticket_url_field"]).strip() or "url"
-    settings.service_desk_completed_statuses = ",".join(sorted({str(item).strip().lower() for item in values["completed_statuses"] if str(item).strip()}))
+    settings.service_desk_completed_statuses = ",".join(completed)
     settings.service_desk_payload_template = str(values["payload_template"])
     settings.service_desk_verify_tls = bool(values["verify_tls"])
     if values.get("clear_secret"):
         settings.service_desk_secret_encrypted = None
     elif values.get("secret"):
         settings.service_desk_secret_encrypted = encrypt_secret(str(values["secret"]))
+    if auth_type == "NONE":
+        settings.service_desk_username = ""
+        settings.service_desk_secret_encrypted = None
     db.commit()
+
+
+def _replace_template_values(value: Any, variables: dict[str, str]) -> Any:
+    if isinstance(value, dict):
+        return {key: _replace_template_values(item, variables) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_template_values(item, variables) for item in value]
+    if isinstance(value, str):
+        rendered = value
+        for key, replacement in variables.items():
+            rendered = rendered.replace("{{" + key + "}}", replacement)
+        return rendered
+    return value
 
 
 def _render_payload(config: ServiceDeskConfig, item: RemediationItemRecord, target_data: dict[str, Any], action: str) -> dict[str, Any]:
@@ -167,10 +198,8 @@ def _render_payload(config: ServiceDeskConfig, item: RemediationItemRecord, targ
         "username": str(target_data.get("username") or ""),
         "email": str(target_data.get("email") or ""),
     }
-    rendered = config.payload_template
-    for key, value in variables.items():
-        rendered = rendered.replace("{{" + key + "}}", value.replace('"', '\\"'))
-    payload = json.loads(rendered)
+    payload = json.loads(config.payload_template)
+    payload = _replace_template_values(payload, variables)
     if not isinstance(payload, dict):
         raise ValueError("Rendered ticket payload must be a JSON object.")
     return payload
@@ -188,6 +217,8 @@ def create_ticket(db: Session, *, item_id: int, target: str, action: str, reques
         raise ValueError("Remediation item not found.")
     if item.service_desk_ticket_id:
         raise ValueError("A Service Desk ticket already exists for this remediation item.")
+    if item.status not in {"PENDING_ACTION", "FAILED"}:
+        raise ValueError("A Service Desk ticket can only be created for a remediation item awaiting action.")
     if target not in {"ACCOUNT_1", "ACCOUNT_2"}:
         raise ValueError("Target must be ACCOUNT_1 or ACCOUNT_2.")
 
@@ -203,6 +234,9 @@ def create_ticket(db: Session, *, item_id: int, target: str, action: str, reques
             response = client.post(url, json=payload, headers=headers, auth=auth)
             response.raise_for_status()
             data = response.json()
+        ticket_id = _field(data, config.ticket_id_field)
+        if ticket_id is None:
+            raise RuntimeError(f"Ticket response did not contain configured ticket ID field '{config.ticket_id_field}'.")
     except Exception as exc:
         item.ticket_error = str(exc)
         item.status = "FAILED"
@@ -210,9 +244,6 @@ def create_ticket(db: Session, *, item_id: int, target: str, action: str, reques
         db.commit()
         raise RuntimeError(f"Service Desk ticket creation failed: {exc}") from exc
 
-    ticket_id = _field(data, config.ticket_id_field)
-    if ticket_id is None:
-        raise RuntimeError(f"Ticket response did not contain configured ticket ID field '{config.ticket_id_field}'.")
     ticket_status = _field(data, config.ticket_status_field)
     ticket_url = _field(data, config.ticket_url_field)
     now = _utc_now()
@@ -250,6 +281,8 @@ def sync_ticket(db: Session, item: RemediationItemRecord) -> dict[str, Any]:
     if not item.service_desk_ticket_id:
         raise ValueError("Remediation item has no Service Desk ticket.")
     config = _config_from_db(db)
+    if not config.enabled:
+        raise ValueError("Service Desk integration is disabled.")
     headers, auth = _headers_auth(config)
     path = config.status_path.replace("{ticket_id}", item.service_desk_ticket_id)
     url = urljoin(config.base_url + "/", path.lstrip("/"))
@@ -271,21 +304,32 @@ def sync_ticket(db: Session, item: RemediationItemRecord) -> dict[str, Any]:
         if str(status_value).strip().lower() in config.completed_statuses and item.status != "ACTIONED":
             item.status = "ACTIONED"
             item.action_comment = f"Service Desk ticket {item.service_desk_ticket_id} completed. {item.remediation_action or 'Remediation'} marked completed."
-            db.add(
-                ReviewDecisionHistoryRecord(
-                    integration_id=item.integration_id,
-                    application=item.application,
-                    account_1_key=item.account_1_key,
-                    account_2_key=item.account_2_key,
-                    decision="REMEDIATED",
-                    confidence=item.confidence,
-                    reviewer_name=item.actioned_by,
-                    comment=item.action_comment,
-                    source="SERVICE_DESK",
-                    account_1_data=item.account_1_data or {},
-                    account_2_data=item.account_2_data or {},
+            existing_history = db.scalar(
+                select(ReviewDecisionHistoryRecord).where(
+                    ReviewDecisionHistoryRecord.integration_id == item.integration_id,
+                    ReviewDecisionHistoryRecord.application == item.application,
+                    ReviewDecisionHistoryRecord.account_1_key == item.account_1_key,
+                    ReviewDecisionHistoryRecord.account_2_key == item.account_2_key,
+                    ReviewDecisionHistoryRecord.decision == "REMEDIATED",
+                    ReviewDecisionHistoryRecord.source == "SERVICE_DESK",
                 )
             )
+            if existing_history is None:
+                db.add(
+                    ReviewDecisionHistoryRecord(
+                        integration_id=item.integration_id,
+                        application=item.application,
+                        account_1_key=item.account_1_key,
+                        account_2_key=item.account_2_key,
+                        decision="REMEDIATED",
+                        confidence=item.confidence,
+                        reviewer_name=item.actioned_by,
+                        comment=item.action_comment,
+                        source="SERVICE_DESK",
+                        account_1_data=item.account_1_data or {},
+                        account_2_data=item.account_2_data or {},
+                    )
+                )
         item.updated_at = _utc_now()
         db.commit()
         db.refresh(item)
@@ -309,7 +353,14 @@ def sync_open_tickets() -> None:
         settings = get_application_settings(db)
         if settings is None or not settings.service_desk_enabled:
             return
-        items = list(db.scalars(select(RemediationItemRecord).where(RemediationItemRecord.status == "TICKET_OPEN", RemediationItemRecord.service_desk_ticket_id.is_not(None))).all())
+        items = list(
+            db.scalars(
+                select(RemediationItemRecord).where(
+                    RemediationItemRecord.status == "TICKET_OPEN",
+                    RemediationItemRecord.service_desk_ticket_id.is_not(None),
+                )
+            ).all()
+        )
         for item in items:
             try:
                 sync_ticket(db, item)
