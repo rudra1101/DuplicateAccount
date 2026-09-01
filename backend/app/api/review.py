@@ -20,11 +20,11 @@ from app.services.duplicate_group_feedback_service import (
     get_duplicate_group_candidate_durable_decision,
     save_duplicate_group_candidate_decision,
 )
-from app.services.review_service import (
-    get_duplicate_group_details,
-    get_duplicate_groups,
-    get_review_summary,
-    get_scan_status,
+from app.services.review_service import get_scan_status
+from app.services.review_visibility_service import (
+    get_visible_duplicate_group_details,
+    get_visible_duplicate_groups,
+    get_visible_review_summary,
 )
 
 
@@ -41,7 +41,7 @@ def review_summary(
     _user=Depends(require_permission("duplicate.view")),
 ):
     try:
-        return get_review_summary(db=db, integration_id=integration_id)
+        return get_visible_review_summary(db=db, integration_id=integration_id)
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=500,
@@ -121,7 +121,7 @@ def duplicate_group_details(
     _user=Depends(require_permission("duplicate.view")),
 ):
     try:
-        result = get_duplicate_group_details(
+        result = get_visible_duplicate_group_details(
             db=db,
             group_id=group_id,
             integration_id=integration_id,
@@ -202,7 +202,7 @@ def application_groups(
     _user=Depends(require_permission("duplicate.view")),
 ):
     try:
-        return get_duplicate_groups(
+        return get_visible_duplicate_groups(
             db=db,
             application=application,
             integration_id=integration_id,
