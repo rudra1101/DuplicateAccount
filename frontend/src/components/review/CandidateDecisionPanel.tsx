@@ -26,12 +26,10 @@ import {
   submitCandidateDecision,
 } from "../../services/reviewService";
 
+import { API_BASE_URL } from "../../config/api";
 import {
   formatDateTime,
 } from "../../utils/dateTime";
-
-
-const BASE_URL = "http://127.0.0.1:8000/api";
 
 
 interface Props {
@@ -182,7 +180,8 @@ const CandidateDecisionPanel = ({
     const loadDurableDecision = async () => {
       try {
         const response = await fetch(
-          `${BASE_URL}/review/candidates/${candidateRecordId}/durable-decision`,
+          `${API_BASE_URL}/review/candidates/${candidateRecordId}/durable-decision`,
+          { credentials: "include" },
         );
 
         if (!response.ok) {
@@ -193,12 +192,9 @@ const CandidateDecisionPanel = ({
           decision?: ReviewDecision | null;
         };
 
-        if (
-          !cancelled
-          && result.decision
-        ) {
+        if (!cancelled) {
           setDecision(
-            result.decision,
+            result.decision ?? null,
           );
         }
       } catch (loadError) {
@@ -269,6 +265,15 @@ const CandidateDecisionPanel = ({
       onDecisionSaved?.(
         response,
       );
+
+      if (
+        response.decision === "DUPLICATE"
+        || response.decision === "NOT_DUPLICATE"
+      ) {
+        window.setTimeout(() => {
+          window.location.reload();
+        }, 150);
+      }
     } catch (saveError) {
       console.error(
         "Unable to save reviewer decision:",
