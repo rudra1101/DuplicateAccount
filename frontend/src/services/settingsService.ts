@@ -22,6 +22,28 @@ export interface SmtpSettingsUpdate {
   clearPassword?: boolean;
 }
 
+export interface ServiceDeskSettings {
+  enabled: boolean;
+  name: string;
+  baseUrl: string;
+  authType: "NONE" | "BEARER" | "BASIC";
+  username: string;
+  secretConfigured: boolean;
+  createPath: string;
+  statusPath: string;
+  ticketIdField: string;
+  ticketStatusField: string;
+  ticketUrlField: string;
+  completedStatuses: string[];
+  payloadTemplate: string;
+  verifyTls: boolean;
+}
+
+export interface ServiceDeskSettingsUpdate extends Omit<ServiceDeskSettings, "secretConfigured"> {
+  secret?: string;
+  clearSecret?: boolean;
+}
+
 export interface BrandingSettings {
   customLogo: boolean;
   filename: string | null;
@@ -76,6 +98,25 @@ export async function sendSmtpTest(recipient: string): Promise<void> {
   if (!response.ok) {
     throw new Error(await readError(response, "Unable to send SMTP test email."));
   }
+}
+
+export async function getServiceDeskSettings(): Promise<ServiceDeskSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/service-desk`, {
+    credentials: "include",
+  });
+  return expectJson<ServiceDeskSettings>(response, "Unable to load Service Desk settings.");
+}
+
+export async function saveServiceDeskSettings(
+  payload: ServiceDeskSettingsUpdate,
+): Promise<ServiceDeskSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/service-desk`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return expectJson<ServiceDeskSettings>(response, "Unable to save Service Desk settings.");
 }
 
 export async function getBrandingSettings(): Promise<BrandingSettings> {
