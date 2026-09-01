@@ -11,10 +11,12 @@ from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.remediation_item import RemediationItemRecord
+from app.db_models.report_email_template import ReportEmailTemplateRecord
 from app.db_models.scan import ScanRecord
 from app.db_models.scheduled_report import ScheduledReportConfigRecord, ScheduledReportRunRecord
 from app.db_models.user import UserRecord
 from app.services.email_service import send_email
+from app.services.report_email_template_service import render_template, report_variables
 
 
 ALLOWED_FREQUENCIES = {"WEEKLY", "MONTHLY", "QUARTERLY"}
@@ -55,6 +57,7 @@ def get_or_create_scheduled_report_config(db: Session) -> ScheduledReportConfigR
             include_admins=True,
             recipient_emails=[],
             selected_columns=list(DEFAULT_COLUMNS),
+            email_template_id=None,
             timezone="Asia/Kolkata",
         )
         db.add(config)
@@ -70,6 +73,7 @@ def serialize_config(config: ScheduledReportConfigRecord) -> dict:
         "includeAdmins": config.include_admins,
         "recipientEmails": list(config.recipient_emails or []),
         "selectedColumns": list(config.selected_columns or DEFAULT_COLUMNS),
+        "emailTemplateId": config.email_template_id,
         "availableColumns": AVAILABLE_COLUMNS,
         "timezone": config.timezone,
         "lastSentAt": config.last_sent_at.isoformat() if config.last_sent_at else None,
@@ -111,6 +115,7 @@ def update_config(
     include_admins: bool,
     recipient_emails: list[str],
     selected_columns: list[str],
+    email_template_id: int | None,
 ) -> ScheduledReportConfigRecord:
     normalized_frequency = frequency.strip().upper()
     if normalized_frequency not in ALLOWED_FREQUENCIES:
@@ -127,12 +132,18 @@ def update_config(
     if enabled and not include_admins and not normalized_recipients:
         raise ValueError("At least one report recipient is required.")
 
+    if email_template_id is not None:
+        template = db.get(ReportEmailTemplateRecord, email_template_id)
+        if template is None or not template.is_active:
+            raise ValueError("Selected email template is not available.")
+
     config = get_or_create_scheduled_report_config(db)
     config.enabled = enabled
     config.frequency = normalized_frequency
     config.include_admins = include_admins
     config.recipient_emails = normalized_recipients
     config.selected_columns = normalized_columns
+    config.email_template_id = email_template_id
     db.commit()
     db.refresh(config)
     return config
@@ -172,40 +183,30 @@ def executive_duplicate_snapshot(db: Session) -> dict:
 
 def _detail_rows(db: Session) -> list[dict]:
     statement = (
-        select(
-            DuplicateCandidateRecord,
-            DuplicateGroupRecord,
-            ScanRecord,
-            IntegrationRecord,
-        )
+        select(DuplicateCandidateRecord, DuplicateGroupRecord, ScanRecord, IntegrationRecord)
         .join(DuplicateGroupRecord, DuplicateGroupRecord.id == DuplicateCandidateRecord.group_id)
         .join(ScanRecord, ScanRecord.id == DuplicateGroupRecord.scan_id)
         .outerjoin(IntegrationRecord, IntegrationRecord.id == ScanRecord.integration_id)
         .where(DuplicateCandidateRecord.review_decision.is_(None))
-        .order_by(
-            DuplicateCandidateRecord.confidence.desc(),
-            DuplicateCandidateRecord.id.desc(),
-        )
+        .order_by(DuplicateCandidateRecord.confidence.desc(), DuplicateCandidateRecord.id.desc())
     )
     rows = []
     for candidate, group, scan, integration in db.execute(statement).all():
-        rows.append(
-            {
-                "groupId": group.id,
-                "integration": integration.name if integration else None,
-                "application": group.application,
-                "primaryUsername": group.primary_username,
-                "candidateUsername": candidate.username,
-                "confidence": candidate.confidence,
-                "classification": candidate.classification,
-                "recommendation": candidate.recommendation,
-                "reviewDecision": candidate.review_decision or "PENDING",
-                "reviewer": candidate.reviewer_name,
-                "reviewedAt": candidate.reviewed_at.isoformat() if candidate.reviewed_at else None,
-                "scanId": scan.id,
-                "scanDate": scan.created_at.isoformat() if scan.created_at else None,
-            }
-        )
+        rows.append({
+            "groupId": group.id,
+            "integration": integration.name if integration else None,
+            "application": group.application,
+            "primaryUsername": group.primary_username,
+            "candidateUsername": candidate.username,
+            "confidence": candidate.confidence,
+            "classification": candidate.classification,
+            "recommendation": candidate.recommendation,
+            "reviewDecision": candidate.review_decision or "PENDING",
+            "reviewer": candidate.reviewer_name,
+            "reviewedAt": candidate.reviewed_at.isoformat() if candidate.reviewed_at else None,
+            "scanId": scan.id,
+            "scanDate": scan.created_at.isoformat() if scan.created_at else None,
+        })
     return rows
 
 
@@ -229,6 +230,34 @@ def resolve_recipients(db: Session, config: ScheduledReportConfigRecord) -> list
         ).all()
         recipients.update(email for email in admin_emails if email)
     return sorted(recipients)
+
+
+def _default_email(snapshot: dict, *, test_mode: bool) -> tuple[str, str, str]:
+    prefix = "TEST - " if test_mode else ""
+    subject = f"{prefix}IdentityAI Duplicate Risk Report"
+    text_body = (
+        "IdentityAI Duplicate Risk Report\n\n"
+        f"Duplicate groups detected: {snapshot['duplicateGroups']}\n"
+        f"Duplicate candidate accounts: {snapshot['duplicateCandidates']}\n"
+        f"Pending review: {snapshot['pendingReview']}\n"
+        f"Confirmed duplicates: {snapshot['confirmedDuplicates']}\n"
+        f"Confirmed duplicates awaiting remediation: {snapshot['awaitingRemediation']}\n"
+        f"High-confidence unresolved candidates (>=95%): {snapshot['highConfidenceUnresolved']}\n\n"
+        "A CSV containing the current unresolved duplicate candidates is attached."
+    )
+    html_body = f"""
+    <h2>IdentityAI Duplicate Risk Report</h2>
+    <table cellpadding="8" cellspacing="0" border="1">
+      <tr><td>Duplicate groups detected</td><td><strong>{snapshot['duplicateGroups']}</strong></td></tr>
+      <tr><td>Duplicate candidate accounts</td><td><strong>{snapshot['duplicateCandidates']}</strong></td></tr>
+      <tr><td>Pending review</td><td><strong>{snapshot['pendingReview']}</strong></td></tr>
+      <tr><td>Confirmed duplicates</td><td><strong>{snapshot['confirmedDuplicates']}</strong></td></tr>
+      <tr><td>Confirmed duplicates awaiting remediation</td><td><strong>{snapshot['awaitingRemediation']}</strong></td></tr>
+      <tr><td>High-confidence unresolved candidates (&gt;=95%)</td><td><strong>{snapshot['highConfidenceUnresolved']}</strong></td></tr>
+    </table>
+    <p>A CSV containing the current unresolved duplicate candidates is attached.</p>
+    """
+    return subject, text_body, html_body
 
 
 def send_scheduled_duplicate_report(db: Session, *, test_mode: bool = False) -> dict:
@@ -256,30 +285,24 @@ def send_scheduled_duplicate_report(db: Session, *, test_mode: bool = False) -> 
     db.commit()
     db.refresh(run)
 
-    subject_prefix = "TEST - " if test_mode else ""
-    subject = f"{subject_prefix}IdentityAI Duplicate Risk Report"
-    text_body = (
-        "IdentityAI Duplicate Risk Report\n\n"
-        f"Duplicate groups detected: {snapshot['duplicateGroups']}\n"
-        f"Duplicate candidate accounts: {snapshot['duplicateCandidates']}\n"
-        f"Pending review: {snapshot['pendingReview']}\n"
-        f"Confirmed duplicates: {snapshot['confirmedDuplicates']}\n"
-        f"Confirmed duplicates awaiting remediation: {snapshot['awaitingRemediation']}\n"
-        f"High-confidence unresolved candidates (>=95%): {snapshot['highConfidenceUnresolved']}\n\n"
-        "A CSV containing the current unresolved duplicate candidates is attached."
+    template = (
+        db.get(ReportEmailTemplateRecord, config.email_template_id)
+        if config.email_template_id is not None
+        else None
     )
-    html_body = f"""
-    <h2>IdentityAI Duplicate Risk Report</h2>
-    <table cellpadding="8" cellspacing="0" border="1">
-      <tr><td>Duplicate groups detected</td><td><strong>{snapshot['duplicateGroups']}</strong></td></tr>
-      <tr><td>Duplicate candidate accounts</td><td><strong>{snapshot['duplicateCandidates']}</strong></td></tr>
-      <tr><td>Pending review</td><td><strong>{snapshot['pendingReview']}</strong></td></tr>
-      <tr><td>Confirmed duplicates</td><td><strong>{snapshot['confirmedDuplicates']}</strong></td></tr>
-      <tr><td>Confirmed duplicates awaiting remediation</td><td><strong>{snapshot['awaitingRemediation']}</strong></td></tr>
-      <tr><td>High-confidence unresolved candidates (&gt;=95%)</td><td><strong>{snapshot['highConfidenceUnresolved']}</strong></td></tr>
-    </table>
-    <p>A CSV containing the current unresolved duplicate candidates is attached.</p>
-    """
+    if template is not None and template.is_active:
+        variables = report_variables(
+            snapshot=snapshot,
+            generated_at=generated_at,
+            unresolved_rows=len(rows),
+            recipient_count=len(recipients),
+            test_mode=test_mode,
+        )
+        subject = render_template(template.subject_template, variables) or ""
+        text_body = render_template(template.text_body_template, variables) or ""
+        html_body = render_template(template.html_body_template, variables)
+    else:
+        subject, text_body, html_body = _default_email(snapshot, test_mode=test_mode)
 
     try:
         send_email(
