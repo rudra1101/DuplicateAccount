@@ -1,4 +1,5 @@
 import { Box, Link, Typography } from "@mui/material";
+import { Link as RouterLink } from "react-router-dom";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -119,17 +120,35 @@ const markdownComponents: Components = {
     />
   ),
 
-  a: ({ href, children }) => (
-    <Link
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      underline="hover"
-      sx={{ overflowWrap: "anywhere" }}
-    >
-      {children}
-    </Link>
-  ),
+  a: ({ href, children }) => {
+    const target = href ?? "";
+    const isAppRoute = target.startsWith("/") && !target.startsWith("/api/");
+
+    if (isAppRoute) {
+      return (
+        <Link
+          component={RouterLink}
+          to={target}
+          underline="hover"
+          sx={{ overflowWrap: "anywhere", fontWeight: 600 }}
+        >
+          {children}
+        </Link>
+      );
+    }
+
+    return (
+      <Link
+        href={target}
+        target={target.startsWith("/api/") ? "_self" : "_blank"}
+        rel={target.startsWith("/api/") ? undefined : "noreferrer"}
+        underline="hover"
+        sx={{ overflowWrap: "anywhere", fontWeight: 600 }}
+      >
+        {children}
+      </Link>
+    );
+  },
 
   pre: ({ children }) => (
     <Box
