@@ -46,6 +46,7 @@ from app.observability import (
 from app.security_headers import security_headers_middleware
 from app.services.monitoring_service import get_system_status
 from app.services.rbac_service import seed_rbac
+from app.services.remediation_sla_service import process_remediation_sla
 from app.services.scheduler_service import scheduler_service
 from app.services.scheduled_report_scheduler import register_scheduled_report
 from app.services.service_desk_service import sync_open_tickets
@@ -78,6 +79,16 @@ async def lifespan(app: FastAPI):
         minutes=5,
         id="service_desk_ticket_sync",
         name="Service Desk ticket status synchronization",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler_service.scheduler.add_job(
+        process_remediation_sla,
+        trigger="interval",
+        minutes=15,
+        id="remediation_sla_escalation",
+        name="Remediation SLA escalation",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
