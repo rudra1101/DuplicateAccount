@@ -78,7 +78,7 @@ def _candidate_is_visible(
         fallback_username=str(primary_account.get("username") or ""),
     )
     candidate_key = _account_key(
-        application=application,
+        application=str(candidate_account.get("application") or application),
         account=candidate_account,
         fallback_username=str(candidate_account.get("username") or ""),
     )
