@@ -155,7 +155,13 @@ function EmailTemplatesCard() {
     }
   };
 
-  if (!canManage) return null;
+  if (!canManage) {
+    return (
+      <Alert severity="warning">
+        You do not have permission to manage report email templates.
+      </Alert>
+    );
+  }
 
   return (
     <Card variant="outlined">

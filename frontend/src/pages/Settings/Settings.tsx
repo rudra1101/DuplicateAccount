@@ -15,6 +15,8 @@ import {
   Grid,
   Stack,
   Switch,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -30,8 +32,12 @@ import {
   type BrandingSettings,
   type SmtpSettings,
 } from "../../services/settingsService";
+import EmailTemplatesCard from "./EmailTemplatesCard";
+
+type SettingsTab = "smtp" | "branding" | "emailTemplates";
 
 const Settings = () => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("smtp");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -81,12 +87,15 @@ const Settings = () => {
   }, []);
 
   const logoSrc = useMemo(
-    () =>
-      branding?.customLogo
-        ? customLogoUrl(branding.updatedAt)
-        : "/nusummit-logo.svg",
+    () => branding?.customLogo ? customLogoUrl(branding.updatedAt) : "/nusummit-logo.svg",
     [branding],
   );
+
+  const handleTabChange = (_event: React.SyntheticEvent, value: SettingsTab) => {
+    setActiveTab(value);
+    setError("");
+    setSuccess("");
+  };
 
   const handleSaveSmtp = async () => {
     setSaving(true);
@@ -182,163 +191,183 @@ const Settings = () => {
           Settings
         </Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          Configure platform email delivery and application branding. These settings are restricted to administrators.
+          Configure administrator-managed platform settings for email delivery, branding, and report notifications.
         </Typography>
       </Box>
+
+      <Card variant="outlined">
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ px: 2 }}
+        >
+          <Tab value="smtp" label="SMTP" />
+          <Tab value="branding" label="Branding" />
+          <Tab value="emailTemplates" label="Email Templates" />
+        </Tabs>
+      </Card>
 
       {error && <Alert severity="error" onClose={() => setError("")}>{error}</Alert>}
       {success && <Alert severity="success" onClose={() => setSuccess("")}>{success}</Alert>}
 
-      <Card variant="outlined">
-        <CardContent>
-          <Stack spacing={2.5}>
-            <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1}>
+      {activeTab === "smtp" && (
+        <Card variant="outlined">
+          <CardContent>
+            <Stack spacing={2.5}>
+              <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1}>
+                <Box>
+                  <Typography variant="h6" fontWeight={800}>SMTP Configuration</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Used by scheduled reports and other IdentityAI email notifications.
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  label={smtp?.source === "database" ? "Managed in IdentityAI" : smtp?.source === "environment" ? "Using environment values" : "Not configured"}
+                  color={smtp?.source === "database" ? "primary" : "default"}
+                  variant="outlined"
+                />
+              </Stack>
+
+              <Divider />
+
+              <FormControlLabel
+                control={<Switch checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />}
+                label="Enable SMTP email delivery"
+              />
+
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, md: 8 }}>
+                  <TextField fullWidth label="SMTP host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="smtp.example.com" />
+                </Grid>
+                <Grid size={{ xs: 12, md: 4 }}>
+                  <TextField fullWidth label="Port" type="number" value={port} onChange={(event) => setPort(Number(event.target.value))} inputProps={{ min: 1, max: 65535 }} />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField
+                    fullWidth
+                    label={smtp?.passwordConfigured ? "Password (leave blank to keep current)" : "Password"}
+                    type="password"
+                    value={password}
+                    onChange={(event) => {
+                      setPassword(event.target.value);
+                      if (event.target.value) setClearPassword(false);
+                    }}
+                    autoComplete="new-password"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <TextField fullWidth label="From email" type="email" value={fromEmail} onChange={(event) => setFromEmail(event.target.value)} placeholder="identityai@example.com" />
+                </Grid>
+                <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex", alignItems: "center" }}>
+                  <FormControlLabel control={<Switch checked={useTls} onChange={(event) => setUseTls(event.target.checked)} />} label="Use STARTTLS" />
+                </Grid>
+              </Grid>
+
+              {smtp?.passwordConfigured && (
+                <FormControlLabel
+                  control={<Switch checked={clearPassword} onChange={(event) => {
+                    setClearPassword(event.target.checked);
+                    if (event.target.checked) setPassword("");
+                  }} />}
+                  label="Clear the saved SMTP password"
+                />
+              )}
+
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+                <Button variant="contained" onClick={handleSaveSmtp} disabled={saving}>
+                  {saving ? "Saving…" : "Save SMTP settings"}
+                </Button>
+                <TextField
+                  size="small"
+                  label="Test recipient"
+                  type="email"
+                  value={testRecipient}
+                  onChange={(event) => setTestRecipient(event.target.value)}
+                  sx={{ minWidth: { sm: 280 } }}
+                />
+                <Button variant="outlined" startIcon={<SendOutlinedIcon />} onClick={handleTestSmtp} disabled={testing || !enabled}>
+                  {testing ? "Sending…" : "Send test email"}
+                </Button>
+              </Stack>
+            </Stack>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "branding" && (
+        <Card variant="outlined">
+          <CardContent>
+            <Stack spacing={2.5}>
               <Box>
-                <Typography variant="h6" fontWeight={800}>SMTP Configuration</Typography>
+                <Typography variant="h6" fontWeight={800}>Header Branding</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Used by scheduled reports and other IdentityAI email notifications.
+                  Upload the logo displayed in the application header. PNG, JPEG, and WebP are supported up to 2 MB.
                 </Typography>
               </Box>
-              <Chip
-                size="small"
-                label={smtp?.source === "database" ? "Managed in IdentityAI" : smtp?.source === "environment" ? "Using environment values" : "Not configured"}
-                color={smtp?.source === "database" ? "primary" : "default"}
-                variant="outlined"
-              />
-            </Stack>
 
-            <Divider />
+              <Divider />
 
-            <FormControlLabel
-              control={<Switch checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />}
-              label="Enable SMTP email delivery"
-            />
-
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 8 }}>
-                <TextField fullWidth label="SMTP host" value={host} onChange={(event) => setHost(event.target.value)} placeholder="smtp.example.com" />
-              </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <TextField fullWidth label="Port" type="number" value={port} onChange={(event) => setPort(Number(event.target.value))} inputProps={{ min: 1, max: 65535 }} />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField fullWidth label="Username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="off" />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField
-                  fullWidth
-                  label={smtp?.passwordConfigured ? "Password (leave blank to keep current)" : "Password"}
-                  type="password"
-                  value={password}
-                  onChange={(event) => {
-                    setPassword(event.target.value);
-                    if (event.target.value) setClearPassword(false);
-                  }}
-                  autoComplete="new-password"
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <TextField fullWidth label="From email" type="email" value={fromEmail} onChange={(event) => setFromEmail(event.target.value)} placeholder="identityai@example.com" />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }} sx={{ display: "flex", alignItems: "center" }}>
-                <FormControlLabel control={<Switch checked={useTls} onChange={(event) => setUseTls(event.target.checked)} />} label="Use STARTTLS" />
-              </Grid>
-            </Grid>
-
-            {smtp?.passwordConfigured && (
-              <FormControlLabel
-                control={<Switch checked={clearPassword} onChange={(event) => {
-                  setClearPassword(event.target.checked);
-                  if (event.target.checked) setPassword("");
-                }} />}
-                label="Clear the saved SMTP password"
-              />
-            )}
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-              <Button variant="contained" onClick={handleSaveSmtp} disabled={saving}>
-                {saving ? "Saving…" : "Save SMTP settings"}
-              </Button>
-              <TextField
-                size="small"
-                label="Test recipient"
-                type="email"
-                value={testRecipient}
-                onChange={(event) => setTestRecipient(event.target.value)}
-                sx={{ minWidth: { sm: 280 } }}
-              />
-              <Button variant="outlined" startIcon={<SendOutlinedIcon />} onClick={handleTestSmtp} disabled={testing || !enabled}>
-                {testing ? "Sending…" : "Send test email"}
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card variant="outlined">
-        <CardContent>
-          <Stack spacing={2.5}>
-            <Box>
-              <Typography variant="h6" fontWeight={800}>Header Branding</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Upload the logo displayed in the application header. PNG, JPEG, and WebP are supported up to 2 MB.
-              </Typography>
-            </Box>
-
-            <Divider />
-
-            <Box
-              sx={{
-                minHeight: 110,
-                border: "1px dashed",
-                borderColor: "divider",
-                borderRadius: 2,
-                bgcolor: "#0f172a",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                px: 3,
-                py: 2,
-              }}
-            >
               <Box
-                component="img"
-                src={logoSrc}
-                alt="Header logo preview"
-                sx={{ maxHeight: 64, maxWidth: "100%", objectFit: "contain" }}
-              />
-            </Box>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-              <Button component="label" variant="contained" startIcon={<CloudUploadOutlinedIcon />} disabled={brandingBusy}>
-                {brandingBusy ? "Updating…" : "Upload logo"}
-                <input
-                  hidden
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    void handleLogoUpload(event.target.files?.[0]);
-                    event.target.value = "";
-                  }}
-                />
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<RestartAltIcon />}
-                onClick={handleResetLogo}
-                disabled={brandingBusy || !branding?.customLogo}
+                sx={{
+                  minHeight: 110,
+                  border: "1px dashed",
+                  borderColor: "divider",
+                  borderRadius: 2,
+                  bgcolor: "#0f172a",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  px: 3,
+                  py: 2,
+                }}
               >
-                Reset to default
-              </Button>
-              {branding?.customLogo && (
-                <Typography variant="body2" color="text.secondary">
-                  Current file: {branding.filename || "custom logo"}
-                </Typography>
-              )}
+                <Box
+                  component="img"
+                  src={logoSrc}
+                  alt="Header logo preview"
+                  sx={{ maxHeight: 64, maxWidth: "100%", objectFit: "contain" }}
+                />
+              </Box>
+
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+                <Button component="label" variant="contained" startIcon={<CloudUploadOutlinedIcon />} disabled={brandingBusy}>
+                  {brandingBusy ? "Updating…" : "Upload logo"}
+                  <input
+                    hidden
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(event) => {
+                      void handleLogoUpload(event.target.files?.[0]);
+                      event.target.value = "";
+                    }}
+                  />
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<RestartAltIcon />}
+                  onClick={handleResetLogo}
+                  disabled={brandingBusy || !branding?.customLogo}
+                >
+                  Reset to default
+                </Button>
+                {branding?.customLogo && (
+                  <Typography variant="body2" color="text.secondary">
+                    Current file: {branding.filename || "custom logo"}
+                  </Typography>
+                )}
+              </Stack>
             </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {activeTab === "emailTemplates" && <EmailTemplatesCard />}
     </Stack>
   );
 };
