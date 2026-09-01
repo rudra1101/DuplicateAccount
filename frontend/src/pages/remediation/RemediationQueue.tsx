@@ -38,6 +38,7 @@ import {
   type RemediationAction,
   type RemediationFilters,
   type RemediationItem,
+  type RemediationSlaStatus,
   type RemediationStatus,
   type RemediationTarget,
   type ReviewDecisionHistoryItem,
@@ -55,6 +56,7 @@ import {
 type PageTab = "queue" | "history";
 type QueueFilter = RemediationStatus | "ALL";
 type TicketPresence = "ALL" | "WITH" | "WITHOUT";
+type SlaFilter = Exclude<RemediationSlaStatus, "NONE"> | "ALL";
 
 const valueOf = (account: Record<string, unknown>, key: string): string => {
   const value = account[key];
@@ -75,6 +77,21 @@ const decisionLabel = (value: string): string => {
   return "Uncertain";
 };
 
+const slaLabel = (status: RemediationSlaStatus): string => {
+  if (status === "ON_TRACK") return "On Track";
+  if (status === "WARNING") return "SLA Warning";
+  if (status === "OVERDUE") return "Overdue";
+  if (status === "ESCALATED") return "Escalated";
+  return "Not Tracked";
+};
+
+const slaColor = (status: RemediationSlaStatus): "success" | "warning" | "error" | "default" => {
+  if (status === "ON_TRACK") return "success";
+  if (status === "WARNING") return "warning";
+  if (status === "OVERDUE" || status === "ESCALATED") return "error";
+  return "default";
+};
+
 const RemediationQueue = () => {
   const { user, hasPermission } = useAuth();
   const canViewQueue = hasPermission("remediation.view");
@@ -90,6 +107,7 @@ const RemediationQueue = () => {
   const [actionFilter, setActionFilter] = useState<RemediationAction | "ALL">("ALL");
   const [ticketStatusFilter, setTicketStatusFilter] = useState("");
   const [ticketPresence, setTicketPresence] = useState<TicketPresence>("ALL");
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>("ALL");
   const [appliedFilters, setAppliedFilters] = useState<RemediationFilters>({ status: "PENDING_ACTION" });
 
   const [items, setItems] = useState<RemediationItem[]>([]);
@@ -167,6 +185,7 @@ const RemediationQueue = () => {
       remediationAction: actionFilter,
       ticketStatus: ticketStatusFilter,
       hasTicket: ticketPresence === "ALL" ? null : ticketPresence === "WITH",
+      slaStatus: slaFilter,
     });
   };
 
@@ -179,6 +198,7 @@ const RemediationQueue = () => {
     setActionFilter("ALL");
     setTicketStatusFilter("");
     setTicketPresence("ALL");
+    setSlaFilter("ALL");
     setAppliedFilters({ status: "ALL" });
   };
 
@@ -310,7 +330,7 @@ const RemediationQueue = () => {
         <Box>
           <Typography variant="h5" fontWeight={700}>Duplicate Account Remediation</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
-            Filter, bulk-select, and create disable/delete Service Desk tickets for reviewer-confirmed duplicate accounts.
+            Filter, bulk-select, track SLA, and create disable/delete Service Desk tickets for reviewer-confirmed duplicate accounts.
           </Typography>
         </Box>
         <Button variant="outlined" startIcon={loading ? <CircularProgress size={18} /> : <RefreshIcon />} onClick={loadData} disabled={loading}>Refresh</Button>
@@ -347,6 +367,7 @@ const RemediationQueue = () => {
                 <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Action</InputLabel><Select value={actionFilter} label="Action" onChange={(event) => setActionFilter(event.target.value as RemediationAction | "ALL")}><MenuItem value="ALL">All</MenuItem><MenuItem value="DISABLE">Disable</MenuItem><MenuItem value="DELETE">Delete</MenuItem></Select></FormControl>
                 <TextField size="small" label="Ticket status" value={ticketStatusFilter} onChange={(event) => setTicketStatusFilter(event.target.value)} />
                 <FormControl size="small" sx={{ minWidth: 155 }}><InputLabel>Ticket</InputLabel><Select value={ticketPresence} label="Ticket" onChange={(event) => setTicketPresence(event.target.value as TicketPresence)}><MenuItem value="ALL">All</MenuItem><MenuItem value="WITH">Has ticket</MenuItem><MenuItem value="WITHOUT">No ticket</MenuItem></Select></FormControl>
+                <FormControl size="small" sx={{ minWidth: 165 }}><InputLabel>SLA</InputLabel><Select value={slaFilter} label="SLA" onChange={(event) => setSlaFilter(event.target.value as SlaFilter)}><MenuItem value="ALL">All SLA states</MenuItem><MenuItem value="ON_TRACK">On Track</MenuItem><MenuItem value="WARNING">Warning</MenuItem><MenuItem value="OVERDUE">Overdue</MenuItem><MenuItem value="ESCALATED">Escalated</MenuItem></Select></FormControl>
               </Stack>
               <Stack direction="row" spacing={1}><Button variant="contained" onClick={applyFilters}>Apply Filters</Button><Button variant="text" onClick={clearFilters}>Clear</Button></Stack>
             </Stack>
@@ -368,11 +389,11 @@ const RemediationQueue = () => {
             <Table>
               <TableHead><TableRow>
                 {canManage && <TableCell padding="checkbox"><Checkbox checked={allSelected} indeterminate={someSelected} onChange={toggleAll} /></TableCell>}
-                <TableCell>Integration / Application</TableCell><TableCell>Account 1</TableCell><TableCell>Account 2</TableCell><TableCell>AI Confidence</TableCell><TableCell>Status / Ticket</TableCell>{canManage && <TableCell align="right">Action</TableCell>}
+                <TableCell>Integration / Application</TableCell><TableCell>Account 1</TableCell><TableCell>Account 2</TableCell><TableCell>AI Confidence</TableCell><TableCell>SLA</TableCell><TableCell>Status / Ticket</TableCell>{canManage && <TableCell align="right">Action</TableCell>}
               </TableRow></TableHead>
               <TableBody>
                 {items.length === 0 ? (
-                  <TableRow><TableCell colSpan={canManage ? 7 : 5} align="center" sx={{ py: 6 }}>No remediation items match the current filters.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={canManage ? 8 : 6} align="center" sx={{ py: 6 }}>No remediation items match the current filters.</TableCell></TableRow>
                 ) : items.map((item) => (
                   <TableRow key={item.id} hover selected={selectedIds.has(item.id)}>
                     {canManage && <TableCell padding="checkbox"><Checkbox checked={selectedIds.has(item.id)} onChange={() => toggleSelection(item.id)} /></TableCell>}
@@ -380,6 +401,7 @@ const RemediationQueue = () => {
                     <TableCell><Typography fontWeight={600}>{accountName(item.account1, item.account1Key)}</Typography><Typography variant="caption" color="text.secondary">{valueOf(item.account1, "email")}</Typography></TableCell>
                     <TableCell><Typography fontWeight={600}>{accountName(item.account2, item.account2Key)}</Typography><Typography variant="caption" color="text.secondary">{valueOf(item.account2, "email")}</Typography></TableCell>
                     <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
+                    <TableCell><Stack spacing={0.5} alignItems="flex-start"><Chip size="small" label={slaLabel(item.slaStatus)} color={slaColor(item.slaStatus)} variant={item.slaStatus === "NONE" ? "outlined" : "filled"} />{item.slaDueAt && <Typography variant="caption" color="text.secondary">Due {new Date(item.slaDueAt).toLocaleString()}</Typography>}{item.slaEscalatedAt && <Typography variant="caption" color="error">Escalated {new Date(item.slaEscalatedAt).toLocaleString()}</Typography>}</Stack></TableCell>
                     <TableCell><Stack spacing={0.5} alignItems="flex-start"><Chip size="small" label={item.status.replaceAll("_", " ")} />{item.ticketId && (item.ticketUrl ? <Link href={item.ticketUrl} target="_blank" rel="noopener noreferrer" variant="caption">{item.ticketId} · {item.ticketStatus ?? "Unknown"}</Link> : <Typography variant="caption">{item.ticketId} · {item.ticketStatus ?? "Unknown"}</Typography>)}{item.remediationAction && <Typography variant="caption" color="text.secondary">{item.remediationAction} · {item.targetAccountKey}</Typography>}{item.ticketError && <Typography variant="caption" color="error">Last sync: {item.ticketError}</Typography>}</Stack></TableCell>
                     {canManage && <TableCell align="right"><Stack direction="row" spacing={1} justifyContent="flex-end">{!item.ticketId && item.status === "PENDING_ACTION" && <Button size="small" variant="contained" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={updatingId === item.id} onClick={() => openTicketDialog(item)}>Create Ticket</Button>}{item.ticketId && item.status === "TICKET_OPEN" && <Button size="small" variant="outlined" disabled={updatingId === item.id} onClick={() => void syncTicket(item)}>Sync Ticket</Button>}{!item.ticketId && <Button size="small" color="inherit" disabled={updatingId === item.id || item.status === "IGNORED"} onClick={() => void setStatus(item, "IGNORED")}>Ignore</Button>}</Stack></TableCell>}
                   </TableRow>
