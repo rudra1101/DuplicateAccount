@@ -96,22 +96,33 @@ class GenerateReportTool(BaseAITool):
             item for item in REPORT_CATALOG if item["type"] == report_type
         )
 
+        download_query = urlencode(
+            {
+                "reportType": report_type,
+                **filters,
+            }
+        )
+        download_url = f"/api/reports/rudrix-download?{download_query}"
+
         return {
             "message": (
-                f"Generated {report_definition['name']} with "
-                f"{report['total']} matching row(s). The CSV download is ready."
+                f"Generated **{report_definition['name']}** with "
+                f"**{report['total']}** matching row(s). "
+                f"[Download CSV]({download_url})"
             ),
             "reportType": report_type,
             "reportName": report_definition["name"],
             "total": report["total"],
             "columns": report["columns"],
             "previewRows": report["rows"],
+            "downloadUrl": download_url,
             "clientAction": {
                 "type": "DOWNLOAD_REPORT",
                 "label": f"Download {report_definition['name']}",
+                "url": download_url,
                 "reportType": report_type,
                 "filters": filters,
-                "autoExecute": True,
+                "autoExecute": False,
             },
         }
 
@@ -172,12 +183,16 @@ class CreateRemediationTicketTool(BaseAITool):
         target_key = result.get("targetAccountKey") or target
         ticket_url = result.get("ticketUrl")
 
+        message = (
+            f"Created Service Desk ticket **{ticket_id}** to "
+            f"**{action.lower()}** account `{target_key}`."
+        )
+        if ticket_url:
+            message += f" [Open ticket]({ticket_url})"
+
         response: dict[str, Any] = {
             **result,
-            "message": (
-                f"Created Service Desk ticket {ticket_id} to {action.lower()} "
-                f"account {target_key}."
-            ),
+            "message": message,
         }
 
         if ticket_url:
@@ -267,13 +282,13 @@ class NavigateAppTool(BaseAITool):
                     route += "?" + urlencode({"integrationId": int(integration_id)})
 
         return {
-            "message": f"Opening {label}.",
+            "message": f"[Open **{label}**]({route})",
             "destination": destination,
             "route": route,
             "clientAction": {
                 "type": "NAVIGATE",
                 "label": f"Open {label}",
                 "route": route,
-                "autoExecute": True,
+                "autoExecute": False,
             },
         }
