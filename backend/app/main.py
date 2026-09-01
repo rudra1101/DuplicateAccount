@@ -48,6 +48,7 @@ from app.services.monitoring_service import get_system_status
 from app.services.rbac_service import seed_rbac
 from app.services.scheduler_service import scheduler_service
 from app.services.scheduled_report_scheduler import register_scheduled_report
+from app.services.service_desk_service import sync_open_tickets
 
 import app.connectors  # noqa: F401
 import app.db_models  # noqa: F401
@@ -71,6 +72,16 @@ with SessionLocal() as db:
 async def lifespan(app: FastAPI):
     scheduler_service.start()
     register_scheduled_report()
+    scheduler_service.scheduler.add_job(
+        sync_open_tickets,
+        trigger="interval",
+        minutes=5,
+        id="service_desk_ticket_sync",
+        name="Service Desk ticket status synchronization",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
     try:
         yield
     finally:

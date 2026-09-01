@@ -8,6 +8,10 @@ from sqlalchemy.orm import Session
 from app.auth import require_permission
 from app.database.session import get_db
 from app.services.email_service import send_email
+from app.services.service_desk_service import (
+    service_desk_settings_response,
+    update_service_desk_settings,
+)
 from app.services.settings_service import (
     branding_response,
     clear_logo,
@@ -37,6 +41,24 @@ class SmtpSettingsUpdate(BaseModel):
 
 class SmtpTestRequest(BaseModel):
     recipient: EmailStr
+
+
+class ServiceDeskSettingsUpdate(BaseModel):
+    enabled: bool = False
+    name: str = "Service Desk"
+    baseUrl: str = ""
+    authType: str = "BEARER"
+    username: str = ""
+    secret: str | None = None
+    clearSecret: bool = False
+    createPath: str = "/tickets"
+    statusPath: str = "/tickets/{ticket_id}"
+    ticketIdField: str = "id"
+    ticketStatusField: str = "status"
+    ticketUrlField: str = "url"
+    completedStatuses: list[str] = ["completed", "resolved", "closed"]
+    payloadTemplate: str
+    verifyTls: bool = True
 
 
 @router.get(
@@ -81,16 +103,51 @@ def test_smtp_settings(payload: SmtpTestRequest):
         send_email(
             recipients=[str(payload.recipient)],
             subject="IdentityAI SMTP test",
-            text_body=(
-                "Your IdentityAI SMTP configuration is working correctly."
-            ),
+            text_body="Your IdentityAI SMTP configuration is working correctly.",
         )
         return {"sent": True}
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"SMTP test failed: {exc}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"SMTP test failed: {exc}") from exc
+
+
+@router.get(
+    "/service-desk",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def get_service_desk_settings(db: Session = Depends(get_db)):
+    return service_desk_settings_response(db)
+
+
+@router.put(
+    "/service-desk",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def put_service_desk_settings(
+    payload: ServiceDeskSettingsUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        update_service_desk_settings(
+            db,
+            enabled=payload.enabled,
+            name=payload.name,
+            base_url=payload.baseUrl,
+            auth_type=payload.authType,
+            username=payload.username,
+            secret=payload.secret,
+            clear_secret=payload.clearSecret,
+            create_path=payload.createPath,
+            status_path=payload.statusPath,
+            ticket_id_field=payload.ticketIdField,
+            ticket_status_field=payload.ticketStatusField,
+            ticket_url_field=payload.ticketUrlField,
+            completed_statuses=payload.completedStatuses,
+            payload_template=payload.payloadTemplate,
+            verify_tls=payload.verifyTls,
+        )
+        return service_desk_settings_response(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/branding")
@@ -121,10 +178,7 @@ async def upload_branding_logo(
 ):
     mime_type = str(logo.content_type or "").lower()
     if mime_type not in ALLOWED_LOGO_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail="Logo must be PNG, JPEG, or WebP.",
-        )
+        raise HTTPException(status_code=400, detail="Logo must be PNG, JPEG, or WebP.")
 
     data = await logo.read(MAX_LOGO_BYTES + 1)
     if not data:

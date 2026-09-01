@@ -21,6 +21,25 @@ class ApplicationSettingsRecord(Base):
     smtp_from_email: Mapped[str] = mapped_column(String(320), nullable=False, default="")
     smtp_use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    service_desk_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    service_desk_name: Mapped[str] = mapped_column(String(150), nullable=False, default="Service Desk")
+    service_desk_base_url: Mapped[str] = mapped_column(String(1000), nullable=False, default="")
+    service_desk_auth_type: Mapped[str] = mapped_column(String(20), nullable=False, default="BEARER")
+    service_desk_username: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    service_desk_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    service_desk_create_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="/tickets")
+    service_desk_status_path: Mapped[str] = mapped_column(String(1000), nullable=False, default="/tickets/{ticket_id}")
+    service_desk_ticket_id_field: Mapped[str] = mapped_column(String(255), nullable=False, default="id")
+    service_desk_ticket_status_field: Mapped[str] = mapped_column(String(255), nullable=False, default="status")
+    service_desk_ticket_url_field: Mapped[str] = mapped_column(String(255), nullable=False, default="url")
+    service_desk_completed_statuses: Mapped[str] = mapped_column(String(500), nullable=False, default="completed,resolved,closed")
+    service_desk_payload_template: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default='{"summary":"{{summary}}","description":"{{description}}","action":"{{action}}","accountKey":"{{account_key}}","application":"{{application}}"}',
+    )
+    service_desk_verify_tls: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
     logo_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     logo_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     logo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)

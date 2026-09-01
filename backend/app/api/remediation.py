@@ -12,6 +12,7 @@ from app.services.remediation_service import (
     list_remediation_items,
     update_remediation_status,
 )
+from app.services.service_desk_service import create_ticket, sync_ticket_by_id
 
 
 router = APIRouter(prefix="/remediation", tags=["Remediation"])
@@ -21,6 +22,12 @@ class RemediationStatusRequest(BaseModel):
     status: str
     comment: str | None = None
     actionedBy: str | None = None
+
+
+class CreateTicketRequest(BaseModel):
+    target: str
+    action: str
+    requestedBy: str | None = None
 
 
 @router.get("/")
@@ -56,6 +63,43 @@ def decision_history(
         return {"count": len(items), "items": items}
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=500, detail="Unable to load review decision history.") from exc
+
+
+@router.post("/{item_id}/ticket")
+def create_remediation_ticket(
+    item_id: int,
+    payload: CreateTicketRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("remediation.manage")),
+):
+    try:
+        return create_ticket(
+            db,
+            item_id=item_id,
+            target=payload.target,
+            action=payload.action,
+            requested_by=payload.requestedBy,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        raise HTTPException(status_code=404 if "not found" in message.lower() else 400, detail=message) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/{item_id}/ticket/sync")
+def sync_remediation_ticket(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("remediation.manage")),
+):
+    try:
+        return sync_ticket_by_id(db, item_id)
+    except ValueError as exc:
+        message = str(exc)
+        raise HTTPException(status_code=404 if "not found" in message.lower() else 400, detail=message) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/{item_id}/status")

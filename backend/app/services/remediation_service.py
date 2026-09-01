@@ -14,6 +14,7 @@ from app.services.review_pair_feedback_service import normalize_pair_keys
 
 VALID_REMEDIATION_STATUSES = {
     "PENDING_ACTION",
+    "TICKET_OPEN",
     "ACTIONED",
     "IGNORED",
     "FAILED",
@@ -81,7 +82,7 @@ def record_review_decision(
                 status="PENDING_ACTION",
             )
             db.add(existing)
-        elif existing.status in {"IGNORED", "FAILED"}:
+        elif existing.status in {"IGNORED", "FAILED"} and not existing.service_desk_ticket_id:
             existing.status = "PENDING_ACTION"
 
         existing.account_1_data = data_1
@@ -94,6 +95,35 @@ def record_review_decision(
         existing.status = "IGNORED"
         existing.action_comment = f"Removed from active remediation after reviewer decision: {normalized_decision}."
         existing.updated_at = _utc_now()
+
+
+def _serialize_remediation(record: RemediationItemRecord, integration_name: str | None = None) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "integrationId": record.integration_id,
+        "integrationName": integration_name,
+        "application": record.application,
+        "account1Key": record.account_1_key,
+        "account2Key": record.account_2_key,
+        "account1": record.account_1_data or {},
+        "account2": record.account_2_data or {},
+        "confidence": record.confidence,
+        "reviewerName": record.reviewer_name,
+        "reviewComment": record.review_comment,
+        "status": record.status,
+        "actionComment": record.action_comment,
+        "actionedBy": record.actioned_by,
+        "remediationAction": record.remediation_action,
+        "targetAccountKey": record.target_account_key,
+        "ticketId": record.service_desk_ticket_id,
+        "ticketStatus": record.service_desk_ticket_status,
+        "ticketUrl": record.service_desk_ticket_url,
+        "ticketCreatedAt": record.ticket_created_at.isoformat() if record.ticket_created_at else None,
+        "ticketLastSyncedAt": record.ticket_last_synced_at.isoformat() if record.ticket_last_synced_at else None,
+        "ticketError": record.ticket_error,
+        "createdAt": record.created_at.isoformat() if record.created_at else None,
+        "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
+    }
 
 
 def list_remediation_items(
@@ -129,27 +159,7 @@ def list_remediation_items(
         ).all()
     } if integration_ids else {}
 
-    return [
-        {
-            "id": record.id,
-            "integrationId": record.integration_id,
-            "integrationName": names.get(record.integration_id),
-            "application": record.application,
-            "account1Key": record.account_1_key,
-            "account2Key": record.account_2_key,
-            "account1": record.account_1_data or {},
-            "account2": record.account_2_data or {},
-            "confidence": record.confidence,
-            "reviewerName": record.reviewer_name,
-            "reviewComment": record.review_comment,
-            "status": record.status,
-            "actionComment": record.action_comment,
-            "actionedBy": record.actioned_by,
-            "createdAt": record.created_at.isoformat() if record.created_at else None,
-            "updatedAt": record.updated_at.isoformat() if record.updated_at else None,
-        }
-        for record in records
-    ]
+    return [_serialize_remediation(record, names.get(record.integration_id)) for record in records]
 
 
 def list_decision_history(db: Session, *, limit: int = 200) -> list[dict[str, Any]]:
@@ -194,6 +204,8 @@ def update_remediation_status(
     normalized = status.strip().upper()
     if normalized not in VALID_REMEDIATION_STATUSES:
         raise ValueError("Invalid remediation status.")
+    if record.status == "TICKET_OPEN" and normalized == "ACTIONED":
+        raise ValueError("Ticket-driven remediation is completed only when the Service Desk ticket reaches a configured completed status.")
     record.status = normalized
     record.action_comment = (action_comment or "").strip() or None
     record.actioned_by = (actioned_by or "").strip() or None

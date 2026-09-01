@@ -6,8 +6,13 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
+  Link,
   MenuItem,
   Paper,
   Select,
@@ -23,15 +28,20 @@ import {
   Typography,
 } from "@mui/material";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import ConfirmationNumberOutlinedIcon from "@mui/icons-material/ConfirmationNumberOutlined";
 
 import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
 import {
+  type RemediationAction,
   type RemediationItem,
   type RemediationStatus,
+  type RemediationTarget,
   type ReviewDecisionHistoryItem,
+  createRemediationTicket,
   getRemediationItems,
   getReviewDecisionHistory,
+  syncRemediationTicket,
   updateRemediationStatus,
 } from "../../services/remediationService";
 
@@ -54,6 +64,7 @@ const accountName = (account: Record<string, unknown>, stableKey: string): strin
 const decisionLabel = (value: string): string => {
   if (value === "DUPLICATE") return "Confirmed Duplicate";
   if (value === "NOT_DUPLICATE") return "Not Duplicate";
+  if (value === "REMEDIATED") return "Remediated";
   return "Uncertain";
 };
 
@@ -70,6 +81,9 @@ const RemediationQueue = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [ticketItem, setTicketItem] = useState<RemediationItem | null>(null);
+  const [ticketTarget, setTicketTarget] = useState<RemediationTarget>("ACCOUNT_2");
+  const [ticketAction, setTicketAction] = useState<RemediationAction>("DISABLE");
 
   const loadData = useCallback(async () => {
     try {
@@ -102,15 +116,50 @@ const RemediationQueue = () => {
     try {
       setUpdatingId(item.id);
       setError("");
-      await updateRemediationStatus(
-        item.id,
-        status,
-        null,
-        user?.fullName || user?.username || null,
-      );
+      await updateRemediationStatus(item.id, status, null, user?.fullName || user?.username || null);
       await loadData();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to update remediation item.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const openTicketDialog = (item: RemediationItem) => {
+    setTicketItem(item);
+    setTicketTarget("ACCOUNT_2");
+    setTicketAction("DISABLE");
+    setError("");
+  };
+
+  const createTicket = async () => {
+    if (!ticketItem) return;
+    try {
+      setUpdatingId(ticketItem.id);
+      await createRemediationTicket(
+        ticketItem.id,
+        ticketTarget,
+        ticketAction,
+        user?.fullName || user?.username || null,
+      );
+      setTicketItem(null);
+      setStatusFilter("TICKET_OPEN");
+      await loadData();
+    } catch (ticketError) {
+      setError(ticketError instanceof Error ? ticketError.message : "Unable to create Service Desk ticket.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const syncTicket = async (item: RemediationItem) => {
+    try {
+      setUpdatingId(item.id);
+      setError("");
+      await syncRemediationTicket(item.id);
+      await loadData();
+    } catch (syncError) {
+      setError(syncError instanceof Error ? syncError.message : "Unable to synchronize ticket.");
     } finally {
       setUpdatingId(null);
     }
@@ -122,12 +171,10 @@ const RemediationQueue = () => {
         <Box>
           <Typography variant="h5" fontWeight={700}>Duplicate Account Remediation</Typography>
           <Typography color="text.secondary" sx={{ mt: 1 }}>
-            Track reviewer-confirmed duplicates separately from detection and record downstream action status.
+            Create disable/delete Service Desk tickets for reviewer-confirmed duplicates and automatically complete remediation when the ticket is resolved.
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={loading ? <CircularProgress size={18} /> : <RefreshIcon />} onClick={loadData} disabled={loading}>
-          Refresh
-        </Button>
+        <Button variant="outlined" startIcon={loading ? <CircularProgress size={18} /> : <RefreshIcon />} onClick={loadData} disabled={loading}>Refresh</Button>
       </Box>
 
       <Paper variant="outlined" sx={{ borderRadius: 3, mb: 3 }}>
@@ -140,9 +187,7 @@ const RemediationQueue = () => {
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
       {loading ? (
-        <Box sx={{ minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <CircularProgress />
-        </Box>
+        <Box sx={{ minHeight: 300, display: "flex", alignItems: "center", justifyContent: "center" }}><CircularProgress /></Box>
       ) : activeTab === "queue" && canViewQueue ? (
         <>
           <Box sx={{ mb: 2, maxWidth: 260 }}>
@@ -150,7 +195,8 @@ const RemediationQueue = () => {
               <InputLabel>Status</InputLabel>
               <Select value={statusFilter} label="Status" onChange={(event) => setStatusFilter(event.target.value as QueueFilter)}>
                 <MenuItem value="PENDING_ACTION">Pending Action</MenuItem>
-                <MenuItem value="ACTIONED">Actioned</MenuItem>
+                <MenuItem value="TICKET_OPEN">Ticket Open</MenuItem>
+                <MenuItem value="ACTIONED">Completed</MenuItem>
                 <MenuItem value="IGNORED">Ignored</MenuItem>
                 <MenuItem value="FAILED">Failed</MenuItem>
                 <MenuItem value="ALL">All</MenuItem>
@@ -166,14 +212,13 @@ const RemediationQueue = () => {
                   <TableCell>Account 1</TableCell>
                   <TableCell>Account 2</TableCell>
                   <TableCell>AI Confidence</TableCell>
-                  <TableCell>Reviewer</TableCell>
-                  <TableCell>Status</TableCell>
+                  <TableCell>Status / Ticket</TableCell>
                   {canManage && <TableCell align="right">Action</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {items.length === 0 ? (
-                  <TableRow><TableCell colSpan={canManage ? 7 : 6} align="center" sx={{ py: 6 }}>No remediation items for this status.</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={canManage ? 6 : 5} align="center" sx={{ py: 6 }}>No remediation items for this status.</TableCell></TableRow>
                 ) : items.map((item) => (
                   <TableRow key={item.id} hover>
                     <TableCell>
@@ -189,13 +234,32 @@ const RemediationQueue = () => {
                       <Typography variant="caption" color="text.secondary">{valueOf(item.account2, "email")}</Typography>
                     </TableCell>
                     <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
-                    <TableCell>{item.reviewerName ?? "Not available"}</TableCell>
-                    <TableCell><Chip size="small" label={item.status.replaceAll("_", " ")} /></TableCell>
+                    <TableCell>
+                      <Stack spacing={0.5} alignItems="flex-start">
+                        <Chip size="small" label={item.status.replaceAll("_", " ")} />
+                        {item.ticketId && (
+                          item.ticketUrl ? (
+                            <Link href={item.ticketUrl} target="_blank" rel="noopener noreferrer" variant="caption">{item.ticketId} · {item.ticketStatus ?? "Unknown"}</Link>
+                          ) : (
+                            <Typography variant="caption">{item.ticketId} · {item.ticketStatus ?? "Unknown"}</Typography>
+                          )
+                        )}
+                        {item.remediationAction && <Typography variant="caption" color="text.secondary">{item.remediationAction} · {item.targetAccountKey}</Typography>}
+                        {item.ticketError && <Typography variant="caption" color="error">Last sync: {item.ticketError}</Typography>}
+                      </Stack>
+                    </TableCell>
                     {canManage && (
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
-                          <Button size="small" variant="outlined" disabled={updatingId === item.id || item.status === "ACTIONED"} onClick={() => setStatus(item, "ACTIONED")}>Mark Actioned</Button>
-                          <Button size="small" color="inherit" disabled={updatingId === item.id || item.status === "IGNORED"} onClick={() => setStatus(item, "IGNORED")}>Ignore</Button>
+                          {!item.ticketId && item.status === "PENDING_ACTION" && (
+                            <Button size="small" variant="contained" startIcon={<ConfirmationNumberOutlinedIcon />} disabled={updatingId === item.id} onClick={() => openTicketDialog(item)}>Create Ticket</Button>
+                          )}
+                          {item.ticketId && item.status === "TICKET_OPEN" && (
+                            <Button size="small" variant="outlined" disabled={updatingId === item.id} onClick={() => void syncTicket(item)}>Sync Ticket</Button>
+                          )}
+                          {!item.ticketId && (
+                            <Button size="small" color="inherit" disabled={updatingId === item.id || item.status === "IGNORED"} onClick={() => void setStatus(item, "IGNORED")}>Ignore</Button>
+                          )}
                         </Stack>
                       </TableCell>
                     )}
@@ -213,14 +277,14 @@ const RemediationQueue = () => {
                 <TableCell>Date</TableCell>
                 <TableCell>Application</TableCell>
                 <TableCell>Account Pair</TableCell>
-                <TableCell>Decision</TableCell>
-                <TableCell>AI Confidence</TableCell>
-                <TableCell>Reviewer</TableCell>
+                <TableCell>Decision / Event</TableCell>
+                <TableCell>Source</TableCell>
+                <TableCell>Reviewer / Actor</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {history.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>No reviewer decision history yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 6 }}>No decision history yet.</TableCell></TableRow>
               ) : history.map((item) => (
                 <TableRow key={item.id} hover>
                   <TableCell>{item.createdAt ? new Date(item.createdAt).toLocaleString() : "Not available"}</TableCell>
@@ -229,15 +293,47 @@ const RemediationQueue = () => {
                     <Typography variant="body2">{accountName(item.account1, item.account1Key)}</Typography>
                     <Typography variant="caption" color="text.secondary">↔ {accountName(item.account2, item.account2Key)}</Typography>
                   </TableCell>
-                  <TableCell><Chip size="small" label={decisionLabel(item.decision)} /></TableCell>
-                  <TableCell>{item.confidence === null ? "Not available" : `${item.confidence}%`}</TableCell>
-                  <TableCell>{item.reviewerName ?? "Not available"}</TableCell>
+                  <TableCell>
+                    <Chip size="small" label={decisionLabel(item.decision)} />
+                    {item.comment && <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>{item.comment}</Typography>}
+                  </TableCell>
+                  <TableCell>{item.source}</TableCell>
+                  <TableCell>{item.reviewerName ?? "System"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </TableContainer>
       ) : null}
+
+      <Dialog open={Boolean(ticketItem)} onClose={() => setTicketItem(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Create Service Desk Remediation Ticket</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2.5} sx={{ mt: 1 }}>
+            <Alert severity="warning">
+              Choose the duplicate account that should be changed. The other account is treated as the account to retain.
+            </Alert>
+            <FormControl fullWidth>
+              <InputLabel>Target Account</InputLabel>
+              <Select value={ticketTarget} label="Target Account" onChange={(event) => setTicketTarget(event.target.value as RemediationTarget)}>
+                <MenuItem value="ACCOUNT_1">Account 1 — {ticketItem ? accountName(ticketItem.account1, ticketItem.account1Key) : ""}</MenuItem>
+                <MenuItem value="ACCOUNT_2">Account 2 — {ticketItem ? accountName(ticketItem.account2, ticketItem.account2Key) : ""}</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl fullWidth>
+              <InputLabel>Remediation Action</InputLabel>
+              <Select value={ticketAction} label="Remediation Action" onChange={(event) => setTicketAction(event.target.value as RemediationAction)}>
+                <MenuItem value="DISABLE">Disable Account</MenuItem>
+                <MenuItem value="DELETE">Delete Account</MenuItem>
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTicketItem(null)}>Cancel</Button>
+          <Button variant="contained" onClick={() => void createTicket()} disabled={ticketItem ? updatingId === ticketItem.id : false}>Create Ticket</Button>
+        </DialogActions>
+      </Dialog>
     </PageContainer>
   );
 };
