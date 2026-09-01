@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -30,11 +30,33 @@ class CreateTicketRequest(BaseModel):
     requestedBy: str | None = None
 
 
+class BulkTicketRequest(CreateTicketRequest):
+    itemIds: list[int] = Field(min_length=1, max_length=100)
+
+
+class BulkItemsRequest(BaseModel):
+    itemIds: list[int] = Field(min_length=1, max_length=100)
+    actionedBy: str | None = None
+
+
+def _bulk_result(item_id: int, callback):
+    try:
+        result = callback()
+        return {"itemId": item_id, "success": True, "result": result, "error": None}
+    except Exception as exc:
+        return {"itemId": item_id, "success": False, "result": None, "error": str(exc)}
+
+
 @router.get("/")
 def remediation_queue(
     status: str | None = Query(default="PENDING_ACTION"),
     integration_id: int | None = Query(default=None, alias="integrationId", ge=1),
     application: str | None = Query(default=None),
+    min_confidence: float | None = Query(default=None, alias="minConfidence", ge=0, le=100),
+    max_confidence: float | None = Query(default=None, alias="maxConfidence", ge=0, le=100),
+    remediation_action: str | None = Query(default=None, alias="remediationAction"),
+    ticket_status: str | None = Query(default=None, alias="ticketStatus"),
+    has_ticket: bool | None = Query(default=None, alias="hasTicket"),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("remediation.view")),
 ):
@@ -44,6 +66,11 @@ def remediation_queue(
             status=status,
             integration_id=integration_id,
             application=application,
+            min_confidence=min_confidence,
+            max_confidence=max_confidence,
+            remediation_action=remediation_action,
+            ticket_status=ticket_status,
+            has_ticket=has_ticket,
         )
         return {"count": len(items), "items": items}
     except ValueError as exc:
@@ -63,6 +90,78 @@ def decision_history(
         return {"count": len(items), "items": items}
     except SQLAlchemyError as exc:
         raise HTTPException(status_code=500, detail="Unable to load review decision history.") from exc
+
+
+@router.post("/bulk/tickets")
+def create_bulk_remediation_tickets(
+    payload: BulkTicketRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("remediation.manage")),
+):
+    results = [
+        _bulk_result(
+            item_id,
+            lambda item_id=item_id: create_ticket(
+                db,
+                item_id=item_id,
+                target=payload.target,
+                action=payload.action,
+                requested_by=payload.requestedBy,
+            ),
+        )
+        for item_id in dict.fromkeys(payload.itemIds)
+    ]
+    return {
+        "requested": len(results),
+        "succeeded": sum(1 for item in results if item["success"]),
+        "failed": sum(1 for item in results if not item["success"]),
+        "results": results,
+    }
+
+
+@router.post("/bulk/tickets/sync")
+def sync_bulk_remediation_tickets(
+    payload: BulkItemsRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("remediation.manage")),
+):
+    results = [
+        _bulk_result(item_id, lambda item_id=item_id: sync_ticket_by_id(db, item_id))
+        for item_id in dict.fromkeys(payload.itemIds)
+    ]
+    return {
+        "requested": len(results),
+        "succeeded": sum(1 for item in results if item["success"]),
+        "failed": sum(1 for item in results if not item["success"]),
+        "results": results,
+    }
+
+
+@router.post("/bulk/ignore")
+def ignore_bulk_remediation_items(
+    payload: BulkItemsRequest,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("remediation.manage")),
+):
+    results = [
+        _bulk_result(
+            item_id,
+            lambda item_id=item_id: update_remediation_status(
+                db,
+                item_id=item_id,
+                status="IGNORED",
+                action_comment="Ignored through bulk remediation action.",
+                actioned_by=payload.actionedBy,
+            ),
+        )
+        for item_id in dict.fromkeys(payload.itemIds)
+    ]
+    return {
+        "requested": len(results),
+        "succeeded": sum(1 for item in results if item["success"]),
+        "failed": sum(1 for item in results if not item["success"]),
+        "results": results,
+    }
 
 
 @router.post("/{item_id}/ticket")
