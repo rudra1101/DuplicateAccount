@@ -71,6 +71,7 @@ def test_confirmation_requires_remediation_manage(monkeypatch):
         payload=request(),
         conversation_id="conversation-1",
         permissions=frozenset({"remediation.view"}),
+        actor="test-user",
     )
 
     assert response is not None
@@ -105,6 +106,7 @@ def test_confirmation_creates_ticket_for_authorized_user(monkeypatch):
         payload=request("yes"),
         conversation_id="conversation-1",
         permissions=frozenset({"remediation.view", "remediation.manage"}),
+        actor="test-user",
     )
 
     assert response is not None
@@ -114,6 +116,6 @@ def test_confirmation_creates_ticket_for_authorized_user(monkeypatch):
         "item_id": 1,
         "target": "ACCOUNT_2",
         "action": "DELETE",
-        "requested_by": "Rudrix",
+        "requested_by": "test-user",
     }
     assert response.toolsUsed[0].name == "create_remediation_ticket"
