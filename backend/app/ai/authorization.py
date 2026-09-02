@@ -13,6 +13,10 @@ _rudrix_permissions: ContextVar[frozenset[str] | None] = ContextVar(
     "rudrix_permissions",
     default=None,
 )
+_rudrix_actor: ContextVar[str | None] = ContextVar(
+    "rudrix_actor",
+    default=None,
+)
 
 
 def permissions_for_user(
@@ -58,6 +62,19 @@ def reset_rudrix_permissions(token: Token) -> None:
 
 def get_rudrix_permissions() -> frozenset[str] | None:
     return _rudrix_permissions.get()
+
+
+def set_rudrix_actor(actor: str | None) -> Token:
+    value = str(actor or "").strip() or None
+    return _rudrix_actor.set(value)
+
+
+def reset_rudrix_actor(token: Token) -> None:
+    _rudrix_actor.reset(token)
+
+
+def get_rudrix_actor() -> str:
+    return _rudrix_actor.get() or "Rudrix"
 
 
 def has_rudrix_permission(permission: str) -> bool:
