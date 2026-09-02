@@ -2,7 +2,6 @@ from app.ai.tools.action_tools import (
     CreateRemediationTicketTool,
     GenerateReportTool,
     NavigateAppTool,
-    SearchRemediationItemsTool,
 )
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
@@ -22,7 +21,6 @@ from app.ai.tools.review_tools import (
     GetConfidenceBreakdownTool,
     GetDuplicateGroupDetailsTool,
     GetDuplicateSummaryTool,
-    GetReviewStatisticsTool,
     SearchDuplicateGroupsTool,
 )
 from app.ai.tools.training_tools import (
@@ -31,6 +29,10 @@ from app.ai.tools.training_tools import (
 from app.ai.tools.knowledge_tools import (
     ListKnowledgeDocumentsTool,
     SearchKnowledgeBaseTool,
+)
+from app.ai.tools.workflow_action_tools import (
+    RudrixRemediationOperationsTool,
+    RudrixReviewOperationsTool,
 )
 
 
@@ -50,7 +52,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(GetDuplicateSummaryTool())
     registry.register(SearchDuplicateGroupsTool())
     registry.register(GetDuplicateGroupDetailsTool())
-    registry.register(GetReviewStatisticsTool())
+    registry.register(RudrixReviewOperationsTool())
 
     registry.register(GetTrainingLabelSummaryTool())
     registry.register(GetConfidenceBreakdownTool())
@@ -58,7 +60,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(ListKnowledgeDocumentsTool())
 
     registry.register(GenerateReportTool())
-    registry.register(SearchRemediationItemsTool())
+    registry.register(RudrixRemediationOperationsTool())
     registry.register(CreateRemediationTicketTool())
     registry.register(NavigateAppTool())
 
