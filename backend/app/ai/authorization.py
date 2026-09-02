@@ -12,7 +12,13 @@ _rudrix_permissions: ContextVar[frozenset[str] | None] = ContextVar(
 
 
 def permissions_for_user(user) -> frozenset[str]:
-    if str(getattr(user, "role", "")).upper() == "OWNER":
+    role_name = str(getattr(user, "role", "")).upper()
+
+    # OWNER and ADMIN are platform-administrator roles. The service-catalog
+    # bootstrap guarantees ADMIN every declared platform permission, so Rudrix
+    # should not depend on a possibly stale/lazily-loaded role relationship to
+    # discover that invariant at streaming time.
+    if role_name in {"OWNER", "ADMIN"}:
         return frozenset({"*"})
 
     return frozenset(
