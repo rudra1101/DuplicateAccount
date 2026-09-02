@@ -37,52 +37,21 @@ from app.services.chat_history_service import (
 router = APIRouter(
     prefix="/chat",
     tags=["AI Assistant"],
-    dependencies=[
-        Depends(get_current_user),
-    ],
+    dependencies=[Depends(get_current_user)],
 )
 
 
-def _event(
-    event_type: str,
-    **payload: Any,
-) -> str:
-    return (
-        json.dumps(
-            {
-                "type":
-                    event_type,
-                **payload,
-            },
-            default=str,
-        )
-        + "\n"
-    )
+def _event(event_type: str, **payload: Any) -> str:
+    return json.dumps({"type": event_type, **payload}, default=str) + "\n"
 
 
-def _next_authorized_event(
-    iterator,
-    permissions: frozenset[str],
-):
-    """
-    Advance the Rudrix generator with RBAC active only for this
-    individual generator step.
-
-    Starlette may resume a synchronous StreamingResponse iterator in a
-    different worker context after every yield. A ContextVar token therefore
-    must be created and reset within the same call instead of being retained
-    across streaming yield boundaries.
-    """
-    token = set_rudrix_permissions(
-        permissions
-    )
-
+def _next_authorized_event(iterator, permissions: frozenset[str]):
+    """Advance one streaming step with the user's current Rudrix permissions."""
+    token = set_rudrix_permissions(permissions)
     try:
         return next(iterator)
     finally:
-        reset_rudrix_permissions(
-            token
-        )
+        reset_rudrix_permissions(token)
 
 
 @router.post("/stream")
@@ -91,31 +60,19 @@ def stream_chat(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    conversation_id = (
-        payload.conversationId
-        or str(
-            uuid.uuid4()
-        )
-    )
+    conversation_id = payload.conversationId or str(uuid.uuid4())
+    request = payload.model_copy(update={"conversationId": conversation_id})
 
-    request = payload.model_copy(
-        update={
-            "conversationId":
-                conversation_id,
-        }
-    )
-
-    user_permissions = permissions_for_user(user)
+    # Resolve permissions from the same request DB session used by the chat
+    # endpoint. This keeps Rudrix permission-driven for ADMIN, USER and custom
+    # roles and avoids stale/detached middleware role relationships.
+    user_permissions = permissions_for_user(user, db=db)
 
     def generate():
         committed = False
 
         try:
-            yield _event(
-                "start",
-                conversationId=
-                    conversation_id,
-            )
+            yield _event("start", conversationId=conversation_id)
 
             final_response = None
             agent_events = iter(
@@ -134,94 +91,47 @@ def stream_chat(
                 except StopIteration:
                     break
 
-                event_type = (
-                    event.get(
-                        "type"
-                    )
-                )
+                event_type = event.get("type")
 
-                if event_type == (
-                    "status"
-                ):
+                if event_type == "status":
                     yield _event(
                         "status",
-                        message=
-                            event.get(
-                                "message",
-                                "",
-                            ),
+                        message=event.get("message", ""),
                     )
                     continue
 
-                if event_type == (
-                    "delta"
-                ):
-                    text = str(
-                        event.get(
-                            "text"
-                        )
-                        or ""
-                    )
-
+                if event_type == "delta":
+                    text = str(event.get("text") or "")
                     if text:
-                        yield _event(
-                            "delta",
-                            text=text,
-                        )
-
+                        yield _event("delta", text=text)
                     continue
 
-                if event_type == (
-                    "done"
-                ):
-                    final_response = (
-                        event.get(
-                            "response"
-                        )
-                    )
+                if event_type == "done":
+                    final_response = event.get("response")
 
             if final_response is None:
                 raise RuntimeError(
-                    "Rudrix streaming finished "
-                    "without a final response."
+                    "Rudrix streaming finished without a final response."
                 )
 
             get_or_create_chat_conversation(
                 db,
-                conversation_id=
-                    conversation_id,
-                first_message=
-                    payload.message,
+                conversation_id=conversation_id,
+                first_message=payload.message,
             )
-
             save_chat_message(
                 db,
-                conversation_id=
-                    conversation_id,
+                conversation_id=conversation_id,
                 role="user",
-                content=
-                    payload.message,
+                content=payload.message,
             )
-
-            assistant_record = (
-                save_chat_message(
-                    db,
-                    conversation_id=
-                        conversation_id,
-                    role="assistant",
-                    content=
-                        final_response
-                        .message,
-                    model=
-                        final_response
-                        .model,
-                    sources=[
-                        source.model_dump()
-                        for source
-                        in final_response
-                        .sources
-                    ],
-                )
+            assistant_record = save_chat_message(
+                db,
+                conversation_id=conversation_id,
+                role="assistant",
+                content=final_response.message,
+                model=final_response.model,
+                sources=[source.model_dump() for source in final_response.sources],
             )
 
             db.commit()
@@ -229,52 +139,30 @@ def stream_chat(
 
             yield _event(
                 "done",
-                conversationId=
-                    conversation_id,
-                messageId=
-                    assistant_record.id,
-                model=
-                    final_response
-                    .model,
-                sources=[
-                    source.model_dump()
-                    for source
-                    in final_response
-                    .sources
-                ],
-                toolsUsed=[
-                    tool.model_dump()
-                    for tool
-                    in final_response
-                    .toolsUsed
-                ],
+                conversationId=conversation_id,
+                messageId=assistant_record.id,
+                model=final_response.model,
+                sources=[source.model_dump() for source in final_response.sources],
+                toolsUsed=[tool.model_dump() for tool in final_response.toolsUsed],
             )
 
         except GeneratorExit:
             if not committed:
                 db.rollback()
             raise
-
         except Exception:
             if not committed:
                 db.rollback()
-
             yield _event(
                 "error",
-                message=(
-                    "AI assistant streaming request failed."
-                ),
+                message="AI assistant streaming request failed.",
             )
 
     return StreamingResponse(
         generate(),
-        media_type=(
-            "application/x-ndjson"
-        ),
+        media_type="application/x-ndjson",
         headers={
-            "Cache-Control":
-                "no-cache",
-            "X-Accel-Buffering":
-                "no",
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
         },
     )

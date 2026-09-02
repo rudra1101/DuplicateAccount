@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db_models.role import RoleRecord
 from app.services.rbac_service import permission_codes_for_role
 
 
@@ -11,9 +15,29 @@ _rudrix_permissions: ContextVar[frozenset[str] | None] = ContextVar(
 )
 
 
-def permissions_for_user(user) -> frozenset[str]:
-    if str(getattr(user, "role", "")).upper() == "OWNER":
+def permissions_for_user(
+    user,
+    *,
+    db: Session | None = None,
+) -> frozenset[str]:
+    role_name = str(getattr(user, "role", "")).upper()
+
+    if role_name == "OWNER":
         return frozenset({"*"})
+
+    # When a request-scoped SQLAlchemy session is available, resolve the role
+    # directly from that session. This avoids relying on a role relationship
+    # attached to the authentication middleware's separate database session and
+    # ensures newly assigned permissions are reflected consistently in Rudrix.
+    # Lightweight internal/test DB stubs may not expose ``scalars``; in that
+    # case fall back to the role relationship already attached to the user.
+    if db is not None and role_name and hasattr(db, "scalars"):
+        role_record = db.scalars(
+            select(RoleRecord)
+            .where(RoleRecord.name == role_name)
+            .limit(1)
+        ).first()
+        return frozenset(permission_codes_for_role(role_record))
 
     return frozenset(
         permission_codes_for_role(
