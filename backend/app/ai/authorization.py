@@ -25,11 +25,13 @@ def permissions_for_user(
     if role_name == "OWNER":
         return frozenset({"*"})
 
-    # When a request-scoped database session is available, resolve the role
+    # When a request-scoped SQLAlchemy session is available, resolve the role
     # directly from that session. This avoids relying on a role relationship
     # attached to the authentication middleware's separate database session and
     # ensures newly assigned permissions are reflected consistently in Rudrix.
-    if db is not None and role_name:
+    # Lightweight internal/test DB stubs may not expose ``scalars``; in that
+    # case fall back to the role relationship already attached to the user.
+    if db is not None and role_name and hasattr(db, "scalars"):
         role_record = db.scalars(
             select(RoleRecord)
             .where(RoleRecord.name == role_name)
