@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from sqlalchemy.orm import Session
 
@@ -37,12 +38,14 @@ class RudrixReviewOperationsTool(BaseAITool):
     parameters = {
         "type": "object",
         "properties": {
-            "operation": {
-                "type": "string",
-                "enum": ["STATS", "DECIDE"],
-            },
-            "integration_id": {"type": ["integer", "null"], "minimum": 1},
+            # Preserve the original review-statistics arguments so existing
+            # conversations/tests remain compatible.
+            "integration": {"type": ["string", "null"]},
             "application": {"type": ["string", "null"]},
+            "operation": {
+                "type": ["string", "null"],
+                "enum": ["STATS", "DECIDE", None],
+            },
             "candidate_id": {"type": ["integer", "null"], "minimum": 1},
             "decision": {
                 "type": ["string", "null"],
@@ -50,14 +53,7 @@ class RudrixReviewOperationsTool(BaseAITool):
             },
             "comment": {"type": ["string", "null"]},
         },
-        "required": [
-            "operation",
-            "integration_id",
-            "application",
-            "candidate_id",
-            "decision",
-            "comment",
-        ],
+        "required": ["integration", "application"],
         "additionalProperties": False,
     }
 
@@ -65,15 +61,13 @@ class RudrixReviewOperationsTool(BaseAITool):
         operation = str(arguments.get("operation") or "STATS").strip().upper()
 
         if operation == "STATS":
-            delegate = GetReviewStatisticsTool()
-            # The legacy statistics tool has its own stable schema. Feed only
-            # arguments it understands so the wrapper remains backwards-safe.
-            legacy_args = {
-                key: value
-                for key, value in arguments.items()
-                if key in {"integration_id", "application"} and value is not None
-            }
-            return delegate.execute(db=db, arguments=legacy_args)
+            return GetReviewStatisticsTool().execute(
+                db=db,
+                arguments={
+                    "integration": arguments.get("integration"),
+                    "application": arguments.get("application"),
+                },
+            )
 
         if operation != "DECIDE":
             raise ValueError("Unsupported review operation.")
@@ -106,14 +100,9 @@ class RudrixReviewOperationsTool(BaseAITool):
         )
 
         application = str(arguments.get("application") or "").strip()
-        integration_id = arguments.get("integration_id")
         route = "/review"
         if application:
-            from urllib.parse import quote, urlencode
-
             route = f"/review/{quote(application, safe='')}"
-            if integration_id:
-                route += "?" + urlencode({"integrationId": int(integration_id)})
 
         return {
             "message": (
@@ -136,8 +125,6 @@ class RudrixReviewOperationsTool(BaseAITool):
 class RudrixRemediationOperationsTool(BaseAITool):
     """Search remediation work and perform safe operational follow-up actions."""
 
-    # Reuse the routed read-tool name. Write operations are still protected by
-    # explicit permission checks inside this tool.
     name = "search_remediation_items"
     description = (
         "Search CURRENT remediation work, inspect decision history, sync an existing "
@@ -149,10 +136,7 @@ class RudrixRemediationOperationsTool(BaseAITool):
     parameters = {
         "type": "object",
         "properties": {
-            "operation": {
-                "type": "string",
-                "enum": ["SEARCH", "HISTORY", "SYNC_TICKET", "IGNORE"],
-            },
+            # Preserve the original search schema and add optional workflow actions.
             "search": {"type": ["string", "null"]},
             "application": {"type": ["string", "null"]},
             "status": {"type": ["string", "null"]},
@@ -162,18 +146,19 @@ class RudrixRemediationOperationsTool(BaseAITool):
                 "maximum": 100,
             },
             "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+            "operation": {
+                "type": ["string", "null"],
+                "enum": ["SEARCH", "HISTORY", "SYNC_TICKET", "IGNORE", None],
+            },
             "item_id": {"type": ["integer", "null"], "minimum": 1},
             "comment": {"type": ["string", "null"]},
         },
         "required": [
-            "operation",
             "search",
             "application",
             "status",
             "minimum_confidence",
             "limit",
-            "item_id",
-            "comment",
         ],
         "additionalProperties": False,
     }
@@ -182,8 +167,7 @@ class RudrixRemediationOperationsTool(BaseAITool):
         operation = str(arguments.get("operation") or "SEARCH").strip().upper()
 
         if operation == "SEARCH":
-            delegate = SearchRemediationItemsTool()
-            return delegate.execute(
+            return SearchRemediationItemsTool().execute(
                 db=db,
                 arguments={
                     "search": arguments.get("search"),
