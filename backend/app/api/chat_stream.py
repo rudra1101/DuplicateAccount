@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Any
 
@@ -27,11 +28,14 @@ from app.database.session import (
 )
 from app.schemas.chat import (
     ChatRequest,
+    ChatResponse,
+    ToolInvocationResponse,
 )
 from app.services.chat_history_service import (
     get_or_create_chat_conversation,
     save_chat_message,
 )
+from app.services.service_desk_service import create_ticket
 
 
 router = APIRouter(
@@ -39,6 +43,17 @@ router = APIRouter(
     tags=["AI Assistant"],
     dependencies=[Depends(get_current_user)],
 )
+
+_CONFIRMATION_WORDS = {
+    "confirm",
+    "confirmed",
+    "yes",
+    "yes confirm",
+    "yes, confirm",
+    "proceed",
+    "go ahead",
+    "do it",
+}
 
 
 def _event(event_type: str, **payload: Any) -> str:
@@ -52,6 +67,132 @@ def _next_authorized_event(iterator, permissions: frozenset[str]):
         return next(iterator)
     finally:
         reset_rudrix_permissions(token)
+
+
+def _ticket_confirmation_arguments(payload: ChatRequest) -> dict[str, Any] | None:
+    """Recover a ticket action only from Rudrix's immediately prior confirmation.
+
+    A one-word confirmation is intentionally not sent back through the LLM to
+    reinterpret a destructive action. The preceding assistant message must have
+    explicitly asked for confirmation and contain the remediation item, target
+    account, and requested DISABLE/DELETE action.
+    """
+    current = " ".join(str(payload.message or "").strip().lower().split())
+    if current not in _CONFIRMATION_WORDS:
+        return None
+
+    history = list(payload.history or [])
+    if not history:
+        return None
+
+    previous_assistant = next(
+        (
+            str(message.content or "")
+            for message in reversed(history)
+            if str(message.role or "").lower() == "assistant"
+        ),
+        "",
+    )
+    if not previous_assistant:
+        return None
+
+    assistant_lower = previous_assistant.lower()
+    if "confirm" not in assistant_lower or "ticket" not in assistant_lower:
+        return None
+
+    item_match = re.search(
+        r"remediation\s+item(?:\s+id)?\s*[:#]?\s*(\d+)",
+        previous_assistant,
+        flags=re.IGNORECASE,
+    )
+    if not item_match:
+        return None
+
+    # Prefer an explicit target in the sentence describing the ticket action.
+    target_match = re.search(
+        r"(?:delete|deleting|disable|disabling)[^\n.]{0,120}?account\s*([12])\b",
+        previous_assistant,
+        flags=re.IGNORECASE,
+    )
+    if not target_match:
+        target_match = re.search(
+            r"target(?:\s+account)?\s*[:#]?\s*account\s*([12])\b",
+            previous_assistant,
+            flags=re.IGNORECASE,
+        )
+    if not target_match:
+        return None
+
+    action_match = re.search(
+        r"\b(delete|deleting|disable|disabling)\b",
+        previous_assistant,
+        flags=re.IGNORECASE,
+    )
+    if not action_match:
+        return None
+
+    raw_action = action_match.group(1).lower()
+    action = "DELETE" if raw_action.startswith("delet") else "DISABLE"
+    target = "ACCOUNT_1" if target_match.group(1) == "1" else "ACCOUNT_2"
+
+    return {
+        "remediation_item_id": int(item_match.group(1)),
+        "target": target,
+        "action": action,
+    }
+
+
+def _ticket_confirmation_response(
+    *,
+    db: Session,
+    payload: ChatRequest,
+    conversation_id: str,
+    permissions: frozenset[str],
+) -> ChatResponse | None:
+    arguments = _ticket_confirmation_arguments(payload)
+    if arguments is None:
+        return None
+
+    if "*" not in permissions and "remediation.manage" not in permissions:
+        return ChatResponse(
+            conversationId=conversation_id,
+            message=(
+                "You do not have permission to create remediation tickets. "
+                "The required permission is `remediation.manage`."
+            ),
+            model="rudrix-action",
+        )
+
+    result = create_ticket(
+        db,
+        item_id=int(arguments["remediation_item_id"]),
+        target=str(arguments["target"]),
+        action=str(arguments["action"]),
+        requested_by="Rudrix",
+    )
+
+    ticket_id = result.get("ticketId") or "created ticket"
+    target_key = result.get("targetAccountKey") or arguments["target"]
+    ticket_url = result.get("ticketUrl")
+    message = (
+        f"Created Service Desk ticket **{ticket_id}** to "
+        f"**{str(arguments['action']).lower()}** account `{target_key}`."
+    )
+    if ticket_url:
+        message += f" [Open ticket]({ticket_url})"
+
+    return ChatResponse(
+        conversationId=conversation_id,
+        message=message,
+        model="rudrix-action",
+        toolsUsed=[
+            ToolInvocationResponse(
+                name="create_remediation_ticket",
+                arguments=arguments,
+                result={"success": True, "data": result},
+            )
+        ],
+    )
 
 
 @router.post("/stream")
@@ -74,40 +215,50 @@ def stream_chat(
         try:
             yield _event("start", conversationId=conversation_id)
 
-            final_response = None
-            agent_events = iter(
-                run_identity_agent_stream_fast(
-                    db=db,
-                    request=request,
-                )
+            final_response = _ticket_confirmation_response(
+                db=db,
+                payload=payload,
+                conversation_id=conversation_id,
+                permissions=user_permissions,
             )
 
-            while True:
-                try:
-                    event = _next_authorized_event(
-                        agent_events,
-                        user_permissions,
+            if final_response is not None:
+                yield _event("status", message="Creating Service Desk ticket...")
+                yield _event("delta", text=final_response.message)
+            else:
+                agent_events = iter(
+                    run_identity_agent_stream_fast(
+                        db=db,
+                        request=request,
                     )
-                except StopIteration:
-                    break
+                )
 
-                event_type = event.get("type")
+                while True:
+                    try:
+                        event = _next_authorized_event(
+                            agent_events,
+                            user_permissions,
+                        )
+                    except StopIteration:
+                        break
 
-                if event_type == "status":
-                    yield _event(
-                        "status",
-                        message=event.get("message", ""),
-                    )
-                    continue
+                    event_type = event.get("type")
 
-                if event_type == "delta":
-                    text = str(event.get("text") or "")
-                    if text:
-                        yield _event("delta", text=text)
-                    continue
+                    if event_type == "status":
+                        yield _event(
+                            "status",
+                            message=event.get("message", ""),
+                        )
+                        continue
 
-                if event_type == "done":
-                    final_response = event.get("response")
+                    if event_type == "delta":
+                        text = str(event.get("text") or "")
+                        if text:
+                            yield _event("delta", text=text)
+                        continue
+
+                    if event_type == "done":
+                        final_response = event.get("response")
 
             if final_response is None:
                 raise RuntimeError(
