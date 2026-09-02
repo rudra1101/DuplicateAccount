@@ -174,6 +174,26 @@ def test_owner_permissions_are_unrestricted_for_mapped_tools():
     assert "get_training_label_summary" in names
 
 
+def test_admin_permissions_are_unrestricted_for_mapped_tools():
+    admin = SimpleNamespace(
+        role="ADMIN",
+        role_record=None,
+    )
+
+    assert permissions_for_user(admin) == frozenset({"*"})
+
+    token = set_rudrix_permissions(permissions_for_user(admin))
+    try:
+        names = definition_names(create_ai_tool_registry())
+    finally:
+        reset_rudrix_permissions(token)
+
+    assert "search_remediation_items" in names
+    assert "create_remediation_ticket" in names
+    assert "generate_report" in names
+    assert "navigate_app" in names
+
+
 def test_normal_user_permissions_are_derived_from_role_record():
     role_record = SimpleNamespace(
         permissions=[
