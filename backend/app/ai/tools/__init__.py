@@ -30,8 +30,10 @@ from app.ai.tools.knowledge_tools import (
     ListKnowledgeDocumentsTool,
     SearchKnowledgeBaseTool,
 )
-from app.ai.tools.workflow_action_tools import (
+from app.ai.tools.remediation_action_tools import (
     RudrixRemediationOperationsTool,
+)
+from app.ai.tools.workflow_action_tools import (
     RudrixReviewOperationsTool,
 )
 
