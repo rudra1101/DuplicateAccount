@@ -19,7 +19,9 @@ from app.ai.fast_agent_service import (
 )
 from app.ai.authorization import (
     permissions_for_user,
+    reset_rudrix_actor,
     reset_rudrix_permissions,
+    set_rudrix_actor,
     set_rudrix_permissions,
 )
 from app.auth import get_current_user
@@ -60,13 +62,19 @@ def _event(event_type: str, **payload: Any) -> str:
     return json.dumps({"type": event_type, **payload}, default=str) + "\n"
 
 
-def _next_authorized_event(iterator, permissions: frozenset[str]):
-    """Advance one streaming step with the user's current Rudrix permissions."""
-    token = set_rudrix_permissions(permissions)
+def _next_authorized_event(
+    iterator,
+    permissions: frozenset[str],
+    actor: str,
+):
+    """Advance one streaming step with the user's current Rudrix context."""
+    permission_token = set_rudrix_permissions(permissions)
+    actor_token = set_rudrix_actor(actor)
     try:
         return next(iterator)
     finally:
-        reset_rudrix_permissions(token)
+        reset_rudrix_actor(actor_token)
+        reset_rudrix_permissions(permission_token)
 
 
 def _ticket_confirmation_arguments(payload: ChatRequest) -> dict[str, Any] | None:
@@ -108,7 +116,6 @@ def _ticket_confirmation_arguments(payload: ChatRequest) -> dict[str, Any] | Non
     if not item_match:
         return None
 
-    # Prefer an explicit target in the sentence describing the ticket action.
     target_match = re.search(
         r"(?:delete|deleting|disable|disabling)[^\n.]{0,120}?account\s*([12])\b",
         previous_assistant,
@@ -148,6 +155,7 @@ def _ticket_confirmation_response(
     payload: ChatRequest,
     conversation_id: str,
     permissions: frozenset[str],
+    actor: str,
 ) -> ChatResponse | None:
     arguments = _ticket_confirmation_arguments(payload)
     if arguments is None:
@@ -168,7 +176,7 @@ def _ticket_confirmation_response(
         item_id=int(arguments["remediation_item_id"]),
         target=str(arguments["target"]),
         action=str(arguments["action"]),
-        requested_by="Rudrix",
+        requested_by=actor,
     )
 
     ticket_id = result.get("ticketId") or "created ticket"
@@ -204,10 +212,12 @@ def stream_chat(
     conversation_id = payload.conversationId or str(uuid.uuid4())
     request = payload.model_copy(update={"conversationId": conversation_id})
 
-    # Resolve permissions from the same request DB session used by the chat
-    # endpoint. This keeps Rudrix permission-driven for ADMIN, USER and custom
-    # roles and avoids stale/detached middleware role relationships.
     user_permissions = permissions_for_user(user, db=db)
+    actor = (
+        str(getattr(user, "full_name", "") or "").strip()
+        or str(getattr(user, "username", "") or "").strip()
+        or f"user:{getattr(user, 'id', 'unknown')}"
+    )
 
     def generate():
         committed = False
@@ -220,6 +230,7 @@ def stream_chat(
                 payload=payload,
                 conversation_id=conversation_id,
                 permissions=user_permissions,
+                actor=actor,
             )
 
             if final_response is not None:
@@ -238,6 +249,7 @@ def stream_chat(
                         event = _next_authorized_event(
                             agent_events,
                             user_permissions,
+                            actor,
                         )
                     except StopIteration:
                         break
