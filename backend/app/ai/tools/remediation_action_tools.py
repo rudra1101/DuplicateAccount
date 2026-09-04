@@ -20,6 +20,7 @@ _VALID_STATUSES = {
     "IGNORED",
     "FAILED",
     "ACTIONABLE",
+    "NEEDS_TICKET",
     "ALL",
 }
 
@@ -55,12 +56,12 @@ def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int
 
 
 def normalize_remediation_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Normalize local-model arguments and apply safe remediation defaults.
+    """Normalize local-model arguments and apply remediation-queue defaults.
 
-    SEARCH defaults to ACTIONABLE work so ordinary requests such as "accounts that
-    need remediation" cannot accidentally mix ignored/completed records into the
-    answer. Explicit status filters remain unchanged, and ALL can be requested when
-    the user truly wants every remediation state.
+    The Remediation page defaults to PENDING_ACTION, which is also the set eligible
+    for ticket creation. Generic list requests therefore default to PENDING_ACTION.
+    ACTIONABLE is reserved for the broader in-progress scope of PENDING_ACTION plus
+    TICKET_OPEN. NEEDS_TICKET is an explicit alias for pending items without a ticket.
     """
 
     normalized = dict(arguments or {})
@@ -79,7 +80,7 @@ def normalize_remediation_arguments(arguments: dict[str, Any]) -> dict[str, Any]
         if status not in _VALID_STATUSES:
             status = None
     if operation == "SEARCH" and status is None:
-        status = "ACTIONABLE"
+        status = "PENDING_ACTION"
     normalized["status"] = status
 
     normalized["minimum_confidence"] = _optional_float(
@@ -111,13 +112,19 @@ def _search_remediation_items(
     db: Session,
     arguments: dict[str, Any],
 ) -> dict[str, Any]:
-    status_scope = str(arguments.get("status") or "ACTIONABLE").strip().upper()
+    status_scope = str(arguments.get("status") or "PENDING_ACTION").strip().upper()
     application = _optional_text(arguments.get("application"))
     minimum_confidence = arguments.get("minimum_confidence")
     limit = _bounded_int(arguments.get("limit"), default=10, minimum=1, maximum=50)
     search = (_optional_text(arguments.get("search")) or "").lower()
 
-    service_status = None if status_scope in {"ACTIONABLE", "ALL"} else status_scope
+    if status_scope == "NEEDS_TICKET":
+        service_status = "PENDING_ACTION"
+    elif status_scope in {"ACTIONABLE", "ALL"}:
+        service_status = None
+    else:
+        service_status = status_scope
+
     items = list_remediation_items(
         db,
         status=service_status,
@@ -134,6 +141,13 @@ def _search_remediation_items(
             item
             for item in items
             if str(item.get("status") or "").upper() in _ACTIONABLE_STATUSES
+        ]
+    elif status_scope == "NEEDS_TICKET":
+        items = [
+            item
+            for item in items
+            if str(item.get("status") or "").upper() == "PENDING_ACTION"
+            and not item.get("ticketId")
         ]
 
     if search:
@@ -166,6 +180,10 @@ def _search_remediation_items(
                 "status": item.get("status"),
                 "ticketId": item.get("ticketId"),
                 "ticketStatus": item.get("ticketStatus"),
+                "needsTicket": (
+                    str(item.get("status") or "").upper() == "PENDING_ACTION"
+                    and not item.get("ticketId")
+                ),
                 "account1": {
                     "key": item.get("account1Key"),
                     "username": account1.get("username"),
@@ -180,8 +198,6 @@ def _search_remediation_items(
         )
 
     return {
-        # count is retained for backward compatibility; unlike totalMatching it
-        # represents only rows returned in this response.
         "count": len(results),
         "returnedItems": len(results),
         "totalMatching": total_matching,
@@ -192,17 +208,41 @@ def _search_remediation_items(
 
 
 class RudrixRemediationOperationsTool(_BaseRudrixRemediationOperationsTool):
-    """Remediation workflow tool with safe defaults and robust local-model args."""
+    """Remediation workflow tool aligned with the Remediation page semantics."""
 
     description = (
         "Search CURRENT remediation work, inspect decision history, sync an existing "
-        "Service Desk ticket, or ignore a remediation item. For ordinary SEARCH/list "
-        "requests, actionable remediation means PENDING_ACTION or TICKET_OPEN. Use "
-        "status ALL only when the user explicitly asks for every remediation state. "
-        "HISTORY requires remediation.history.view. SYNC_TICKET and IGNORE require "
-        "remediation.manage. Never infer which account in a duplicate pair should be "
-        "disabled or deleted."
+        "Service Desk ticket, or ignore a remediation item. PENDING_ACTION means the "
+        "item still needs a remediation ticket/action and matches the default Remediation "
+        "queue. ACTIONABLE means PENDING_ACTION plus TICKET_OPEN. NEEDS_TICKET means "
+        "PENDING_ACTION with no existing ticket. Use ALL only when the user explicitly "
+        "asks for every remediation state. HISTORY requires remediation.history.view. "
+        "SYNC_TICKET and IGNORE require remediation.manage. Never infer which account "
+        "in a duplicate pair should be disabled or deleted."
     )
+
+    # Extend the inherited schema with the two virtual search scopes understood by
+    # this wrapper. Keeping all existing fields preserves backward compatibility.
+    parameters = {
+        **_BaseRudrixRemediationOperationsTool.parameters,
+        "properties": {
+            **_BaseRudrixRemediationOperationsTool.parameters["properties"],
+            "status": {
+                "type": ["string", "null"],
+                "enum": [
+                    "PENDING_ACTION",
+                    "TICKET_OPEN",
+                    "ACTIONED",
+                    "IGNORED",
+                    "FAILED",
+                    "ACTIONABLE",
+                    "NEEDS_TICKET",
+                    "ALL",
+                    None,
+                ],
+            },
+        },
+    }
 
     def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
         normalized = normalize_remediation_arguments(arguments)
