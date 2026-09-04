@@ -6,7 +6,7 @@ from app.ai.tools.remediation_action_tools import (
 )
 
 
-def test_null_like_remediation_arguments_default_search_to_actionable():
+def test_null_like_remediation_arguments_default_search_to_pending_action():
     normalized = normalize_remediation_arguments(
         {
             "operation": "null",
@@ -24,7 +24,7 @@ def test_null_like_remediation_arguments_default_search_to_actionable():
         "operation": "SEARCH",
         "search": None,
         "application": None,
-        "status": "ACTIONABLE",
+        "status": "PENDING_ACTION",
         "minimum_confidence": None,
         "limit": 10,
         "item_id": None,
@@ -55,13 +55,13 @@ def test_numeric_remediation_filters_are_safely_coerced():
     )
 
     assert normalized["operation"] == "SEARCH"
-    assert normalized["status"] == "ACTIONABLE"
+    assert normalized["status"] == "PENDING_ACTION"
     assert normalized["minimum_confidence"] == 95.0
     assert normalized["limit"] == 50
     assert normalized["item_id"] == 12
 
 
-def test_actionable_search_excludes_ignored_actioned_and_failed(monkeypatch):
+def test_explicit_actionable_search_excludes_ignored_actioned_and_failed(monkeypatch):
     from app.ai.tools import remediation_action_tools
 
     def fake_list_remediation_items(db, **kwargs):
@@ -104,7 +104,7 @@ def test_actionable_search_excludes_ignored_actioned_and_failed(monkeypatch):
         arguments={
             "search": None,
             "application": None,
-            "status": None,
+            "status": "ACTIONABLE",
             "minimum_confidence": None,
             "limit": 10,
         },
