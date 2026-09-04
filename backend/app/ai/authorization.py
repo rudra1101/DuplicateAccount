@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db_models.role import RoleRecord
@@ -24,25 +24,27 @@ def permissions_for_user(
     *,
     db: Session | None = None,
 ) -> frozenset[str]:
-    role_name = str(getattr(user, "role", "")).upper()
+    raw_role_name = str(getattr(user, "role", "")).strip()
+    role_name = raw_role_name.upper()
 
     if role_name == "OWNER":
         return frozenset({"*"})
 
-    # When a request-scoped SQLAlchemy session is available, resolve the role
-    # directly from that session. This avoids relying on a role relationship
-    # attached to the authentication middleware's separate database session and
-    # ensures newly assigned permissions are reflected consistently in Rudrix.
-    # Lightweight internal/test DB stubs may not expose ``scalars``; in that
-    # case fall back to the role relationship already attached to the user.
-    if db is not None and role_name and hasattr(db, "scalars"):
+    # Resolve current permissions from the request-scoped DB when possible.
+    # Role names on older installations may use mixed casing (for example
+    # ``Admin`` instead of ``ADMIN``), so the lookup must be case-insensitive.
+    # This remains permission-based: only the permissions actually assigned to
+    # the matched role are returned.
+    if db is not None and raw_role_name and hasattr(db, "scalars"):
         role_record = db.scalars(
             select(RoleRecord)
-            .where(RoleRecord.name == role_name)
+            .where(func.lower(RoleRecord.name) == raw_role_name.lower())
             .limit(1)
         ).first()
         return frozenset(permission_codes_for_role(role_record))
 
+    # Lightweight internal/test DB stubs may not expose ``scalars``. Fall back
+    # to the relationship already attached to the authenticated user.
     return frozenset(
         permission_codes_for_role(
             getattr(user, "role_record", None)
