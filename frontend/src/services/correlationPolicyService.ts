@@ -33,6 +33,8 @@ export interface CorrelationPolicyInput {
   rules: CorrelationRule[];
 }
 
+export type CorrelationPolicyUpdate = Omit<CorrelationPolicyInput, "accountIntegrationId">;
+
 export interface CorrelationIntegration {
   id: number;
   name: string;
@@ -67,17 +69,11 @@ async function parseResponse<T>(response: Response, fallback: string): Promise<T
 
 export async function getCorrelationIntegrations(): Promise<CorrelationIntegration[]> {
   const response = await fetch(`${API_BASE_URL}/integrations/?page=1&pageSize=100`);
-  const data = await parseResponse<{ items: CorrelationIntegration[] }>(
-    response,
-    "Unable to load integrations.",
-  );
+  const data = await parseResponse<{ items: CorrelationIntegration[] }>(response, "Unable to load integrations.");
   return data.items;
 }
 
-export async function setIntegrationPurpose(
-  integrationId: number,
-  sourcePurpose: SourcePurpose,
-): Promise<void> {
+export async function setIntegrationPurpose(integrationId: number, sourcePurpose: SourcePurpose): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/integrations/${integrationId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -96,9 +92,7 @@ export async function getCorrelationPolicies(): Promise<CorrelationPolicy[]> {
   return parseResponse<CorrelationPolicy[]>(response, "Unable to load correlation policies.");
 }
 
-export async function createCorrelationPolicy(
-  payload: CorrelationPolicyInput,
-): Promise<CorrelationPolicy> {
+export async function createCorrelationPolicy(payload: CorrelationPolicyInput): Promise<CorrelationPolicy> {
   const response = await fetch(`${API_BASE_URL}/correlation-policies/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -107,9 +101,19 @@ export async function createCorrelationPolicy(
   return parseResponse<CorrelationPolicy>(response, "Unable to create correlation policy.");
 }
 
-export async function deleteCorrelationPolicy(policyId: number): Promise<void> {
+export async function updateCorrelationPolicy(
+  policyId: number,
+  payload: CorrelationPolicyUpdate,
+): Promise<CorrelationPolicy> {
   const response = await fetch(`${API_BASE_URL}/correlation-policies/${policyId}`, {
-    method: "DELETE",
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
+  return parseResponse<CorrelationPolicy>(response, "Unable to update correlation policy.");
+}
+
+export async function deleteCorrelationPolicy(policyId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/correlation-policies/${policyId}`, { method: "DELETE" });
   await parseResponse<void>(response, "Unable to delete correlation policy.");
 }
