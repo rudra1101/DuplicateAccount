@@ -11,6 +11,7 @@ from app.api.chat import router as chat_router
 from app.api.chat_feedback import router as chat_feedback_router
 from app.api.chat_history import router as chat_history_router
 from app.api.chat_stream import router as chat_stream_router
+from app.api.correlation_policies import router as correlation_policies_router
 from app.api.dashboard import router as dashboard_router
 from app.api.detect import router as detect_router
 from app.api.health import router as health_router
@@ -143,6 +144,7 @@ app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
 app.include_router(orphan_router, prefix="/api")
+app.include_router(correlation_policies_router, prefix="/api")
 app.include_router(application_schemas_router, prefix="/api")
 app.include_router(matching_policy_router, prefix="/api")
 app.include_router(job_schedules_router, prefix="/api")
