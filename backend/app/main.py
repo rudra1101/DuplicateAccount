@@ -20,6 +20,7 @@ from app.api.knowledge import router as knowledge_router
 from app.api.matching_policy import router as matching_policy_router
 from app.api.ml_models import router as ml_router
 from app.api.operations import router as operations_router
+from app.api.orphans import router as orphan_router
 from app.api.report_email_templates import router as report_email_templates_router
 from app.api.reports import router as reports_router
 from app.api.scheduled_reports import router as scheduled_reports_router
@@ -59,9 +60,6 @@ configure_logging()
 settings = get_runtime_settings()
 validate_runtime_configuration(settings)
 
-# SQLite remains a lightweight backwards-compatible fallback for local/test use.
-# PostgreSQL schema changes are owned by Alembic and must be applied with
-# `alembic upgrade head` before application startup.
 if IS_SQLITE:
     Base.metadata.create_all(bind=engine)
 
@@ -100,8 +98,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Duplicate Account Detection API",
-    version="1.0.0",
+    title="Identity Account Intelligence API",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -111,10 +109,7 @@ app.middleware("http")(observability_middleware)
 if settings.security_headers_enabled:
     app.middleware("http")(security_headers_middleware)
 
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=list(settings.allowed_hosts),
-)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.allowed_hosts))
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(settings.cors_origins),
@@ -127,13 +122,11 @@ app.add_middleware(
 
 @app.get("/metrics", include_in_schema=False)
 def metrics():
-    # Metrics must remain scrapeable even if a domain/database snapshot fails.
     try:
         with SessionLocal() as db:
             update_operational_gauges(get_system_status(db))
     except Exception:
         logger.exception("operational_metric_refresh_failed")
-
     return metrics_response()
 
 
@@ -149,6 +142,7 @@ app.include_router(review_router, prefix="/api")
 app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(orphan_router, prefix="/api")
 app.include_router(application_schemas_router, prefix="/api")
 app.include_router(matching_policy_router, prefix="/api")
 app.include_router(job_schedules_router, prefix="/api")
