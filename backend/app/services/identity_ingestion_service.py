@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db_models.identity import IdentityRecord
@@ -33,11 +33,7 @@ def replace_authoritative_identities(
     integration_id: int,
     identities: list[Any],
 ) -> int:
-    """Replace the current identity population for one authoritative integration.
-
-    A connector execution represents a point-in-time authoritative snapshot. Replacing
-    the integration's prior rows avoids retaining workers who disappeared from HR.
-    """
+    """Replace the current identity population for one authoritative integration."""
     db.execute(delete(IdentityRecord).where(IdentityRecord.integration_id == integration_id))
 
     count = 0
@@ -73,5 +69,8 @@ def replace_authoritative_identities(
     return count
 
 
-def authoritative_identity_count(db: Session) -> int:
-    return len(list(db.scalars(select(IdentityRecord.id)).all()))
+def authoritative_identity_count(db: Session, integration_id: int | None = None) -> int:
+    statement = select(func.count(IdentityRecord.id))
+    if integration_id is not None:
+        statement = statement.where(IdentityRecord.integration_id == integration_id)
+    return int(db.scalar(statement) or 0)
