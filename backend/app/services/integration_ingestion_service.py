@@ -15,6 +15,7 @@ from app.db_models.application import ApplicationRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
+from app.services.correlation_policy_service import get_policy_for_account_integration
 from app.services.identity_ingestion_service import (
     authoritative_identity_count,
     replace_authoritative_identities,
@@ -210,15 +211,25 @@ def execute_integration(
             f"ApplicationReviewCandidatesPersisted={saved_review_candidates}"
         )
 
-        identity_count = authoritative_identity_count(db)
-        if identity_count > 0:
-            orphan_findings = detect_orphan_findings(db, scan_id=scan.id)
-            print(
-                "[Orphan Detection] "
-                f"AuthoritativeIdentities={identity_count}, OrphanFindings={len(orphan_findings)}"
-            )
+        policy = get_policy_for_account_integration(db, integration.id)
+        if policy is None:
+            print("[Orphan Detection] Skipped: no enabled correlation policy configured.")
         else:
-            print("[Orphan Detection] Skipped: no authoritative identities loaded.")
+            identity_count = authoritative_identity_count(
+                db,
+                integration_id=policy.authoritative_integration_id,
+            )
+            if identity_count > 0:
+                orphan_findings = detect_orphan_findings(db, scan_id=scan.id)
+                print(
+                    "[Orphan Detection] "
+                    f"Policy={policy.id}, AuthoritativeIdentities={identity_count}, "
+                    f"OrphanFindings={len(orphan_findings)}"
+                )
+            else:
+                print(
+                    "[Orphan Detection] Skipped: selected authoritative source has no identities loaded."
+                )
 
         total_duplicate_groups = sum(len(groups) for groups in duplicate_groups.values())
         total_duplicate_accounts = sum(
