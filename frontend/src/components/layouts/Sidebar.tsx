@@ -18,7 +18,6 @@ import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import SettingsIcon from "@mui/icons-material/Settings";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
-import HubIcon from "@mui/icons-material/Hub";
 import MonitorHeartOutlinedIcon from "@mui/icons-material/MonitorHeartOutlined";
 import ModelTrainingIcon from "@mui/icons-material/ModelTraining";
 import AnalyticsOutlinedIcon from "@mui/icons-material/AnalyticsOutlined";
@@ -40,7 +39,6 @@ const menuItems = [
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.manage"] },
   { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
-  { text: "Correlation Policies", path: "/correlation-policies", icon: <HubIcon />, permissions: ["integration.view"] },
   { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
   { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
