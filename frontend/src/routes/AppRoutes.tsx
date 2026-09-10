@@ -16,6 +16,7 @@ import RemediationQueue from "../pages/remediation/RemediationQueue";
 import UploadAccounts from "../pages/upload/UploadAccounts";
 import Integrations from "../pages/integrations/Integrations";
 import AddIntegration from "../pages/integrations/AddIntegration";
+import CorrelationPolicies from "../pages/integrations/CorrelationPolicies";
 import OperationsWorkspace from "../pages/operations/OperationsWorkspace";
 import MlTrainingDashboard from "../pages/ml/MlTrainingDashboard";
 import ReviewerAnalytics from "../pages/ml/ReviewerAnalytics";
@@ -71,6 +72,7 @@ const AppRoutes = () => {
 
           <Route element={<PermissionRoute anyOf={["integration.view"]} />}>
             <Route path="integrations" element={<Integrations />} />
+            <Route path="correlation-policies" element={<CorrelationPolicies />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["user.view", "role.view"]} />}>
