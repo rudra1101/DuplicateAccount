@@ -8,6 +8,7 @@ from app.db_models.account import AccountRecord
 from app.db_models.identity import IdentityRecord
 from app.db_models.orphan_finding import OrphanFindingRecord
 from app.db_models.scan import ScanRecord
+from app.services.correlation_policy_service import get_policy_for_account_integration
 from app.services.orphan_detection_service import detect_orphan_findings
 
 
@@ -44,19 +45,40 @@ def detect_for_scan(
     db: Session = Depends(get_db),
     _user=Depends(require_permission("duplicate.view")),
 ):
-    if db.get(ScanRecord, scan_id) is None:
+    scan = db.get(ScanRecord, scan_id)
+    if scan is None:
         raise HTTPException(status_code=404, detail="Scan not found.")
+    if scan.integration_id is None:
+        raise HTTPException(status_code=400, detail="Scan is not linked to an integration.")
 
-    identity_count = db.scalar(select(func.count(IdentityRecord.id))) or 0
+    policy = get_policy_for_account_integration(db, scan.integration_id)
+    if policy is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No enabled correlation policy is configured for this account integration.",
+        )
+
+    identity_count = db.scalar(
+        select(func.count(IdentityRecord.id)).where(
+            IdentityRecord.integration_id == policy.authoritative_integration_id
+        )
+    ) or 0
     if identity_count == 0:
         raise HTTPException(
             status_code=400,
-            detail="No authoritative identities are loaded. Run an AUTHORITATIVE integration first.",
+            detail="The selected authoritative source has no identities loaded. Run it first.",
         )
 
-    findings = detect_orphan_findings(db, scan_id=scan_id)
+    try:
+        findings = detect_orphan_findings(db, scan_id=scan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return {
         "scanId": scan_id,
+        "correlationPolicyId": policy.id,
+        "correlationPolicyName": policy.name,
+        "authoritativeIntegrationId": policy.authoritative_integration_id,
         "authoritativeIdentities": int(identity_count),
         "orphanAccountsFound": len(findings),
     }
