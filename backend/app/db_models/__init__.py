@@ -26,6 +26,8 @@ from app.db_models.user import UserRecord
 from app.db_models.scheduled_report import ScheduledReportConfigRecord, ScheduledReportRunRecord
 from app.db_models.application_settings import ApplicationSettingsRecord
 from app.db_models.report_email_template import ReportEmailTemplateRecord
+from app.db_models.identity import IdentityRecord
+from app.db_models.orphan_finding import OrphanFindingRecord
 
 __all__ = [
     "AccountRecord",
@@ -57,4 +59,6 @@ __all__ = [
     "ScheduledReportRunRecord",
     "ApplicationSettingsRecord",
     "ReportEmailTemplateRecord",
+    "IdentityRecord",
+    "OrphanFindingRecord",
 ]
