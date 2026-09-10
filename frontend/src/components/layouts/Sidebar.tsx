@@ -72,7 +72,7 @@ const Sidebar = () => {
             IdentityAI
           </Typography>
           <Typography variant="caption" sx={{ color: "#94a3b8" }}>
-            Duplicate Detection Platform
+            Account Intelligence Platform
           </Typography>
         </Box>
       </Toolbar>

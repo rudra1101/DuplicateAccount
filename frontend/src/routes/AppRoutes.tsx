@@ -15,7 +15,7 @@ import ApplicationReview from "../pages/Review/ApplicationReview";
 import RemediationQueue from "../pages/remediation/RemediationQueue";
 import UploadAccounts from "../pages/upload/UploadAccounts";
 import Integrations from "../pages/integrations/Integrations";
-import AddIntegration from "../pages/integrations/AddIntegration";
+import SourceWizard from "../pages/integrations/SourceWizard";
 import OperationsWorkspace from "../pages/operations/OperationsWorkspace";
 import MlTrainingDashboard from "../pages/ml/MlTrainingDashboard";
 import ReviewerAnalytics from "../pages/ml/ReviewerAnalytics";
@@ -82,11 +82,11 @@ const AppRoutes = () => {
           </Route>
 
           <Route element={<PermissionRoute anyOf={["integration.create"]} />}>
-            <Route path="integrations/new" element={<AddIntegration />} />
+            <Route path="integrations/new" element={<SourceWizard />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["integration.edit"]} />}>
-            <Route path="integrations/:integrationId/edit" element={<AddIntegration />} />
+            <Route path="integrations/:integrationId/edit" element={<SourceWizard />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["knowledge.view"]} />}>
