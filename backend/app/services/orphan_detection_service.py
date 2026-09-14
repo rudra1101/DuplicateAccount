@@ -7,14 +7,13 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db_models.account import AccountRecord
-from app.db_models.correlation_policy import CorrelationPolicyRecord, CorrelationRuleRecord
+from app.db_models.correlation_policy import CorrelationPolicyRecord
 from app.db_models.identity import IdentityRecord
 from app.db_models.orphan_finding import OrphanFindingRecord
 from app.db_models.scan import ScanRecord
 from app.services.correlation_policy_service import get_policy_for_account_integration
 
 
-ACTIVE_STATUSES = {"active", "enabled", "true", "1", "yes"}
 TERMINATED_STATUSES = {"terminated", "inactive", "disabled", "former", "left", "leaver"}
 NON_HUMAN_HINTS = ("svc", "service", "shared", "admin", "breakglass", "robot", "rpa", "system")
 
@@ -154,10 +153,7 @@ def correlate_account(
         if len(matches) == 1:
             attempt["result"] = "MATCHED"
             attempts.append(attempt)
-            method = (
-                f"{rule.account_attribute}->{rule.identity_attribute}:"
-                f"{rule.match_type}"
-            )
+            method = f"{rule.account_attribute}->{rule.identity_attribute}:{rule.match_type}"
             return CorrelationResult(
                 identity=matches[0],
                 method=method,
@@ -209,36 +205,6 @@ def _has_valid_non_human_owner(account: AccountRecord) -> bool:
     return bool(str(owner or "").strip())
 
 
-def _severity(risk_score: float) -> str:
-    if risk_score >= 90:
-        return "CRITICAL"
-    if risk_score >= 70:
-        return "HIGH"
-    if risk_score >= 40:
-        return "MEDIUM"
-    return "LOW"
-
-
-def _risk_for(account: AccountRecord, *, orphan_type: str) -> float:
-    score = 45.0
-    status = _norm(account.status)
-    raw = account.raw_attributes or {}
-    if status in ACTIVE_STATUSES or not status:
-        score += 20
-    if orphan_type == "TERMINATED_IDENTITY":
-        score += 15
-    if orphan_type == "AMBIGUOUS_CORRELATION":
-        score += 10
-
-    privileged = raw.get("privileged") or raw.get("isPrivileged") or raw.get("admin")
-    groups = str(raw.get("groups") or raw.get("memberOf") or "").lower()
-    if str(privileged).strip().lower() in ACTIVE_STATUSES:
-        score += 25
-    if any(term in groups for term in ("domain admins", "enterprise admins", "administrators", "sudo")):
-        score += 25
-    return min(score, 100.0)
-
-
 def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRecord]:
     scan = db.get(ScanRecord, scan_id)
     if scan is None:
@@ -248,9 +214,7 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
 
     policy = get_policy_for_account_integration(db, scan.integration_id)
     if policy is None:
-        raise ValueError(
-            "No enabled correlation policy is configured for this account integration."
-        )
+        raise ValueError("No enabled correlation policy is configured for this account integration.")
 
     accounts = list(
         db.scalars(select(AccountRecord).where(AccountRecord.scan_id == scan_id)).all()
@@ -306,14 +270,11 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
                 "ownerPresent": _has_valid_non_human_owner(account),
             }
 
-        risk_score = _risk_for(account, orphan_type=orphan_type)
         finding = OrphanFindingRecord(
             scan_id=scan_id,
             account_id=account.id,
             orphan_type=orphan_type,
             confidence=confidence,
-            risk_score=risk_score,
-            severity=_severity(risk_score),
             correlation_method=correlation.method,
             matched_identity_id=correlation.identity.id if correlation.identity else None,
             evidence=evidence,
