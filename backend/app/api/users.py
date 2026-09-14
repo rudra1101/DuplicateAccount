@@ -45,6 +45,18 @@ def validate_assignable_role(db: Session, role_name: str, actor) -> RoleRecord:
     return role
 
 
+def validate_manageable_account(target_role: str, actor) -> None:
+    normalized = str(target_role).strip().upper()
+    actor_role = _actor_role(actor)
+    if normalized == "OWNER" and actor_role != "OWNER":
+        raise HTTPException(status_code=403, detail="Only OWNER can change an OWNER account.")
+    if normalized == "SUPER_ADMIN" and actor_role not in {"OWNER", "SUPER_ADMIN"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only OWNER or SUPER_ADMIN can change a SUPER_ADMIN account.",
+        )
+
+
 @router.get("/", response_model=list[UserResponse])
 def list_users(
     db: Session = Depends(get_db),
@@ -103,17 +115,7 @@ def update_user_role(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    actor_role = _actor_role(actor)
-    current_role = str(user.role).strip().upper()
-
-    if current_role == "OWNER" and actor_role != "OWNER":
-        raise HTTPException(status_code=403, detail="Only OWNER can change an OWNER account.")
-    if current_role == "SUPER_ADMIN" and actor_role not in {"OWNER", "SUPER_ADMIN"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Only OWNER or SUPER_ADMIN can change a SUPER_ADMIN account.",
-        )
-
+    validate_manageable_account(user.role, actor)
     role = validate_assignable_role(db, payload.role, actor)
     user.role = role.name
     db.commit()
