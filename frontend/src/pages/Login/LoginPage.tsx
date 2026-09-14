@@ -28,7 +28,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
 
   if (authenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/home" replace />;
   }
 
   const handleSubmit = async (event: FormEvent) => {
@@ -39,7 +39,7 @@ export default function LoginPage() {
     try {
       await login(username.trim(), password);
       const from = (location.state as { from?: string } | null)?.from;
-      navigate(from || "/", { replace: true });
+      navigate(from || "/home", { replace: true });
     } catch (loginError) {
       setError(
         loginError instanceof Error
@@ -81,7 +81,7 @@ export default function LoginPage() {
                   IdentityAI
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-                  Sign in to Duplicate Account Detection
+                  Sign in to the Identity Intelligence Platform
                 </Typography>
               </Box>
 
