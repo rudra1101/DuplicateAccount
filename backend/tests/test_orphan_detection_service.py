@@ -97,7 +97,7 @@ def test_normalized_matching_is_configurable():
     result = correlate_account(account, identities=[identity], policy=policy)
 
     assert result.identity is identity
-    assert result.confidence == 95.0
+    assert result.method == "extensionAttribute10->workerReference:NORMALIZED"
 
 
 def test_ambiguous_match_does_not_choose_identity():
