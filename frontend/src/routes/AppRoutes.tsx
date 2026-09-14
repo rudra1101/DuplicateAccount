@@ -1,4 +1,4 @@
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import PermissionRoute from "../auth/PermissionRoute";
 import ProtectedRoute from "../auth/ProtectedRoute";
@@ -21,6 +21,8 @@ import OperationsWorkspace from "../pages/operations/OperationsWorkspace";
 import MlTrainingDashboard from "../pages/ml/MlTrainingDashboard";
 import ReviewerAnalytics from "../pages/ml/ReviewerAnalytics";
 import KnowledgeBase from "../pages/knowledge/KnowledgeBase";
+import ProductHome from "../pages/Home/ProductHome";
+import DomainPlaceholder from "../pages/Home/DomainPlaceholder";
 
 const AppRoutes = () => {
   return (
@@ -28,9 +30,31 @@ const AppRoutes = () => {
       <Route path="/login" element={<LoginPage />} />
 
       <Route element={<ProtectedRoute />}>
+        <Route path="/home" element={<ProductHome />} />
+        <Route
+          path="/account-heatmap"
+          element={
+            <DomainPlaceholder
+              title="Account Heatmap"
+              description="Account distribution, concentration, activity, and identity-pattern analytics will live in this domain."
+            />
+          }
+        />
+        <Route
+          path="/non-human-identities"
+          element={
+            <DomainPlaceholder
+              title="Non-Human Identity"
+              description="Discovery and governance for service accounts, shared accounts, bots, workloads, and other non-human identities will live in this domain."
+            />
+          }
+        />
+
         <Route path="/" element={<MainLayout />}>
+          <Route index element={<Navigate to="/home" replace />} />
+
           <Route element={<PermissionRoute anyOf={["dashboard.view"]} />}>
-            <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["duplicate.view"]} />}>
