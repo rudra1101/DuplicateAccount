@@ -26,14 +26,14 @@ def _requested_permissions_for_role(
 
 
 def seed_rbac(db: Session) -> None:
-    """
-    Synchronize deploy-time service manifests into the database.
+    """Synchronize deploy-time service manifests into the database.
 
     Runtime authorization reads permissions and role assignments from the DB.
-    Manifests are only an additive/bootstrap source for normal roles. The
-    protected OWNER role is unrestricted at runtime, and the ADMIN role is
-    intentionally kept assigned to every permission declared by enabled
-    service manifests so administrators can configure all platform features.
+    OWNER remains unrestricted for backward compatibility. SUPER_ADMIN is the
+    operational super-administrator role and receives every declared platform
+    permission. ADMIN is synchronized to the permissions explicitly granted by
+    the service manifests, allowing sensitive capabilities such as ML training
+    and model evaluation to remain super-admin only.
     """
 
     manifests = load_service_manifests()
@@ -114,8 +114,9 @@ def seed_rbac(db: Session) -> None:
             newly_created_roles.add(role_name)
         else:
             role.is_system = True
-            if not role.description:
-                role.description = role_manifest.description
+            role.description = role_manifest.description
+
+    all_permission_codes = set(existing_permissions)
 
     for role_manifest in system_roles:
         role_name = role_manifest.name.upper()
@@ -128,21 +129,27 @@ def seed_rbac(db: Session) -> None:
                 _requested_permissions_for_role(manifest, role_name)
             )
 
-        if role_name == "ADMIN":
-            # ADMIN is the platform administrator role and must always be able
-            # to configure every feature exposed by the service catalog.
-            codes_to_add = requested_codes
+        if role_name == "SUPER_ADMIN":
+            desired_codes = all_permission_codes
+        elif role_name == "ADMIN":
+            # ADMIN is a managed system role. Keep it aligned with service
+            # manifests so permissions removed from ADMIN (for example ML)
+            # are actually revoked from existing installations as well.
+            desired_codes = requested_codes
         elif role_name in newly_created_roles:
-            codes_to_add = requested_codes
+            desired_codes = requested_codes
         else:
             # Preserve administrator changes for normal roles. Only seed
             # defaults for permissions introduced by this deployment.
-            codes_to_add = requested_codes & newly_created_permission_codes
+            desired_codes = current_codes | (
+                requested_codes & newly_created_permission_codes
+            )
 
-        for code in sorted(codes_to_add - current_codes):
-            permission = existing_permissions.get(code)
-            if permission is not None:
-                role.permissions.append(permission)
+        role.permissions = [
+            existing_permissions[code]
+            for code in sorted(desired_codes)
+            if code in existing_permissions
+        ]
 
     db.commit()
 
