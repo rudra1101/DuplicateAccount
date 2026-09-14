@@ -52,12 +52,8 @@ def list_connector_types() -> list[dict]:
 
 def create_integration(db: Session, payload: IntegrationCreate) -> IntegrationRecord:
     connector_type = payload.connectorType.strip().upper()
-    connector = ConnectorFactory.create(
-        connector_type=connector_type,
-        configuration=payload.configuration,
-    )
+    connector = ConnectorFactory.create(connector_type=connector_type, configuration=payload.configuration)
     connector.validate_configuration()
-
     integration = IntegrationRecord(
         name=payload.name.strip(),
         connector_type=connector_type,
@@ -66,7 +62,6 @@ def create_integration(db: Session, payload: IntegrationCreate) -> IntegrationRe
         configuration=payload.configuration or {},
         enabled=payload.enabled,
     )
-
     try:
         db.add(integration)
         db.commit()
@@ -77,62 +72,32 @@ def create_integration(db: Session, payload: IntegrationCreate) -> IntegrationRe
     return integration
 
 
-def get_integrations(
-    db: Session,
-    *,
-    page: int = 1,
-    page_size: int = 25,
-    search: str = "",
-    enabled: bool | None = None,
-) -> tuple[list[IntegrationRecord], int]:
+def get_integrations(db: Session, *, page: int = 1, page_size: int = 25, search: str = "", enabled: bool | None = None) -> tuple[list[IntegrationRecord], int]:
     safe_page = max(1, int(page))
     safe_page_size = max(1, min(int(page_size), 100))
     filters = []
     normalized_search = search.strip()
     if normalized_search:
         pattern = f"%{normalized_search}%"
-        filters.append(
-            or_(
-                IntegrationRecord.name.ilike(pattern),
-                IntegrationRecord.connector_type.ilike(pattern),
-                IntegrationRecord.description.ilike(pattern),
-                IntegrationRecord.source_purpose.ilike(pattern),
-            )
-        )
+        filters.append(or_(IntegrationRecord.name.ilike(pattern), IntegrationRecord.connector_type.ilike(pattern), IntegrationRecord.description.ilike(pattern), IntegrationRecord.source_purpose.ilike(pattern)))
     if enabled is not None:
         filters.append(IntegrationRecord.enabled.is_(enabled))
-
     total_statement = select(func.count(IntegrationRecord.id))
     if filters:
         total_statement = total_statement.where(*filters)
     total = int(db.scalar(total_statement) or 0)
-
     statement = select(IntegrationRecord).options(selectinload(IntegrationRecord.schedule))
     if filters:
         statement = statement.where(*filters)
-    statement = (
-        statement
-        .order_by(IntegrationRecord.name.asc(), IntegrationRecord.id.asc())
-        .offset((safe_page - 1) * safe_page_size)
-        .limit(safe_page_size)
-    )
+    statement = statement.order_by(IntegrationRecord.name.asc(), IntegrationRecord.id.asc()).offset((safe_page - 1) * safe_page_size).limit(safe_page_size)
     return list(db.scalars(statement).all()), total
 
 
 def get_integration(db: Session, integration_id: int) -> IntegrationRecord | None:
-    statement = (
-        select(IntegrationRecord)
-        .options(selectinload(IntegrationRecord.schedule))
-        .where(IntegrationRecord.id == integration_id)
-    )
-    return db.scalar(statement)
+    return db.scalar(select(IntegrationRecord).options(selectinload(IntegrationRecord.schedule)).where(IntegrationRecord.id == integration_id))
 
 
-def update_integration(
-    db: Session,
-    integration: IntegrationRecord,
-    payload: IntegrationUpdate,
-) -> IntegrationRecord:
+def update_integration(db: Session, integration: IntegrationRecord, payload: IntegrationUpdate) -> IntegrationRecord:
     update_data = payload.model_dump(exclude_unset=True)
     if "name" in update_data:
         integration.name = str(update_data["name"] or "").strip()
@@ -146,13 +111,9 @@ def update_integration(
         integration.enabled = bool(update_data["enabled"])
     if "configuration" in update_data:
         new_configuration = update_data["configuration"] or {}
-        connector = ConnectorFactory.create(
-            connector_type=integration.connector_type,
-            configuration=new_configuration,
-        )
+        connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=new_configuration)
         connector.validate_configuration()
         integration.configuration = new_configuration
-
     try:
         db.commit()
         db.refresh(integration)
@@ -182,10 +143,7 @@ def _test_result_to_dict(integration: IntegrationRecord, result) -> dict:
 
 
 def test_integration_authentication(integration: IntegrationRecord) -> dict:
-    connector = ConnectorFactory.create(
-        connector_type=integration.connector_type,
-        configuration=integration.configuration or {},
-    )
+    connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=integration.configuration or {})
     with connector:
         test_authentication = getattr(connector, "test_authentication", None)
         result = test_authentication() if callable(test_authentication) else connector.test_connection()
@@ -193,27 +151,18 @@ def test_integration_authentication(integration: IntegrationRecord) -> dict:
 
 
 def test_integration(integration: IntegrationRecord) -> dict:
-    connector = ConnectorFactory.create(
-        connector_type=integration.connector_type,
-        configuration=integration.configuration or {},
-    )
+    connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=integration.configuration or {})
     with connector:
         result = connector.test_connection()
     return _test_result_to_dict(integration, result)
 
 
-def run_integration(db: Session, integration: IntegrationRecord) -> dict:
-    execution = execute_integration(db=db, integration=integration)
+def run_integration(db: Session, integration: IntegrationRecord, aggregation_type: str = "FULL") -> dict:
+    execution = execute_integration(db=db, integration=integration, aggregation_type=aggregation_type)
     return execution_to_dict(execution)
 
 
 def get_integration_executions(db: Session, integration_id: int, limit: int = 20) -> list[dict]:
     safe_limit = max(1, min(int(limit), 100))
-    statement = (
-        select(JobExecutionRecord)
-        .where(JobExecutionRecord.integration_id == integration_id)
-        .order_by(JobExecutionRecord.started_at.desc(), JobExecutionRecord.id.desc())
-        .limit(safe_limit)
-    )
-    executions = db.scalars(statement).all()
-    return [execution_to_dict(execution) for execution in executions]
+    statement = select(JobExecutionRecord).where(JobExecutionRecord.integration_id == integration_id).order_by(JobExecutionRecord.started_at.desc(), JobExecutionRecord.id.desc()).limit(safe_limit)
+    return [execution_to_dict(execution) for execution in db.scalars(statement).all()]
