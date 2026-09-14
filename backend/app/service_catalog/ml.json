@@ -6,5 +6,5 @@
     {"code":"ml.calibration.view","name":"View Model Evaluation Calibration"},
     {"code":"ml.train","name":"Run ML Training"}
   ],
-  "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
+  "defaultRoles": {"OWNER":"ALL","SUPER_ADMIN":"ALL","ADMIN":[],"USER":[]}
 }
