@@ -48,7 +48,6 @@ IDENTITY_CANONICAL_FIELDS = {
 class CorrelationResult:
     identity: IdentityRecord | None
     method: str | None
-    confidence: float
     attempts: list[dict[str, Any]]
     ambiguous: bool = False
 
@@ -102,12 +101,6 @@ def _values_match(account_value: Any, identity_value: Any, match_type: str) -> b
     raise ValueError(f"Unsupported correlation match type: {match_type}")
 
 
-def _match_confidence(match_type: str) -> float:
-    return {"EXACT": 100.0, "CASE_INSENSITIVE": 98.0, "NORMALIZED": 95.0}.get(
-        match_type.upper(), 90.0
-    )
-
-
 def correlate_account(
     account: AccountRecord,
     *,
@@ -157,7 +150,6 @@ def correlate_account(
             return CorrelationResult(
                 identity=matches[0],
                 method=method,
-                confidence=_match_confidence(rule.match_type),
                 attempts=attempts,
             )
 
@@ -167,7 +159,6 @@ def correlate_account(
             return CorrelationResult(
                 identity=None,
                 method=None,
-                confidence=0.0,
                 attempts=attempts,
                 ambiguous=True,
             )
@@ -175,7 +166,7 @@ def correlate_account(
         attempt["result"] = "NO_MATCH"
         attempts.append(attempt)
 
-    return CorrelationResult(None, None, 0.0, attempts)
+    return CorrelationResult(None, None, attempts)
 
 
 def _looks_non_human(account: AccountRecord) -> bool:
@@ -242,7 +233,6 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
             if employment_status not in TERMINATED_STATUSES:
                 continue
             orphan_type = "TERMINATED_IDENTITY"
-            confidence = correlation.confidence
             evidence = {
                 "reason": "Account correlated to an authoritative identity that is terminated or inactive.",
                 "policyId": policy.id,
@@ -255,7 +245,6 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
             if _looks_non_human(account) and _has_valid_non_human_owner(account):
                 continue
             orphan_type = "AMBIGUOUS_CORRELATION" if correlation.ambiguous else "UNMATCHED_ACCOUNT"
-            confidence = 80.0 if correlation.ambiguous else 95.0
             evidence = {
                 "reason": (
                     "Correlation rule matched multiple authoritative identities."
@@ -274,7 +263,6 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
             scan_id=scan_id,
             account_id=account.id,
             orphan_type=orphan_type,
-            confidence=confidence,
             correlation_method=correlation.method,
             matched_identity_id=correlation.identity.id if correlation.identity else None,
             evidence=evidence,
