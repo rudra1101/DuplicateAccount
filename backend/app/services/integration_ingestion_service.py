@@ -7,11 +7,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.connectors.factory import ConnectorFactory
 from app.db_models.account import AccountRecord
 from app.db_models.application import ApplicationRecord
+from app.db_models.application_schema import ApplicationSchemaRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
@@ -66,10 +67,11 @@ def execution_to_dict(execution: JobExecutionRecord) -> dict[str, Any]:
     }
 
 
-def _default_application_for_integration(db: Session, integration_id: int) -> str | None:
-    applications = list(
+def _applications_for_integration(db: Session, integration_id: int) -> list[ApplicationRecord]:
+    return list(
         db.scalars(
             select(ApplicationRecord)
+            .options(selectinload(ApplicationRecord.schemas))
             .where(
                 ApplicationRecord.integration_id == integration_id,
                 ApplicationRecord.enabled.is_(True),
@@ -77,9 +79,20 @@ def _default_application_for_integration(db: Session, integration_id: int) -> st
             .order_by(ApplicationRecord.id.asc())
         ).all()
     )
-    if len(applications) == 1:
-        return applications[0].name
-    return None
+
+
+def _default_application_for_integration(db: Session, integration_id: int) -> str | None:
+    applications = _applications_for_integration(db, integration_id)
+    return applications[0].name if len(applications) == 1 else None
+
+
+def _native_identity_attributes_for_integration(db: Session, integration_id: int) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for application in _applications_for_integration(db, integration_id):
+        schema = next((item for item in application.schemas if item.is_active), None)
+        if schema and schema.native_identity_attribute:
+            result[application.name] = schema.native_identity_attribute
+    return result
 
 
 def _preserve_raw_attributes(db: Session, *, scan_id: int, accounts: list[Any]) -> None:
@@ -130,7 +143,6 @@ def _merge_schema_results(
     schema_groups: dict[str, list[dict[str, Any]]],
     schema_details: dict[int, dict[str, Any]],
 ) -> None:
-    """Supplement AI results without duplicating an already represented account set."""
     represented: set[tuple[str, str]] = set()
     for detail in duplicate_details.values():
         primary = detail.get("primaryAccount") or {}
@@ -206,6 +218,7 @@ def execute_integration(
             encoding=encoding,
             default_application=_default_application_for_integration(db, integration.id),
             allow_dynamic_schema=True,
+            native_identity_attributes=_native_identity_attributes_for_integration(db, integration.id),
         )
 
         if integration.source_purpose == "AUTHORITATIVE":
@@ -222,8 +235,7 @@ def execute_integration(
             )
             print(
                 "[Authoritative Identity Ingestion] "
-                f"Integration={integration.id}, IdentitiesLoaded={identity_count}, "
-                f"Inventory={inventory_stats}"
+                f"Integration={integration.id}, IdentitiesLoaded={identity_count}, Inventory={inventory_stats}"
             )
             return _complete_execution(
                 db,
@@ -235,10 +247,7 @@ def execute_integration(
             )
 
         pair_feedback = load_pair_feedback(db, integration_id=integration.id)
-        print(
-            "[Reviewer Feedback] "
-            f"Integration={integration.id}, DurablePairsLoaded={len(pair_feedback)}"
-        )
+        print(f"[Reviewer Feedback] Integration={integration.id}, DurablePairsLoaded={len(pair_feedback)}")
 
         duplicate_groups, duplicate_details, review_candidates = analyze_duplicate_decisions(
             records,
@@ -252,12 +261,7 @@ def execute_integration(
             accounts=records,
             starting_group_id=next_group_id,
         )
-        _merge_schema_results(
-            duplicate_groups,
-            duplicate_details,
-            schema_groups,
-            schema_details,
-        )
+        _merge_schema_results(duplicate_groups, duplicate_details, schema_groups, schema_details)
 
         scan = save_completed_scan(
             db=db,
@@ -283,8 +287,7 @@ def execute_integration(
         )
         print(
             "[Account Inventory] "
-            f"Integration={integration.id}, Stats={inventory_stats}, "
-            f"PersistentDuplicateFindings={persistent_duplicates}"
+            f"Integration={integration.id}, Stats={inventory_stats}, PersistentDuplicateFindings={persistent_duplicates}"
         )
 
         saved_review_candidates = save_review_candidates(
@@ -292,10 +295,7 @@ def execute_integration(
             scan_id=scan.id,
             candidates=review_candidates,
         )
-        print(
-            "[Duplicate Detection] "
-            f"ApplicationReviewCandidatesPersisted={saved_review_candidates}"
-        )
+        print(f"[Duplicate Detection] ApplicationReviewCandidatesPersisted={saved_review_candidates}")
 
         policy = get_policy_for_account_integration(db, integration.id)
         if policy is None:
@@ -309,13 +309,10 @@ def execute_integration(
                 orphan_findings = detect_orphan_findings(db, scan_id=scan.id)
                 print(
                     "[Orphan Detection] "
-                    f"Policy={policy.id}, AuthoritativeIdentities={identity_count}, "
-                    f"OrphanFindings={len(orphan_findings)}"
+                    f"Policy={policy.id}, AuthoritativeIdentities={identity_count}, OrphanFindings={len(orphan_findings)}"
                 )
             else:
-                print(
-                    "[Orphan Detection] Skipped: selected authoritative source has no identities loaded."
-                )
+                print("[Orphan Detection] Skipped: selected authoritative source has no identities loaded.")
 
         total_duplicate_groups = sum(len(groups) for groups in duplicate_groups.values())
         total_duplicate_accounts = sum(
