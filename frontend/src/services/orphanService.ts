@@ -12,7 +12,6 @@ export interface OrphanFinding {
   email: string;
   employeeId: string | null;
   accountStatus: string | null;
-  confidence: number;
   correlationMethod: string | null;
   matchedIdentityId: number | null;
   evidence: Record<string, unknown>;
