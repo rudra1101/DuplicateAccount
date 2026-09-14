@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -26,7 +26,6 @@ class OrphanFindingRecord(Base):
         String(50), nullable=False, default="ORPHAN_ACCOUNT", index=True
     )
     orphan_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    confidence: Mapped[float] = mapped_column(Float, nullable=False)
     correlation_method: Mapped[str | None] = mapped_column(String(255), nullable=True)
     matched_identity_id: Mapped[int | None] = mapped_column(
         ForeignKey("identities.id", ondelete="SET NULL"), nullable=True, index=True
