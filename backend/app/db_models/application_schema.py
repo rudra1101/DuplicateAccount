@@ -36,57 +36,22 @@ class ApplicationSchemaRecord(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        autoincrement=True,
-    )
-
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     application_id: Mapped[int] = mapped_column(
-        ForeignKey(
-            "applications.id",
-            ondelete="CASCADE",
-        ),
-        nullable=False,
-        index=True,
+        ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True
     )
-
-    version: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=1,
-    )
-
-    name: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-    )
-
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        index=True,
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False,
-        default=datetime.utcnow,
-    )
-
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    native_identity_attribute: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime,
-        nullable=False,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
     application: Mapped["ApplicationRecord"] = relationship(
-        "ApplicationRecord",
-        back_populates="schemas",
+        "ApplicationRecord", back_populates="schemas"
     )
-
     attributes: Mapped[list["SchemaAttributeRecord"]] = relationship(
         "SchemaAttributeRecord",
         back_populates="schema",
@@ -94,8 +59,6 @@ class ApplicationSchemaRecord(Base):
         passive_deletes=True,
         order_by="SchemaAttributeRecord.position",
     )
-
     accounts: Mapped[list["AccountRecord"]] = relationship(
-        "AccountRecord",
-        back_populates="schema_record",
+        "AccountRecord", back_populates="schema_record"
     )
