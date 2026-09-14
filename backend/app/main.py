@@ -30,6 +30,7 @@ from app.api.remediation import router as remediation_router
 from app.api.roles import router as roles_router
 from app.api.scans import router as scans_router
 from app.api.settings import router as settings_router
+from app.api.source_accounts import router as source_accounts_router
 from app.api.upload import router as upload_router
 from app.api.users import router as users_router
 from app.api.vector_search import router as vector_search_router
@@ -143,6 +144,7 @@ app.include_router(review_router, prefix="/api")
 app.include_router(remediation_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
 app.include_router(integrations_router, prefix="/api")
+app.include_router(source_accounts_router, prefix="/api")
 app.include_router(orphan_router, prefix="/api")
 app.include_router(correlation_policies_router, prefix="/api")
 app.include_router(application_schemas_router, prefix="/api")
