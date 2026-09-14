@@ -91,8 +91,8 @@ def update_role(
     role = db.get(RoleRecord, role_id)
     if role is None:
         raise HTTPException(status_code=404, detail="Role not found.")
-    if role.name == "OWNER":
-        raise HTTPException(status_code=400, detail="OWNER role cannot be modified.")
+    if role.name in {"OWNER", "SUPER_ADMIN"}:
+        raise HTTPException(status_code=400, detail=f"{role.name} role cannot be modified.")
 
     role.description = payload.description.strip()
     db.commit()
@@ -112,10 +112,12 @@ def update_role_permissions(
         raise HTTPException(status_code=404, detail="Role not found.")
     if role.name == "OWNER":
         raise HTTPException(status_code=400, detail="OWNER permissions are fixed to unrestricted access.")
+    if role.name == "SUPER_ADMIN":
+        raise HTTPException(status_code=400, detail="SUPER_ADMIN permissions are fixed to unrestricted platform access.")
     if role.name == "ADMIN":
         raise HTTPException(
             status_code=400,
-            detail="ADMIN permissions are fixed to all platform permissions.",
+            detail="ADMIN permissions are managed by the platform service catalog.",
         )
 
     permission_map = {
