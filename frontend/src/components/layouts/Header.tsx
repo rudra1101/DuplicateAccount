@@ -72,17 +72,33 @@ const Header = () => {
         }}
       >
         <Box
-          component="img"
-          src={logoSrc}
-          alt="IdentityAI"
-          onError={() => setLogoSrc(DEFAULT_LOGO)}
+          component="button"
+          type="button"
+          aria-label="Return to IdentityAI home"
+          onClick={() => navigate("/home")}
           sx={{
-            height: { xs: 38, sm: 44 },
-            width: "auto",
-            maxWidth: { xs: 190, sm: 240 },
-            objectFit: "contain",
+            p: 0,
+            m: 0,
+            border: 0,
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            cursor: "pointer",
           }}
-        />
+        >
+          <Box
+            component="img"
+            src={logoSrc}
+            alt="IdentityAI"
+            onError={() => setLogoSrc(DEFAULT_LOGO)}
+            sx={{
+              height: { xs: 38, sm: 44 },
+              width: "auto",
+              maxWidth: { xs: 190, sm: 240 },
+              objectFit: "contain",
+            }}
+          />
+        </Box>
 
         <Box sx={{ flex: 1 }} />
 
