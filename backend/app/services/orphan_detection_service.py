@@ -12,6 +12,7 @@ from app.db_models.identity import IdentityRecord
 from app.db_models.orphan_finding import OrphanFindingRecord
 from app.db_models.scan import ScanRecord
 from app.services.correlation_policy_service import get_policy_for_account_integration
+from app.services.orphan_state_service import reconcile_orphan_states
 
 
 TERMINATED_STATUSES = {"terminated", "inactive", "disabled", "former", "left", "leaver"}
@@ -113,26 +114,20 @@ def correlate_account(
     for rule in rules:
         account_value = _account_value(account, rule.account_attribute)
         if account_value is None or not str(account_value).strip():
-            attempts.append(
-                {
-                    "priority": rule.priority,
-                    "accountAttribute": rule.account_attribute,
-                    "identityAttribute": rule.identity_attribute,
-                    "matchType": rule.match_type,
-                    "accountValue": None,
-                    "result": "ACCOUNT_VALUE_MISSING",
-                }
-            )
+            attempts.append({
+                "priority": rule.priority,
+                "accountAttribute": rule.account_attribute,
+                "identityAttribute": rule.identity_attribute,
+                "matchType": rule.match_type,
+                "accountValue": None,
+                "result": "ACCOUNT_VALUE_MISSING",
+            })
             continue
 
         matches = [
             identity
             for identity in identities
-            if _values_match(
-                account_value,
-                _identity_value(identity, rule.identity_attribute),
-                rule.match_type,
-            )
+            if _values_match(account_value, _identity_value(identity, rule.identity_attribute), rule.match_type)
         ]
         attempt = {
             "priority": rule.priority,
@@ -147,21 +142,12 @@ def correlate_account(
             attempt["result"] = "MATCHED"
             attempts.append(attempt)
             method = f"{rule.account_attribute}->{rule.identity_attribute}:{rule.match_type}"
-            return CorrelationResult(
-                identity=matches[0],
-                method=method,
-                attempts=attempts,
-            )
+            return CorrelationResult(identity=matches[0], method=method, attempts=attempts)
 
         if len(matches) > 1:
             attempt["result"] = "AMBIGUOUS"
             attempts.append(attempt)
-            return CorrelationResult(
-                identity=None,
-                method=None,
-                attempts=attempts,
-                ambiguous=True,
-            )
+            return CorrelationResult(identity=None, method=None, attempts=attempts, ambiguous=True)
 
         attempt["result"] = "NO_MATCH"
         attempts.append(attempt)
@@ -173,12 +159,7 @@ def _looks_non_human(account: AccountRecord) -> bool:
     username = _norm(account.username)
     display_name = _norm(account.display_name)
     raw = account.raw_attributes or {}
-    account_type = _norm(
-        raw.get("accountType")
-        or raw.get("account_type")
-        or raw.get("type")
-        or raw.get("userType")
-    )
+    account_type = _norm(raw.get("accountType") or raw.get("account_type") or raw.get("type") or raw.get("userType"))
     if account_type in {"service", "shared", "system", "robot", "rpa"}:
         return True
     return any(hint in username or hint in display_name for hint in NON_HUMAN_HINTS)
@@ -186,13 +167,7 @@ def _looks_non_human(account: AccountRecord) -> bool:
 
 def _has_valid_non_human_owner(account: AccountRecord) -> bool:
     raw = account.raw_attributes or {}
-    owner = (
-        raw.get("owner")
-        or raw.get("ownerId")
-        or raw.get("owner_id")
-        or raw.get("serviceOwner")
-        or raw.get("service_owner")
-    )
+    owner = raw.get("owner") or raw.get("ownerId") or raw.get("owner_id") or raw.get("serviceOwner") or raw.get("service_owner")
     return bool(str(owner or "").strip())
 
 
@@ -207,9 +182,7 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
     if policy is None:
         raise ValueError("No enabled correlation policy is configured for this account integration.")
 
-    accounts = list(
-        db.scalars(select(AccountRecord).where(AccountRecord.scan_id == scan_id)).all()
-    )
+    accounts = list(db.scalars(select(AccountRecord).where(AccountRecord.scan_id == scan_id)).all())
     identities = list(
         db.scalars(
             select(IdentityRecord).where(
@@ -220,9 +193,7 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
         ).all()
     )
     if not identities:
-        raise ValueError(
-            "The authoritative source selected by the correlation policy has no active identities loaded."
-        )
+        raise ValueError("The authoritative source selected by the correlation policy has no active identities loaded.")
 
     db.execute(delete(OrphanFindingRecord).where(OrphanFindingRecord.scan_id == scan_id))
     findings: list[OrphanFindingRecord] = []
@@ -275,4 +246,5 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
     db.commit()
     for finding in findings:
         db.refresh(finding)
+    reconcile_orphan_states(db, scan_id=scan_id, findings=findings)
     return findings
