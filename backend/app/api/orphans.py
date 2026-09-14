@@ -39,6 +39,18 @@ def _finding_to_dict(finding: OrphanFindingRecord, account: AccountRecord) -> di
     }
 
 
+def _latest_scan_id_for_integration(db: Session, integration_id: int) -> int | None:
+    return db.scalar(
+        select(ScanRecord.id)
+        .where(
+            ScanRecord.integration_id == integration_id,
+            ScanRecord.status == "COMPLETED",
+        )
+        .order_by(ScanRecord.created_at.desc(), ScanRecord.id.desc())
+        .limit(1)
+    )
+
+
 @router.post("/scans/{scan_id}/detect")
 def detect_for_scan(
     scan_id: int,
@@ -87,16 +99,27 @@ def detect_for_scan(
 @router.get("/")
 def list_findings(
     scan_id: int | None = Query(default=None, alias="scanId"),
+    integration_id: int | None = Query(default=None, alias="integrationId"),
+    latest_only: bool = Query(default=True, alias="latestOnly"),
     severity: str | None = Query(default=None),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("duplicate.view")),
 ):
+    effective_scan_id = scan_id
+    if effective_scan_id is None and integration_id is not None and latest_only:
+        effective_scan_id = _latest_scan_id_for_integration(db, integration_id)
+        if effective_scan_id is None:
+            return []
+
     statement = (
         select(OrphanFindingRecord, AccountRecord)
         .join(AccountRecord, AccountRecord.id == OrphanFindingRecord.account_id)
+        .join(ScanRecord, ScanRecord.id == OrphanFindingRecord.scan_id)
     )
-    if scan_id is not None:
-        statement = statement.where(OrphanFindingRecord.scan_id == scan_id)
+    if effective_scan_id is not None:
+        statement = statement.where(OrphanFindingRecord.scan_id == effective_scan_id)
+    elif integration_id is not None:
+        statement = statement.where(ScanRecord.integration_id == integration_id)
     if severity:
         statement = statement.where(OrphanFindingRecord.severity == severity.strip().upper())
     statement = statement.order_by(
@@ -110,25 +133,39 @@ def list_findings(
 @router.get("/summary")
 def summary(
     scan_id: int | None = Query(default=None, alias="scanId"),
+    integration_id: int | None = Query(default=None, alias="integrationId"),
+    latest_only: bool = Query(default=True, alias="latestOnly"),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("duplicate.view")),
 ):
+    effective_scan_id = scan_id
+    if effective_scan_id is None and integration_id is not None and latest_only:
+        effective_scan_id = _latest_scan_id_for_integration(db, integration_id)
+        if effective_scan_id is None:
+            return {"total": 0, "bySeverity": {}}
+
     filters = []
-    if scan_id is not None:
-        filters.append(OrphanFindingRecord.scan_id == scan_id)
+    if effective_scan_id is not None:
+        filters.append(OrphanFindingRecord.scan_id == effective_scan_id)
 
     total_stmt = select(func.count(OrphanFindingRecord.id))
-    if filters:
-        total_stmt = total_stmt.where(*filters)
-    total = int(db.scalar(total_stmt) or 0)
-
     severity_stmt = select(
         OrphanFindingRecord.severity,
         func.count(OrphanFindingRecord.id),
     ).group_by(OrphanFindingRecord.severity)
+
+    if integration_id is not None and effective_scan_id is None:
+        total_stmt = total_stmt.join(ScanRecord, ScanRecord.id == OrphanFindingRecord.scan_id).where(
+            ScanRecord.integration_id == integration_id
+        )
+        severity_stmt = severity_stmt.join(ScanRecord, ScanRecord.id == OrphanFindingRecord.scan_id).where(
+            ScanRecord.integration_id == integration_id
+        )
     if filters:
+        total_stmt = total_stmt.where(*filters)
         severity_stmt = severity_stmt.where(*filters)
 
+    total = int(db.scalar(total_stmt) or 0)
     return {
         "total": total,
         "bySeverity": {severity: int(count) for severity, count in db.execute(severity_stmt)},
