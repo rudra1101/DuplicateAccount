@@ -30,7 +30,7 @@ import { useAuth } from "../../auth/AuthContext";
 const drawerWidth = 250;
 
 const menuItems = [
-  { text: "Dashboard", icon: <DashboardIcon />, path: "/", permissions: ["dashboard.view"] },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard", permissions: ["dashboard.view"] },
   { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates", permissions: ["duplicate.view"] },
   { text: "Review Accounts", icon: <FactCheckIcon />, path: "/review", permissions: ["duplicate.review"] },
   { text: "Remediation", icon: <TaskAltIcon />, path: "/remediation", permissions: ["remediation.view", "remediation.history.view"] },
@@ -69,7 +69,20 @@ const Sidebar = () => {
       }}
     >
       <Toolbar>
-        <Box>
+        <Box
+          component={Link}
+          to="/home"
+          aria-label="Return to IdentityAI home"
+          sx={{
+            display: "block",
+            color: "inherit",
+            textDecoration: "none",
+            borderRadius: 1.5,
+            px: 0.5,
+            py: 0.5,
+            "&:hover": { opacity: 0.9 },
+          }}
+        >
           <Typography variant="h6" sx={{ fontWeight: 700, color: "#fff" }}>
             IdentityAI
           </Typography>
