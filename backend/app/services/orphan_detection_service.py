@@ -213,13 +213,15 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
     identities = list(
         db.scalars(
             select(IdentityRecord).where(
-                IdentityRecord.integration_id == policy.authoritative_integration_id
+                IdentityRecord.integration_id == policy.authoritative_integration_id,
+                IdentityRecord.active.is_(True),
+                IdentityRecord.deleted.is_(False),
             )
         ).all()
     )
     if not identities:
         raise ValueError(
-            "The authoritative source selected by the correlation policy has no identities loaded."
+            "The authoritative source selected by the correlation policy has no active identities loaded."
         )
 
     db.execute(delete(OrphanFindingRecord).where(OrphanFindingRecord.scan_id == scan_id))
