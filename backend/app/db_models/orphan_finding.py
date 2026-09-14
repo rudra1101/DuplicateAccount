@@ -27,9 +27,7 @@ class OrphanFindingRecord(Base):
     )
     orphan_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
-    risk_score: Mapped[float] = mapped_column(Float, nullable=False)
-    severity: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    correlation_method: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    correlation_method: Mapped[str | None] = mapped_column(String(255), nullable=True)
     matched_identity_id: Mapped[int | None] = mapped_column(
         ForeignKey("identities.id", ondelete="SET NULL"), nullable=True, index=True
     )
