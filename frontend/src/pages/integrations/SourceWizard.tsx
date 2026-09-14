@@ -72,25 +72,10 @@ import {
 } from "../../services/correlationPolicyService";
 
 const AUTH_FIELDS = [
-  "username",
-  "password",
-  "apiToken",
-  "apiTokenHeader",
-  "bearerToken",
-  "oauthGrantType",
-  "tokenUrl",
-  "clientId",
-  "clientSecret",
-  "oauthUsername",
-  "oauthPassword",
-  "refreshToken",
-  "oauthAssertion",
-  "oauthScope",
-  "oauthAdvanced",
-  "oauthHeadersJson",
-  "oauthParametersJson",
-  "customAuthHeader",
-  "customAuthValue",
+  "username", "password", "apiToken", "apiTokenHeader", "bearerToken",
+  "oauthGrantType", "tokenUrl", "clientId", "clientSecret", "oauthUsername",
+  "oauthPassword", "refreshToken", "oauthAssertion", "oauthScope", "oauthAdvanced",
+  "oauthHeadersJson", "oauthParametersJson", "customAuthHeader", "customAuthValue",
 ];
 
 const emptyAttribute = (position: number): SchemaAttributeInput => ({
@@ -112,6 +97,7 @@ const emptyApplication = (): ApplicationInput => ({
   objectType: "account",
   enabled: true,
   schemaName: "",
+  nativeIdentityAttribute: null,
   attributes: [],
 });
 
@@ -173,14 +159,14 @@ const SourceWizard = () => {
   );
   const selectedApplication = applications[selectedApplicationIndex] ?? null;
   const isWebService = connectorType === "WEB_SERVICE";
-
   const authoritativeSources = useMemo(
     () => allIntegrations.filter((item) => item.sourcePurpose === "AUTHORITATIVE" && item.id !== connectionId),
     [allIntegrations, connectionId],
   );
-
   const accountAttributes = useMemo(
-    () => Array.from(new Set(applications.flatMap((application) => application.attributes.map((attribute) => attribute.name).filter(Boolean)))).sort((a, b) => a.localeCompare(b)),
+    () => Array.from(new Set(
+      applications.flatMap((application) => application.attributes.map((attribute) => attribute.name).filter(Boolean)),
+    )).sort((a, b) => a.localeCompare(b)),
     [applications],
   );
 
@@ -226,6 +212,7 @@ const SourceWizard = () => {
               objectType: item.objectType,
               enabled: item.enabled,
               schemaName: item.schema?.name ?? "",
+              nativeIdentityAttribute: item.schema?.nativeIdentityAttribute ?? null,
               attributes: item.schema?.attributes.map((attribute, index) => ({
                 name: attribute.name,
                 displayName: attribute.displayName,
@@ -251,11 +238,10 @@ const SourceWizard = () => {
         } else if (types.length > 0) {
           const firstConnector = types[0];
           setConnectorType(firstConnector.type);
-          const defaults = firstConnector.configurationSchema.fields.reduce<Record<string, unknown>>((result, field) => {
+          setConfiguration(firstConnector.configurationSchema.fields.reduce<Record<string, unknown>>((result, field) => {
             if (field.default !== undefined) result[field.name] = field.default;
             return result;
-          }, {});
-          setConfiguration(defaults);
+          }, {}));
         }
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load integration wizard.");
@@ -265,6 +251,13 @@ const SourceWizard = () => {
     };
     void loadPage();
   }, [editing, integrationId]);
+
+  useEffect(() => {
+    if (sourcePurpose !== "ACCOUNT" || authoritativeIntegrationId || authoritativeSources.length !== 1) return;
+    const onlySource = authoritativeSources[0];
+    setAuthoritativeIntegrationId(onlySource.id);
+    void loadIdentityAttributes(onlySource.id);
+  }, [authoritativeSources, authoritativeIntegrationId, sourcePurpose]);
 
   const markConnectionDirty = () => {
     setConnectionDirty(true);
@@ -282,11 +275,10 @@ const SourceWizard = () => {
   const handleConnectorTypeChange = (nextConnectorType: string) => {
     setConnectorType(nextConnectorType);
     const connector = connectorTypes.find((item) => item.type === nextConnectorType);
-    const defaults = connector?.configurationSchema.fields.reduce<Record<string, unknown>>((result, field) => {
+    setConfiguration(connector?.configurationSchema.fields.reduce<Record<string, unknown>>((result, field) => {
       if (field.default !== undefined) result[field.name] = field.default;
       return result;
-    }, {}) ?? {};
-    setConfiguration(defaults);
+    }, {}) ?? {});
     setFieldErrors({});
     setSchemaDetectionMessage("");
     markConnectionDirty();
@@ -330,7 +322,9 @@ const SourceWizard = () => {
     selectedConnector?.configurationSchema.fields.forEach((field) => {
       if (!isFieldVisible(field)) return;
       const value = configuration[field.name] ?? field.default;
-      if (field.required && (value === undefined || value === null || value === "")) errors[field.name] = `${field.label} is required.`;
+      if (field.required && (value === undefined || value === null || value === "")) {
+        errors[field.name] = `${field.label} is required.`;
+      }
     });
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
@@ -348,20 +342,14 @@ const SourceWizard = () => {
         configuration,
         enabled,
       };
-      let savedId: number;
-      if (connectionId) {
-        const updated = await updateIntegration(connectionId, payload);
-        savedId = updated.id;
-      } else {
-        const created = await createIntegration({ ...payload, connectorType });
-        savedId = created.id;
-        setConnectionId(savedId);
-      }
+      const saved = connectionId
+        ? await updateIntegration(connectionId, payload)
+        : await createIntegration({ ...payload, connectorType });
+      setConnectionId(saved.id);
       setConnectionDirty(false);
       setConnectionMessage("Source configuration saved successfully.");
-      const integrations = await getCorrelationIntegrations();
-      setAllIntegrations(integrations);
-      return savedId;
+      setAllIntegrations(await getCorrelationIntegrations());
+      return saved.id;
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to save source configuration.");
       return null;
@@ -413,8 +401,9 @@ const SourceWizard = () => {
       const result = await detectIntegrationSchema(connectorType, configuration);
       updateApplication(selectedApplicationIndex, {
         attributes: result.attributes.map((attribute, index) => ({ ...emptyAttribute(index), ...attribute, position: index })),
+        nativeIdentityAttribute: null,
       });
-      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}.`);
+      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}. Select the Native Identity attribute before continuing.`);
     } catch (detectError) {
       setError(detectError instanceof Error ? detectError.message : "Unable to detect source schema.");
     } finally {
@@ -426,21 +415,42 @@ const SourceWizard = () => {
     try {
       const parsed = JSON.parse(await file.text()) as { attributes?: Array<Partial<SchemaAttributeInput> & { name?: string }> };
       if (!Array.isArray(parsed.attributes)) throw new Error("Schema JSON must contain an attributes array.");
-      const mapped = parsed.attributes.map((attribute, index): SchemaAttributeInput => ({ ...emptyAttribute(index), ...attribute, name: String(attribute.name ?? "").trim(), position: index }));
+      const mapped = parsed.attributes.map((attribute, index): SchemaAttributeInput => ({
+        ...emptyAttribute(index),
+        ...attribute,
+        name: String(attribute.name ?? "").trim(),
+        position: index,
+      }));
       if (mapped.some((attribute) => !attribute.name)) throw new Error("Every uploaded schema attribute requires a name.");
-      updateApplication(selectedApplicationIndex, { attributes: mapped });
-      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes from JSON schema.`);
+      updateApplication(selectedApplicationIndex, { attributes: mapped, nativeIdentityAttribute: null });
+      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes. Select the Native Identity attribute before continuing.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to read schema file.");
     }
   };
 
   const validateApplications = () => applications.length > 0 && applications.every((item) => item.name.trim());
-  const validateSchemas = () => applications.every((item) => item.attributes.length > 0 && item.attributes.every((attribute) => attribute.name.trim()));
+  const validateSchemas = () => {
+    for (const application of applications) {
+      if (!application.attributes.length || application.attributes.some((attribute) => !attribute.name.trim())) {
+        setError("Every application requires a valid schema.");
+        return false;
+      }
+      if (!application.nativeIdentityAttribute) {
+        setError(`Select a Native Identity attribute for ${application.name || "each application"}.`);
+        return false;
+      }
+    }
+    return true;
+  };
   const validateCorrelation = () => {
     if (sourcePurpose === "AUTHORITATIVE") return true;
     if (!authoritativeIntegrationId) {
       setError("Select an authoritative identity source for account correlation.");
+      return false;
+    }
+    if (identityAttributes.length === 0) {
+      setError("The selected authoritative source has no saved schema attributes. Edit that source and save its schema first.");
       return false;
     }
     if (rules.length === 0 || rules.some((rule) => !rule.accountAttribute || !rule.identityAttribute)) {
@@ -450,6 +460,12 @@ const SourceWizard = () => {
     return true;
   };
 
+  const normalizedApplications = () => applications.map((application) => ({
+    ...application,
+    name: application.name.trim(),
+    schemaName: application.schemaName?.trim() || `${application.name.trim()} schema`,
+  }));
+
   const goNext = async () => {
     setError("");
     if (activeStep === 0) {
@@ -458,14 +474,8 @@ const SourceWizard = () => {
     }
     if (activeStep === 1 && !validateApplications()) return setError("Every application requires a name.");
     if (activeStep === 2) {
-      if (!validateSchemas()) return setError("Every application requires a valid schema.");
-      if (connectionId) {
-        await saveIntegrationApplications(connectionId, applications.map((application) => ({
-          ...application,
-          name: application.name.trim(),
-          schemaName: application.schemaName?.trim() || `${application.name.trim()} schema`,
-        })));
-      }
+      if (!validateSchemas()) return;
+      if (connectionId) await saveIntegrationApplications(connectionId, normalizedApplications());
     }
     if (sourcePurpose === "ACCOUNT" && activeStep === 3 && !validateCorrelation()) return;
     setActiveStep((current) => Math.min(current + 1, steps.length - 1));
@@ -487,13 +497,8 @@ const SourceWizard = () => {
       enabled: true,
       rules: rules.map((rule, index) => ({ ...rule, priority: index + 1, enabled: true })),
     };
-    if (existingPolicy) {
-      const updated = await updateCorrelationPolicy(existingPolicy.id, payload);
-      setExistingPolicy(updated);
-    } else {
-      const created = await createCorrelationPolicy({ ...payload, accountIntegrationId });
-      setExistingPolicy(created);
-    }
+    if (existingPolicy) setExistingPolicy(await updateCorrelationPolicy(existingPolicy.id, payload));
+    else setExistingPolicy(await createCorrelationPolicy({ ...payload, accountIntegrationId }));
   };
 
   const handleSave = async () => {
@@ -501,15 +506,11 @@ const SourceWizard = () => {
       setActiveStep(0);
       return setError("Save the source configuration before finishing setup.");
     }
-    if (!validateApplications() || !validateSchemas()) return setError("Applications and schema must be complete.");
+    if (!validateApplications() || !validateSchemas()) return;
     try {
       setSaving(true);
       setError("");
-      await saveIntegrationApplications(connectionId, applications.map((application) => ({
-        ...application,
-        name: application.name.trim(),
-        schemaName: application.schemaName?.trim() || `${application.name.trim()} schema`,
-      })));
+      await saveIntegrationApplications(connectionId, normalizedApplications());
       await savePolicy(connectionId);
       navigate("/integrations");
     } catch (saveError) {
@@ -519,10 +520,16 @@ const SourceWizard = () => {
     }
   };
 
-  const updateRule = (index: number, patch: Partial<CorrelationRule>) => setRules((current) => current.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
-  const removeRule = (index: number) => setRules((current) => current.filter((_, ruleIndex) => ruleIndex !== index).map((rule, ruleIndex) => ({ ...rule, priority: ruleIndex + 1 })));
+  const updateRule = (index: number, patch: Partial<CorrelationRule>) => {
+    setRules((current) => current.map((rule, ruleIndex) => ruleIndex === index ? { ...rule, ...patch } : rule));
+  };
+  const removeRule = (index: number) => {
+    setRules((current) => current.filter((_, ruleIndex) => ruleIndex !== index).map((rule, ruleIndex) => ({ ...rule, priority: ruleIndex + 1 })));
+  };
 
-  if (loading) return <PageContainer title="Integration"><Box sx={{ minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center" }}><CircularProgress /></Box></PageContainer>;
+  if (loading) {
+    return <PageContainer title="Integration"><Box sx={{ minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center" }}><CircularProgress /></Box></PageContainer>;
+  }
 
   const busy = savingConnection || testingAuthentication || testingConnection;
   const reviewStep = steps.length - 1;
@@ -533,14 +540,17 @@ const SourceWizard = () => {
         <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
           <Box>
             <Typography variant="h5" fontWeight={700}>{editing ? "Edit Source" : "Create Source"}</Typography>
-            <Typography color="text.secondary">Configure the connection, schema, and account correlation as one source-onboarding workflow.</Typography>
+            <Typography color="text.secondary">Configure connection, schema, native identity, and account correlation in one onboarding flow.</Typography>
           </Box>
           <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>Back</Button>
         </Box>
 
         <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-          <Stepper activeStep={activeStep} alternativeLabel>{steps.map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}</Stepper>
+          <Stepper activeStep={activeStep} alternativeLabel>
+            {steps.map((label) => <Step key={label}><StepLabel>{label}</StepLabel></Step>)}
+          </Stepper>
         </Paper>
+
         {error && <Alert severity="error">{error}</Alert>}
 
         <Paper variant="outlined" sx={{ p: { xs: 2, md: 4 }, borderRadius: 3 }}>
@@ -554,14 +564,12 @@ const SourceWizard = () => {
                   {connectorTypes.map((connector) => <MenuItem key={connector.type} value={connector.type}>{connector.displayName}</MenuItem>)}
                 </Select>
               </FormControl>
-
               <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
                 <FormControlLabel
                   control={<Checkbox checked={sourcePurpose === "AUTHORITATIVE"} onChange={(event) => handlePurposeChange(event.target.checked)} />}
-                  label={<Box><Typography fontWeight={700}>Authoritative Source</Typography><Typography variant="body2" color="text.secondary">Use this source as the authoritative identity population, such as Workday, SuccessFactors, or an HR feed.</Typography></Box>}
+                  label={<Box><Typography fontWeight={700}>Authoritative Source</Typography><Typography variant="body2" color="text.secondary">Use this source as the authoritative identity population, such as ADP, Workday, SuccessFactors, or another HR source.</Typography></Box>}
                 />
               </Paper>
-
               {selectedConnector && <><Alert severity="info">{selectedConnector.description}</Alert><DynamicConnectorForm connector={selectedConnector} values={configuration} errors={fieldErrors} onChange={handleConnectorFieldChange} /></>}
               <FormControlLabel control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />} label="Enable integration" />
               {connectionMessage && <Alert severity="success">{connectionMessage}</Alert>}
@@ -579,48 +587,139 @@ const SourceWizard = () => {
           {activeStep === 1 && (
             <Stack spacing={2.5}>
               <Box><Typography variant="h6" fontWeight={700}>Applications</Typography><Typography variant="body2" color="text.secondary">Define the object populations exposed by this source.</Typography></Box>
-              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Stack direction={{ xs: "column", md: "row" }} spacing={2}><TextField fullWidth label="Application Name" value={application.name} onChange={(event) => updateApplication(index, { name: event.target.value })} /><TextField fullWidth label="Display Name" value={application.displayName ?? ""} onChange={(event) => updateApplication(index, { displayName: event.target.value })} /><TextField label="Object Type" value={application.objectType ?? (sourcePurpose === "AUTHORITATIVE" ? "identity" : "account")} onChange={(event) => updateApplication(index, { objectType: event.target.value })} /><IconButton color="error" disabled={applications.length === 1} onClick={() => setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index))}><DeleteOutlineIcon /></IconButton></Stack></Paper>)}
+              {applications.map((application, index) => (
+                <Paper key={index} variant="outlined" sx={{ p: 2.5 }}>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                    <TextField fullWidth label="Application Name" value={application.name} onChange={(event) => updateApplication(index, { name: event.target.value })} />
+                    <TextField fullWidth label="Display Name" value={application.displayName ?? ""} onChange={(event) => updateApplication(index, { displayName: event.target.value })} />
+                    <TextField label="Object Type" value={application.objectType ?? (sourcePurpose === "AUTHORITATIVE" ? "identity" : "account")} onChange={(event) => updateApplication(index, { objectType: event.target.value })} />
+                    <IconButton color="error" disabled={applications.length === 1} onClick={() => setApplications((current) => current.filter((_, itemIndex) => itemIndex !== index))}><DeleteOutlineIcon /></IconButton>
+                  </Stack>
+                </Paper>
+              ))}
               <Button variant="outlined" startIcon={<AddIcon />} sx={{ alignSelf: "flex-start" }} onClick={() => setApplications((current) => [...current, emptyApplication()])}>Add Application</Button>
             </Stack>
           )}
 
           {activeStep === 2 && (
             <Stack spacing={2.5}>
-              <Box><Typography variant="h6" fontWeight={700}>Schema</Typography><Typography variant="body2" color="text.secondary">Detect or define the attributes available for ingestion and correlation.</Typography></Box>
-              <FormControl sx={{ maxWidth: 360 }}><InputLabel>Application</InputLabel><Select label="Application" value={selectedApplicationIndex} onChange={(event) => setSelectedApplicationIndex(Number(event.target.value))}>{applications.map((item, index) => <MenuItem key={index} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>)}</Select></FormControl>
+              <Box>
+                <Typography variant="h6" fontWeight={700}>Schema</Typography>
+                <Typography variant="body2" color="text.secondary">Detect or define source attributes, then select the attribute that uniquely identifies one source account.</Typography>
+              </Box>
+              <FormControl sx={{ maxWidth: 360 }}>
+                <InputLabel>Application</InputLabel>
+                <Select label="Application" value={selectedApplicationIndex} onChange={(event) => setSelectedApplicationIndex(Number(event.target.value))}>
+                  {applications.map((item, index) => <MenuItem key={index} value={index}>{item.name || `Application ${index + 1}`}</MenuItem>)}
+                </Select>
+              </FormControl>
               {schemaDetectionMessage && <Alert severity="success">{schemaDetectionMessage}</Alert>}
               <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                 <Button variant="outlined" disabled={detectingSchema} onClick={() => void detectSchemaFromSource()}>{detectingSchema ? "Detecting..." : "Detect Schema"}</Button>
                 <Button component="label" variant="outlined" startIcon={<UploadFileIcon />}>Upload JSON Schema<input hidden type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadSchema(file); }} /></Button>
                 <Button variant="contained" startIcon={<AddIcon />} onClick={() => selectedApplication && updateApplication(selectedApplicationIndex, { attributes: [...selectedApplication.attributes, emptyAttribute(selectedApplication.attributes.length)] })}>Add Attribute</Button>
               </Stack>
-              {selectedApplication && <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell>Required</TableCell><TableCell /></TableRow></TableHead><TableBody>{selectedApplication.attributes.map((attribute, index) => <TableRow key={index}><TableCell><TextField size="small" value={attribute.name} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { name: event.target.value })} /></TableCell><TableCell><TextField size="small" value={attribute.displayName ?? ""} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { displayName: event.target.value })} /></TableCell><TableCell><Select size="small" value={attribute.dataType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { dataType: event.target.value })}>{["string", "number", "boolean", "date", "datetime", "array", "object"].map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}</Select></TableCell><TableCell><Checkbox checked={attribute.required} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { required: event.target.checked })} /></TableCell><TableCell><IconButton color="error" onClick={() => updateApplication(selectedApplicationIndex, { attributes: selectedApplication.attributes.filter((_, itemIndex) => itemIndex !== index) })}><DeleteOutlineIcon /></IconButton></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+
+              {selectedApplication && (
+                <>
+                  <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+                    <Stack spacing={1.5}>
+                      <Typography fontWeight={700}>Native Identity</Typography>
+                      <Typography variant="body2" color="text.secondary">Choose the source attribute that uniquely identifies one account. Examples vary by system; the product does not hardcode the choice.</Typography>
+                      <FormControl fullWidth>
+                        <InputLabel>Native Identity Attribute</InputLabel>
+                        <Select
+                          label="Native Identity Attribute"
+                          value={selectedApplication.nativeIdentityAttribute ?? ""}
+                          onChange={(event) => updateApplication(selectedApplicationIndex, { nativeIdentityAttribute: event.target.value })}
+                        >
+                          {selectedApplication.attributes.filter((attribute) => attribute.name).map((attribute) => (
+                            <MenuItem key={attribute.name} value={attribute.name}>{attribute.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Stack>
+                  </Paper>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead><TableRow><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell>Required</TableCell><TableCell /></TableRow></TableHead>
+                      <TableBody>
+                        {selectedApplication.attributes.map((attribute, index) => (
+                          <TableRow key={index}>
+                            <TableCell><TextField size="small" value={attribute.name} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { name: event.target.value })} /></TableCell>
+                            <TableCell><TextField size="small" value={attribute.displayName ?? ""} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { displayName: event.target.value })} /></TableCell>
+                            <TableCell><Select size="small" value={attribute.dataType} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { dataType: event.target.value })}>{["string", "number", "boolean", "date", "datetime", "array", "object"].map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}</Select></TableCell>
+                            <TableCell><Checkbox checked={attribute.required} onChange={(event) => updateAttribute(selectedApplicationIndex, index, { required: event.target.checked })} /></TableCell>
+                            <TableCell><IconButton color="error" onClick={() => updateApplication(selectedApplicationIndex, { attributes: selectedApplication.attributes.filter((_, itemIndex) => itemIndex !== index) })}><DeleteOutlineIcon /></IconButton></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
             </Stack>
           )}
 
           {sourcePurpose === "ACCOUNT" && activeStep === 3 && (
             <Stack spacing={3}>
               <Box><Typography variant="h6" fontWeight={700}>Account Correlation</Typography><Typography variant="body2" color="text.secondary">Choose the authoritative source and define how this source's accounts correlate to identities.</Typography></Box>
-              {authoritativeSources.length === 0 && <Alert severity="warning">No authoritative sources are configured yet. Create an HR/Workday-style source and mark it as Authoritative Source first.</Alert>}
-              <FormControl fullWidth><InputLabel>Authoritative Identity Source</InputLabel><Select label="Authoritative Identity Source" value={authoritativeIntegrationId} onChange={(event) => { const id = Number(event.target.value); setAuthoritativeIntegrationId(id); void loadIdentityAttributes(id); }}>{authoritativeSources.map((source) => <MenuItem key={source.id} value={source.id}>{source.name}</MenuItem>)}</Select></FormControl>
-              <Alert severity="info">Rules are evaluated in priority order. The first rule producing one unique identity wins; multiple matches are flagged as ambiguous rather than linked automatically.</Alert>
-              <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell>Priority</TableCell><TableCell>Account Attribute</TableCell><TableCell>Identity Attribute</TableCell><TableCell>Match Type</TableCell><TableCell /></TableRow></TableHead><TableBody>{rules.map((rule, index) => <TableRow key={index}><TableCell>{index + 1}</TableCell><TableCell><Select size="small" fullWidth value={rule.accountAttribute} onChange={(event) => updateRule(index, { accountAttribute: event.target.value })}>{accountAttributes.map((attribute) => <MenuItem key={attribute} value={attribute}>{attribute}</MenuItem>)}</Select></TableCell><TableCell><Select size="small" fullWidth value={rule.identityAttribute} onChange={(event) => updateRule(index, { identityAttribute: event.target.value })}>{identityAttributes.map((attribute) => <MenuItem key={attribute} value={attribute}>{attribute}</MenuItem>)}</Select></TableCell><TableCell><Select size="small" value={rule.matchType} onChange={(event) => updateRule(index, { matchType: event.target.value as CorrelationMatchType })}><MenuItem value="EXACT">Exact</MenuItem><MenuItem value="CASE_INSENSITIVE">Case-insensitive</MenuItem><MenuItem value="NORMALIZED">Normalized</MenuItem></Select></TableCell><TableCell><IconButton color="error" disabled={rules.length === 1} onClick={() => removeRule(index)}><DeleteOutlineIcon /></IconButton></TableCell></TableRow>)}</TableBody></Table></TableContainer>
+              {authoritativeSources.length === 0 && <Alert severity="warning">No authoritative sources are configured yet. Create an HR source and mark it Authoritative first.</Alert>}
+              <FormControl fullWidth>
+                <InputLabel>Authoritative Identity Source</InputLabel>
+                <Select
+                  label="Authoritative Identity Source"
+                  value={authoritativeIntegrationId}
+                  onChange={(event) => {
+                    const id = Number(event.target.value);
+                    setAuthoritativeIntegrationId(id);
+                    setIdentityAttributes([]);
+                    setRules((current) => current.map((rule) => ({ ...rule, identityAttribute: "" })));
+                    void loadIdentityAttributes(id);
+                  }}
+                >
+                  {authoritativeSources.map((source) => <MenuItem key={source.id} value={source.id}>{source.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              {authoritativeIntegrationId && identityAttributes.length === 0 && <Alert severity="warning">The selected authoritative source has no saved schema attributes. Edit that source and save its schema first.</Alert>}
+              <Alert severity="info">Rules are evaluated in priority order. The first rule producing one unique identity wins; multiple matches are flagged as ambiguous.</Alert>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead><TableRow><TableCell>Priority</TableCell><TableCell>Account Attribute</TableCell><TableCell>Identity Attribute</TableCell><TableCell>Match Type</TableCell><TableCell /></TableRow></TableHead>
+                  <TableBody>
+                    {rules.map((rule, index) => (
+                      <TableRow key={index}>
+                        <TableCell>{index + 1}</TableCell>
+                        <TableCell><Select size="small" fullWidth value={rule.accountAttribute} onChange={(event) => updateRule(index, { accountAttribute: event.target.value })}>{accountAttributes.map((attribute) => <MenuItem key={attribute} value={attribute}>{attribute}</MenuItem>)}</Select></TableCell>
+                        <TableCell><Select size="small" fullWidth disabled={!authoritativeIntegrationId || identityAttributes.length === 0} value={rule.identityAttribute} onChange={(event) => updateRule(index, { identityAttribute: event.target.value })}>{identityAttributes.map((attribute) => <MenuItem key={attribute} value={attribute}>{attribute}</MenuItem>)}</Select></TableCell>
+                        <TableCell><Select size="small" value={rule.matchType} onChange={(event) => updateRule(index, { matchType: event.target.value as CorrelationMatchType })}><MenuItem value="EXACT">Exact</MenuItem><MenuItem value="CASE_INSENSITIVE">Case-insensitive</MenuItem><MenuItem value="NORMALIZED">Normalized</MenuItem></Select></TableCell>
+                        <TableCell><IconButton color="error" disabled={rules.length === 1} onClick={() => removeRule(index)}><DeleteOutlineIcon /></IconButton></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
               <Button variant="outlined" startIcon={<AddIcon />} sx={{ alignSelf: "flex-start" }} onClick={() => setRules((current) => [...current, newRule(current.length + 1)])}>Add Correlation Rule</Button>
             </Stack>
           )}
 
           {activeStep === reviewStep && (
             <Stack spacing={3}>
-              <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, and correlation behavior before finishing.</Typography></Box>
+              <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, native identity, and correlation behavior before finishing.</Typography></Box>
               <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{name}</Typography><Typography variant="body2" color="text.secondary">{selectedConnector?.displayName ?? connectorType} · {sourcePurpose === "AUTHORITATIVE" ? "Authoritative Source" : "Account Source"} · {enabled ? "Enabled" : "Disabled"}</Typography></Paper>
-              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes</Typography></Paper>)}
+              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography></Paper>)}
               {sourcePurpose === "ACCOUNT" && <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>Account Correlation</Typography><Typography variant="body2" color="text.secondary">Authoritative source: {authoritativeSources.find((item) => item.id === Number(authoritativeIntegrationId))?.name ?? "Not selected"}</Typography><Stack spacing={0.5} sx={{ mt: 1 }}>{rules.map((rule, index) => <Typography key={index} variant="body2">{index + 1}. {rule.accountAttribute} → {rule.identityAttribute} ({rule.matchType})</Typography>)}</Stack></Paper>}
             </Stack>
           )}
 
           <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4, pt: 3, borderTop: 1, borderColor: "divider" }}>
             <Button disabled={activeStep === 0 || saving || busy} onClick={() => setActiveStep((current) => Math.max(0, current - 1))}>Back</Button>
-            <Stack direction="row" spacing={1.5}><Button variant="outlined" onClick={() => navigate("/integrations")}>Cancel</Button>{activeStep < reviewStep ? <Button variant="contained" disabled={busy || detectingSchema} onClick={() => void goNext()}>Next</Button> : <Button variant="contained" startIcon={<SaveIcon />} disabled={saving} onClick={() => void handleSave()}>{saving ? "Saving..." : editing ? "Update Source" : "Finish Source"}</Button>}</Stack>
+            <Stack direction="row" spacing={1.5}>
+              <Button variant="outlined" onClick={() => navigate("/integrations")}>Cancel</Button>
+              {activeStep < reviewStep
+                ? <Button variant="contained" disabled={busy || detectingSchema} onClick={() => void goNext()}>Next</Button>
+                : <Button variant="contained" startIcon={<SaveIcon />} disabled={saving} onClick={() => void handleSave()}>{saving ? "Saving..." : editing ? "Update Source" : "Finish Source"}</Button>}
+            </Stack>
           </Box>
         </Paper>
       </Stack>
