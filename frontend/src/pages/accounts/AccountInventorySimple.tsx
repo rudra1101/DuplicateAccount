@@ -89,7 +89,7 @@ const AccountInventorySimple = () => {
   }, [integrationId, page, pageSize, search, orphanType]);
 
   const accountLabel = (account: SourceAccount) => account.displayName || account.username || account.nativeIdentity;
-  const orphanLabel = (finding: OrphanFinding) => finding.displayName || finding.username || finding.email || `Account ${finding.accountId}`;
+  const orphanLabel = (finding: OrphanFinding) => finding.displayName || finding.username || finding.email || finding.nativeIdentity || `Account ${finding.accountId}`;
 
   return (
     <PageContainer title="Accounts">
@@ -148,13 +148,13 @@ const AccountInventorySimple = () => {
           ) : (
             <TableContainer>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Orphan Type</TableCell><TableCell>Correlation Method</TableCell><TableCell>Status</TableCell><TableCell>Detected</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Orphan Type</TableCell><TableCell>Correlation Method</TableCell><TableCell>Status</TableCell><TableCell>Last Detected</TableCell></TableRow></TableHead>
                 <TableBody>
                   {loading ? <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow> : orphans.length === 0 ? (
                     <TableRow><TableCell colSpan={6} align="center">No orphan accounts found for {selectedIntegration?.name ?? "this source"}.</TableCell></TableRow>
                   ) : orphans.map((finding) => (
                     <TableRow key={finding.id} hover onClick={() => setSelectedOrphan(finding)} sx={{ cursor: "pointer" }}>
-                      <TableCell>{orphanLabel(finding)}</TableCell><TableCell>{finding.application}</TableCell><TableCell>{finding.orphanType.replaceAll("_", " ")}</TableCell><TableCell>{finding.correlationMethod || "No identity matched"}</TableCell><TableCell>{finding.accountStatus || "—"}</TableCell><TableCell>{new Date(finding.createdAt).toLocaleString()}</TableCell>
+                      <TableCell>{orphanLabel(finding)}</TableCell><TableCell>{finding.application}</TableCell><TableCell>{finding.orphanType.replaceAll("_", " ")}</TableCell><TableCell>{finding.correlationMethod || "No identity matched"}</TableCell><TableCell>{finding.accountStatus || "—"}</TableCell><TableCell>{new Date(finding.lastDetectedAt).toLocaleString()}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -174,7 +174,7 @@ const AccountInventorySimple = () => {
       <Drawer anchor="right" open={Boolean(selectedOrphan)} onClose={() => setSelectedOrphan(null)}>
         <Box sx={{ width: 600, p: 3 }}>
           <Typography variant="h6" fontWeight={700}>Orphan Account Details</Typography>
-          {selectedOrphan && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Account:</strong> {orphanLabel(selectedOrphan)}</Typography><Typography><strong>Orphan Type:</strong> {selectedOrphan.orphanType.replaceAll("_", " ")}</Typography><Typography><strong>Correlation Method:</strong> {selectedOrphan.correlationMethod || "No identity matched"}</Typography><Typography><strong>Matched Identity:</strong> {selectedOrphan.matchedIdentityId ?? "—"}</Typography><Typography><strong>Finding Status:</strong> {selectedOrphan.status}</Typography><Typography fontWeight={700}>Correlation Evidence</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedOrphan.evidence).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
+          {selectedOrphan && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Account:</strong> {orphanLabel(selectedOrphan)}</Typography><Typography><strong>Native Identity:</strong> {selectedOrphan.nativeIdentity || "—"}</Typography><Typography><strong>Orphan Type:</strong> {selectedOrphan.orphanType.replaceAll("_", " ")}</Typography><Typography><strong>Correlation Method:</strong> {selectedOrphan.correlationMethod || "No identity matched"}</Typography><Typography><strong>Matched Identity:</strong> {selectedOrphan.matchedIdentityId ?? "—"}</Typography><Typography><strong>Finding Status:</strong> {selectedOrphan.status}</Typography><Typography><strong>First Detected:</strong> {new Date(selectedOrphan.firstDetectedAt).toLocaleString()}</Typography><Typography><strong>Last Detected:</strong> {new Date(selectedOrphan.lastDetectedAt).toLocaleString()}</Typography><Typography fontWeight={700}>Correlation Evidence</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedOrphan.evidence).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
         </Box>
       </Drawer>
     </PageContainer>
