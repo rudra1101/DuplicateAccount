@@ -16,7 +16,7 @@ from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
 from app.services.correlation_policy_service import get_policy_for_account_integration
-from app.services.identity_ingestion_service import authoritative_identity_count, replace_authoritative_identities
+from app.services.identity_ingestion_service import authoritative_identity_count, upsert_authoritative_identities
 from app.services.orphan_detection_service import detect_orphan_findings
 from app.services.review_candidate_repository import save_review_candidates
 from app.services.review_pair_feedback_service import load_pair_feedback
@@ -214,16 +214,23 @@ def execute_integration(
         )
 
         if integration.source_purpose == "AUTHORITATIVE":
-            if mode == "DELTA":
-                raise ValueError("DELTA aggregation for authoritative sources is not enabled yet. Run a FULL aggregation until authoritative identity upsert is implemented.")
             inventory_stats = upsert_source_accounts(
                 db, integration_id=integration.id, accounts=records, scan_id=None, aggregation_type=mode
             )
-            identity_count = replace_authoritative_identities(db, integration_id=integration.id, identities=records)
+            identity_stats = upsert_authoritative_identities(
+                db,
+                integration_id=integration.id,
+                identities=records,
+                aggregation_type=mode,
+            )
+            print(
+                f"[Authoritative Identity Ingestion] Integration={integration.id}, "
+                f"Mode={mode}, IdentityStats={identity_stats}, InventoryStats={inventory_stats}"
+            )
             return _complete_execution(
                 db, execution=execution, source_file_name=connector_file.filename,
                 source_path=connector_file.source_path, checksum=checksum,
-                processed_count=identity_count, inventory_stats=inventory_stats,
+                processed_count=len(records), inventory_stats=inventory_stats,
             )
 
         if mode == "DELTA":
