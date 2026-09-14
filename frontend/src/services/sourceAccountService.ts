@@ -41,6 +41,28 @@ export interface DuplicateFinding {
   lastScanId: number | null;
 }
 
+export interface OrphanFinding {
+  id: number;
+  findingType: string;
+  orphanType: string;
+  scanId: number;
+  accountId: number;
+  application: string;
+  username: string;
+  displayName: string;
+  email: string;
+  employeeId: string | null;
+  accountStatus: string | null;
+  confidence: number;
+  riskScore: number;
+  severity: string;
+  correlationMethod: string | null;
+  matchedIdentityId: number | null;
+  evidence: Record<string, unknown>;
+  status: string;
+  createdAt: string;
+}
+
 async function parseResponse<T>(response: Response, fallback: string): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
@@ -77,4 +99,17 @@ export async function getDuplicateFindings(
     `${API_BASE_URL}/integrations/${integrationId}/duplicate-findings?includeResolved=${String(includeResolved)}`,
   );
   return parseResponse<DuplicateFinding[]>(response, "Unable to load duplicate findings.");
+}
+
+export async function getOrphanFindings(
+  integrationId: number,
+  severity?: string,
+): Promise<OrphanFinding[]> {
+  const params = new URLSearchParams({
+    integrationId: String(integrationId),
+    latestOnly: "true",
+  });
+  if (severity?.trim()) params.set("severity", severity.trim());
+  const response = await fetch(`${API_BASE_URL}/orphans/?${params.toString()}`);
+  return parseResponse<OrphanFinding[]>(response, "Unable to load orphan accounts.");
 }
