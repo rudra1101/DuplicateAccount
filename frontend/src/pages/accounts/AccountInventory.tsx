@@ -27,9 +27,9 @@ import {
 import PageContainer from "../../components/common/PageContainer";
 import { getIntegrations, type Integration } from "../../services/integrationService";
 import {
-  getDuplicateFindings,
+  getOrphanFindings,
   getSourceAccounts,
-  type DuplicateFinding,
+  type OrphanFinding,
   type SourceAccount,
 } from "../../services/sourceAccountService";
 
@@ -37,14 +37,16 @@ const AccountInventory = () => {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [integrationId, setIntegrationId] = useState<number | "">("");
   const [accounts, setAccounts] = useState<SourceAccount[]>([]);
-  const [duplicates, setDuplicates] = useState<DuplicateFinding[]>([]);
+  const [orphans, setOrphans] = useState<OrphanFinding[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<SourceAccount | null>(null);
+  const [selectedOrphan, setSelectedOrphan] = useState<OrphanFinding | null>(null);
   const [tab, setTab] = useState(0);
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "deleted">("active");
+  const [severityFilter, setSeverityFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -76,13 +78,13 @@ const AccountInventory = () => {
         setLoading(true);
         setError("");
         const active = activeFilter === "all" ? undefined : activeFilter === "active";
-        const [accountResponse, duplicateResponse] = await Promise.all([
+        const [accountResponse, orphanResponse] = await Promise.all([
           getSourceAccounts(Number(integrationId), page + 1, pageSize, search, active),
-          getDuplicateFindings(Number(integrationId)),
+          getOrphanFindings(Number(integrationId), severityFilter || undefined),
         ]);
         setAccounts(accountResponse.items);
         setTotal(accountResponse.total);
-        setDuplicates(duplicateResponse);
+        setOrphans(orphanResponse);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load account inventory.");
       } finally {
@@ -90,11 +92,22 @@ const AccountInventory = () => {
       }
     };
     void loadInventory();
-  }, [integrationId, page, pageSize, search, activeFilter]);
+  }, [integrationId, page, pageSize, search, activeFilter, severityFilter]);
 
   const renderAccount = (account: SourceAccount) => (
     account.displayName || account.username || account.nativeIdentity
   );
+
+  const orphanLabel = (finding: OrphanFinding) => (
+    finding.displayName || finding.username || finding.email || `Account ${finding.accountId}`
+  );
+
+  const severityColor = (severity: string): "error" | "warning" | "info" | "default" => {
+    if (severity === "CRITICAL") return "error";
+    if (severity === "HIGH") return "warning";
+    if (severity === "MEDIUM") return "info";
+    return "default";
+  };
 
   return (
     <PageContainer title="Accounts">
@@ -102,7 +115,7 @@ const AccountInventory = () => {
         <Box>
           <Typography variant="h5" fontWeight={700}>Account Inventory</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Browse the current account state persisted from source aggregations. Scan history remains separate for audit.
+            Browse the current account state persisted from source aggregations and review current orphan accounts for each source.
           </Typography>
         </Box>
 
@@ -116,6 +129,8 @@ const AccountInventory = () => {
                 onChange={(event) => {
                   setIntegrationId(Number(event.target.value));
                   setPage(0);
+                  setSelectedAccount(null);
+                  setSelectedOrphan(null);
                 }}
               >
                 {integrations.map((integration) => (
@@ -125,31 +140,51 @@ const AccountInventory = () => {
                 ))}
               </Select>
             </FormControl>
-            <TextField
-              size="small"
-              placeholder="Search native identity, username, email, employee ID..."
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(0);
-              }}
-              sx={{ flex: 1, minWidth: 280 }}
-            />
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <InputLabel>State</InputLabel>
-              <Select
-                label="State"
-                value={activeFilter}
-                onChange={(event) => {
-                  setActiveFilter(event.target.value as "all" | "active" | "deleted");
-                  setPage(0);
-                }}
-              >
-                <MenuItem value="active">Active</MenuItem>
-                <MenuItem value="deleted">Deleted / Missing</MenuItem>
-                <MenuItem value="all">All</MenuItem>
-              </Select>
-            </FormControl>
+
+            {tab === 0 ? (
+              <>
+                <TextField
+                  size="small"
+                  placeholder="Search native identity, username, email, employee ID..."
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(0);
+                  }}
+                  sx={{ flex: 1, minWidth: 280 }}
+                />
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>State</InputLabel>
+                  <Select
+                    label="State"
+                    value={activeFilter}
+                    onChange={(event) => {
+                      setActiveFilter(event.target.value as "all" | "active" | "deleted");
+                      setPage(0);
+                    }}
+                  >
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="deleted">Deleted / Missing</MenuItem>
+                    <MenuItem value="all">All</MenuItem>
+                  </Select>
+                </FormControl>
+              </>
+            ) : (
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel>Severity</InputLabel>
+                <Select
+                  label="Severity"
+                  value={severityFilter}
+                  onChange={(event) => setSeverityFilter(event.target.value)}
+                >
+                  <MenuItem value="">All severities</MenuItem>
+                  <MenuItem value="CRITICAL">Critical</MenuItem>
+                  <MenuItem value="HIGH">High</MenuItem>
+                  <MenuItem value="MEDIUM">Medium</MenuItem>
+                  <MenuItem value="LOW">Low</MenuItem>
+                </Select>
+              </FormControl>
+            )}
           </Stack>
         </Paper>
 
@@ -157,8 +192,8 @@ const AccountInventory = () => {
 
         <Paper variant="outlined">
           <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-            <Tab label={`Accounts (${total})`} />
-            <Tab label={`Duplicate Findings (${duplicates.length})`} />
+            <Tab label={`All Accounts (${total})`} />
+            <Tab label={`Orphan Accounts (${orphans.length})`} />
           </Tabs>
 
           {tab === 0 && (
@@ -215,31 +250,39 @@ const AccountInventory = () => {
 
           {tab === 1 && (
             <TableContainer>
-              <Table size="small" sx={{ minWidth: 900 }}>
+              <Table size="small" sx={{ minWidth: 1050 }}>
                 <TableHead>
                   <TableRow sx={{ bgcolor: "action.hover" }}>
-                    <TableCell>Primary Account</TableCell>
-                    <TableCell>Possible Duplicate</TableCell>
-                    <TableCell>Confidence</TableCell>
-                    <TableCell>Matched Attributes</TableCell>
-                    <TableCell>Last Detected</TableCell>
+                    <TableCell>Account</TableCell>
+                    <TableCell>Application</TableCell>
+                    <TableCell>Orphan Type</TableCell>
+                    <TableCell>Severity</TableCell>
+                    <TableCell>Risk Score</TableCell>
+                    <TableCell>Correlation</TableCell>
+                    <TableCell>Account Status</TableCell>
+                    <TableCell>Detected</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {duplicates.length === 0 ? (
-                    <TableRow><TableCell colSpan={5} align="center" sx={{ py: 6 }}>No active duplicate findings for {selectedIntegration?.name ?? "this source"}.</TableCell></TableRow>
-                  ) : duplicates.map((finding) => {
-                    const matched = (finding.evidence.matchedAttributes as string[] | undefined) ?? [];
-                    return (
-                      <TableRow key={finding.id} hover>
-                        <TableCell>{renderAccount(finding.primaryAccount)}</TableCell>
-                        <TableCell>{renderAccount(finding.duplicateAccount)}</TableCell>
-                        <TableCell>{finding.confidence}%</TableCell>
-                        <TableCell>{matched.length ? matched.join(", ") : "—"}</TableCell>
-                        <TableCell>{finding.lastDetectedAt ? new Date(finding.lastDetectedAt).toLocaleString() : "—"}</TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {loading ? (
+                    <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6 }}><CircularProgress size={28} /></TableCell></TableRow>
+                  ) : orphans.length === 0 ? (
+                    <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6 }}>No orphan accounts found in the latest aggregation for {selectedIntegration?.name ?? "this source"}.</TableCell></TableRow>
+                  ) : orphans.map((finding) => (
+                    <TableRow key={finding.id} hover onClick={() => setSelectedOrphan(finding)} sx={{ cursor: "pointer" }}>
+                      <TableCell>
+                        <Typography fontWeight={600}>{orphanLabel(finding)}</Typography>
+                        {finding.email && <Typography variant="caption" color="text.secondary">{finding.email}</Typography>}
+                      </TableCell>
+                      <TableCell>{finding.application}</TableCell>
+                      <TableCell>{finding.orphanType.replaceAll("_", " ")}</TableCell>
+                      <TableCell><Chip size="small" color={severityColor(finding.severity)} label={finding.severity} /></TableCell>
+                      <TableCell>{finding.riskScore}</TableCell>
+                      <TableCell>{finding.correlationMethod || "No match"}</TableCell>
+                      <TableCell>{finding.accountStatus || "—"}</TableCell>
+                      <TableCell>{new Date(finding.createdAt).toLocaleString()}</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -263,6 +306,33 @@ const AccountInventory = () => {
                   <Box key={key} sx={{ py: 0.75, borderBottom: 1, borderColor: "divider" }}>
                     <Typography variant="caption" color="text.secondary">{key}</Typography>
                     <Typography variant="body2" sx={{ wordBreak: "break-word" }}>{String(value ?? "") || "—"}</Typography>
+                  </Box>
+                ))}
+              </Paper>
+            </Stack>
+          )}
+        </Box>
+      </Drawer>
+
+      <Drawer anchor="right" open={Boolean(selectedOrphan)} onClose={() => setSelectedOrphan(null)}>
+        <Box sx={{ width: { xs: 340, sm: 600 }, p: 3 }}>
+          <Typography variant="h6" fontWeight={700}>Orphan Account Details</Typography>
+          {selectedOrphan && (
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <Box><Typography variant="caption" color="text.secondary">Account</Typography><Typography fontWeight={600}>{orphanLabel(selectedOrphan)}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Orphan Type</Typography><Typography>{selectedOrphan.orphanType.replaceAll("_", " ")}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Severity / Risk</Typography><Typography>{selectedOrphan.severity} · {selectedOrphan.riskScore}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Correlation Method</Typography><Typography>{selectedOrphan.correlationMethod || "No identity matched"}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Matched Identity</Typography><Typography>{selectedOrphan.matchedIdentityId ?? "—"}</Typography></Box>
+              <Box><Typography variant="caption" color="text.secondary">Finding Status</Typography><Typography>{selectedOrphan.status}</Typography></Box>
+              <Typography fontWeight={700} sx={{ pt: 1 }}>Correlation Evidence</Typography>
+              <Paper variant="outlined" sx={{ p: 2, maxHeight: 520, overflow: "auto" }}>
+                {Object.entries(selectedOrphan.evidence).map(([key, value]) => (
+                  <Box key={key} sx={{ py: 0.75, borderBottom: 1, borderColor: "divider" }}>
+                    <Typography variant="caption" color="text.secondary">{key}</Typography>
+                    <Typography variant="body2" sx={{ wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                      {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "") || "—"}
+                    </Typography>
                   </Box>
                 ))}
               </Paper>
