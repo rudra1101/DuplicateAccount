@@ -25,13 +25,23 @@ def serialize(user: UserRecord) -> UserResponse:
     )
 
 
+def _actor_role(actor) -> str:
+    return str(actor.role).strip().upper()
+
+
 def validate_assignable_role(db: Session, role_name: str, actor) -> RoleRecord:
     normalized = role_name.strip().upper()
+    actor_role = _actor_role(actor)
     role = db.scalar(select(RoleRecord).where(RoleRecord.name == normalized))
     if role is None:
         raise HTTPException(status_code=400, detail="Role does not exist.")
-    if normalized == "OWNER" and str(actor.role).upper() != "OWNER":
+    if normalized == "OWNER" and actor_role != "OWNER":
         raise HTTPException(status_code=403, detail="Only OWNER can assign the OWNER role.")
+    if normalized == "SUPER_ADMIN" and actor_role not in {"OWNER", "SUPER_ADMIN"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only OWNER or SUPER_ADMIN can assign the SUPER_ADMIN role.",
+        )
     return role
 
 
@@ -93,10 +103,18 @@ def update_user_role(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found.")
 
-    role = validate_assignable_role(db, payload.role, actor)
-    if user.role == "OWNER" and str(actor.role).upper() != "OWNER":
-        raise HTTPException(status_code=403, detail="Only OWNER can change an OWNER account.")
+    actor_role = _actor_role(actor)
+    current_role = str(user.role).strip().upper()
 
+    if current_role == "OWNER" and actor_role != "OWNER":
+        raise HTTPException(status_code=403, detail="Only OWNER can change an OWNER account.")
+    if current_role == "SUPER_ADMIN" and actor_role not in {"OWNER", "SUPER_ADMIN"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only OWNER or SUPER_ADMIN can change a SUPER_ADMIN account.",
+        )
+
+    role = validate_assignable_role(db, payload.role, actor)
     user.role = role.name
     db.commit()
     db.refresh(user)
