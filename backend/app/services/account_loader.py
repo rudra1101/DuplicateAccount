@@ -1,5 +1,7 @@
 import csv
+import hashlib
 import io
+import json
 from pathlib import Path
 from typing import BinaryIO
 
@@ -55,6 +57,17 @@ def _clean_optional_value(value: str | None) -> str | None:
     return cleaned or None
 
 
+def _stable_record_key(raw_attributes: dict[str, str], row_number: int) -> str:
+    """Create an internal stable key without imposing a source-specific schema.
+
+    This key exists only so legacy account-oriented code can reference a record.
+    Correlation and schema-driven logic continue to use the original raw attributes.
+    """
+    canonical = json.dumps(raw_attributes, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
+    return f"record-{row_number}-{digest}"
+
+
 def _parse_csv_content(
     raw_content: bytes,
     *,
@@ -83,9 +96,8 @@ def _parse_csv_content(
         if header and str(header).strip()
     }
 
-    # Manual CSV uploads retain the historical contract. Integration-driven
-    # ingestion can use arbitrary application schemas and derives the legacy
-    # fields needed by the current detector from common source aliases.
+    # Manual uploads retain the historical contract. Integration-driven ingestion
+    # is schema-driven and accepts arbitrary source column names.
     if not allow_dynamic_schema:
         missing: list[str] = []
         if _normalize_header("application") not in normalized_headers:
@@ -104,6 +116,10 @@ def _parse_csv_content(
             if key and str(key).strip()
         }
 
+        # Completely blank rows are ignored rather than manufactured into records.
+        if not any(str(value or "").strip() for value in raw_attributes.values()):
+            continue
+
         application = _row_value(row, APPLICATION_ALIASES) or _clean_optional_value(default_application)
         if not application:
             raise ValueError(
@@ -112,20 +128,26 @@ def _parse_csv_content(
             )
 
         account_id = _row_value(row, ID_ALIASES)
+        employee_id = _row_value(row, EMPLOYEE_ID_ALIASES)
         username = _row_value(row, USERNAME_ALIASES)
         email = _row_value(row, EMAIL_ALIASES) or ""
 
         if not username and allow_dynamic_schema:
-            # Source schemas do not have to contain a literal username field.
-            # Prefer a stable account id, then email, only as the legacy
-            # identity key required by the current duplicate engine.
-            username = account_id or email
+            # Do not reject an integration feed just because its source vocabulary
+            # does not use username/id/email. Prefer familiar identifiers when they
+            # happen to exist; otherwise assign an internal deterministic record key.
+            username = account_id or employee_id or email or _stable_record_key(raw_attributes, row_number)
 
         if not username:
             raise ValueError(
                 f"Unable to determine an account identifier for row {row_number}. "
-                "Expected a username/account-name style attribute, account id, or email."
+                "Manual uploads require a username-style attribute."
             )
+
+        # For dynamic source ingestion, keep a stable internal id even when the
+        # customer feed has no conventional id field. The raw payload is unchanged.
+        if allow_dynamic_schema and not account_id:
+            account_id = employee_id or email or _stable_record_key(raw_attributes, row_number)
 
         accounts.append(
             Account(
@@ -134,7 +156,7 @@ def _parse_csv_content(
                 username=username,
                 displayName=_row_value(row, DISPLAY_NAME_ALIASES) or "",
                 email=email,
-                employeeId=_row_value(row, EMPLOYEE_ID_ALIASES),
+                employeeId=employee_id,
                 department=_row_value(row, DEPARTMENT_ALIASES),
                 manager=_row_value(row, MANAGER_ALIASES),
                 status=_row_value(row, STATUS_ALIASES),
