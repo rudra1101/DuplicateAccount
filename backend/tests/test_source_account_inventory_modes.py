@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 import app.db_models  # noqa: F401
 from app.database.base import Base
+from app.db_models.integration import IntegrationRecord
 from app.db_models.source_account import SourceAccountRecord
 from app.services.source_account_inventory_service import normalize_aggregation_type, upsert_source_accounts
 
@@ -19,7 +20,19 @@ def _account(native_id: str, username: str) -> dict:
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
-    return Session(engine)
+    db = Session(engine)
+    db.add(
+        IntegrationRecord(
+            id=1,
+            name="Inventory Test Source",
+            connector_type="LOCAL_FILE",
+            source_purpose="ACCOUNT",
+            configuration={},
+            enabled=True,
+        )
+    )
+    db.commit()
+    return db
 
 
 def test_aggregation_type_validation():
