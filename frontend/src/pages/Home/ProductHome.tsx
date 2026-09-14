@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
 import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
@@ -25,7 +26,7 @@ interface ProductDomain {
   description: string;
   route: string;
   status: DomainStatus;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }
 
 const domains: ProductDomain[] = [
