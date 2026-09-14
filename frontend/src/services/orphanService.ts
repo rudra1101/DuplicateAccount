@@ -4,18 +4,23 @@ export interface OrphanFinding {
   id: number;
   findingType: string;
   orphanType: string;
-  scanId: number;
+  scanId: number | null;
   accountId: number;
+  sourceAccountId: number | null;
   application: string;
-  username: string;
-  displayName: string;
-  email: string;
+  nativeIdentity: string | null;
+  username: string | null;
+  displayName: string | null;
+  email: string | null;
   employeeId: string | null;
   accountStatus: string | null;
   correlationMethod: string | null;
   matchedIdentityId: number | null;
   evidence: Record<string, unknown>;
   status: string;
+  active: boolean;
+  firstDetectedAt: string;
+  lastDetectedAt: string;
   createdAt: string;
 }
 
