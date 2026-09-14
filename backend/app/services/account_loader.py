@@ -50,6 +50,16 @@ def _row_value(row: dict[str, str | None], aliases: tuple[str, ...]) -> str | No
     return None
 
 
+def _row_attribute(row: dict[str, str | None], attribute: str | None) -> str | None:
+    if not attribute:
+        return None
+    target = _normalize_header(attribute)
+    for key, value in row.items():
+        if key and _normalize_header(key) == target and value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
 def _clean_optional_value(value: str | None) -> str | None:
     if value is None:
         return None
@@ -58,11 +68,6 @@ def _clean_optional_value(value: str | None) -> str | None:
 
 
 def _stable_record_key(raw_attributes: dict[str, str], row_number: int) -> str:
-    """Create an internal stable key without imposing a source-specific schema.
-
-    This key exists only so legacy account-oriented code can reference a record.
-    Correlation and schema-driven logic continue to use the original raw attributes.
-    """
     canonical = json.dumps(raw_attributes, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:20]
     return f"record-{row_number}-{digest}"
@@ -75,6 +80,7 @@ def _parse_csv_content(
     encoding: str = "utf-8-sig",
     default_application: str | None = None,
     allow_dynamic_schema: bool = False,
+    native_identity_attributes: dict[str, str] | None = None,
 ) -> list[Account]:
     try:
         text_content = raw_content.decode(encoding)
@@ -96,8 +102,6 @@ def _parse_csv_content(
         if header and str(header).strip()
     }
 
-    # Manual uploads retain the historical contract. Integration-driven ingestion
-    # is schema-driven and accepts arbitrary source column names.
     if not allow_dynamic_schema:
         missing: list[str] = []
         if _normalize_header("application") not in normalized_headers:
@@ -106,6 +110,12 @@ def _parse_csv_content(
             missing.append("username")
         if missing:
             raise ValueError("Missing required columns: " + ", ".join(missing))
+
+    configured_native = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in (native_identity_attributes or {}).items()
+        if str(key).strip() and str(value).strip()
+    }
 
     accounts: list[Account] = []
 
@@ -116,7 +126,6 @@ def _parse_csv_content(
             if key and str(key).strip()
         }
 
-        # Completely blank rows are ignored rather than manufactured into records.
         if not any(str(value or "").strip() for value in raw_attributes.values()):
             continue
 
@@ -127,15 +136,19 @@ def _parse_csv_content(
                 "Configure exactly one application for this integration or provide an application attribute."
             )
 
-        account_id = _row_value(row, ID_ALIASES)
+        configured_native_attribute = configured_native.get(application.strip().lower())
+        account_id = _row_attribute(row, configured_native_attribute) or _row_value(row, ID_ALIASES)
         employee_id = _row_value(row, EMPLOYEE_ID_ALIASES)
         username = _row_value(row, USERNAME_ALIASES)
         email = _row_value(row, EMAIL_ALIASES) or ""
 
+        if configured_native_attribute and not account_id:
+            raise ValueError(
+                f"Native identity attribute '{configured_native_attribute}' is empty or missing on row {row_number} "
+                f"for application '{application}'."
+            )
+
         if not username and allow_dynamic_schema:
-            # Do not reject an integration feed just because its source vocabulary
-            # does not use username/id/email. Prefer familiar identifiers when they
-            # happen to exist; otherwise assign an internal deterministic record key.
             username = account_id or employee_id or email or _stable_record_key(raw_attributes, row_number)
 
         if not username:
@@ -144,10 +157,8 @@ def _parse_csv_content(
                 "Manual uploads require a username-style attribute."
             )
 
-        # For dynamic source ingestion, keep a stable internal id even when the
-        # customer feed has no conventional id field. The raw payload is unchanged.
         if allow_dynamic_schema and not account_id:
-            account_id = employee_id or email or _stable_record_key(raw_attributes, row_number)
+            account_id = _stable_record_key(raw_attributes, row_number)
 
         accounts.append(
             Account(
@@ -178,6 +189,7 @@ def load_uploaded_accounts(
     encoding: str = "utf-8-sig",
     default_application: str | None = None,
     allow_dynamic_schema: bool = False,
+    native_identity_attributes: dict[str, str] | None = None,
 ) -> list[Account]:
     raw_content = file.read()
     if not raw_content:
@@ -189,6 +201,7 @@ def load_uploaded_accounts(
         encoding=encoding,
         default_application=default_application,
         allow_dynamic_schema=allow_dynamic_schema,
+        native_identity_attributes=native_identity_attributes,
     )
 
 
