@@ -3,6 +3,7 @@ import { API_BASE_URL } from "../config/api";
 const API_URL = API_BASE_URL;
 
 export type SourcePurpose = "ACCOUNT" | "AUTHORITATIVE";
+export type AggregationType = "FULL" | "DELTA";
 export type ConnectorFieldType =
   "text" | "password" | "number" | "select" | "boolean";
 
@@ -120,10 +121,15 @@ export interface IntegrationExecution {
   integrationId: number;
   scanId: number | null;
   status: "RUNNING" | "COMPLETED" | "FAILED";
+  aggregationType: AggregationType;
   sourceFileName: string | null;
   sourcePath: string | null;
   fileChecksum: string | null;
   accountsScanned: number;
+  accountsCreated: number;
+  accountsUpdated: number;
+  accountsUnchanged: number;
+  accountsDeleted: number;
   duplicateGroups: number;
   duplicateAccounts: number;
   errorMessage: string | null;
@@ -252,8 +258,15 @@ export async function testIntegration(integrationId: number): Promise<Integratio
   return parseResponse<IntegrationTestResult>(response, "Unable to test integration.");
 }
 
-export async function runIntegration(integrationId: number): Promise<IntegrationExecution> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}/run`, { method: "POST" });
+export async function runIntegration(
+  integrationId: number,
+  aggregationType: AggregationType = "FULL",
+): Promise<IntegrationExecution> {
+  const params = new URLSearchParams({ aggregationType });
+  const response = await fetch(
+    `${API_URL}/integrations/${integrationId}/run?${params.toString()}`,
+    { method: "POST" },
+  );
   return parseResponse<IntegrationExecution>(response, "Unable to run integration.");
 }
 
