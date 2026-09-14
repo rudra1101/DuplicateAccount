@@ -27,7 +27,6 @@ def _finding_to_dict(finding: OrphanFindingRecord, account: AccountRecord) -> di
         "email": account.email,
         "employeeId": account.employee_id,
         "accountStatus": account.status,
-        "confidence": finding.confidence,
         "correlationMethod": finding.correlation_method,
         "matchedIdentityId": finding.matched_identity_id,
         "evidence": finding.evidence or {},
@@ -99,7 +98,6 @@ def list_findings(
         statement = statement.where(OrphanFindingRecord.orphan_type == orphan_type.strip().upper())
     statement = statement.order_by(
         OrphanFindingRecord.orphan_type.asc(),
-        OrphanFindingRecord.confidence.desc(),
         OrphanFindingRecord.created_at.desc(),
     )
     return [_finding_to_dict(finding, account) for finding, account in db.execute(statement).all()]
