@@ -24,7 +24,12 @@ from app.services.orphan_detection_service import detect_orphan_findings
 from app.services.review_candidate_repository import save_review_candidates
 from app.services.review_pair_feedback_service import load_pair_feedback
 from app.services.scan_repository import save_completed_scan
+from app.services.schema_duplicate_service import detect_schema_duplicate_results
 from app.services.single_pass_duplicate_service import analyze_duplicate_decisions
+from app.services.source_account_inventory_service import (
+    persist_duplicate_findings,
+    upsert_source_accounts,
+)
 
 
 UTC_ZONE = ZoneInfo("UTC")
@@ -119,6 +124,48 @@ def _complete_execution(
     return execution
 
 
+def _merge_schema_results(
+    duplicate_groups: dict[str, list[dict[str, Any]]],
+    duplicate_details: dict[int, dict[str, Any]],
+    schema_groups: dict[str, list[dict[str, Any]]],
+    schema_details: dict[int, dict[str, Any]],
+) -> None:
+    """Supplement AI results without duplicating an already represented account set."""
+    represented: set[tuple[str, str]] = set()
+    for detail in duplicate_details.values():
+        primary = detail.get("primaryAccount") or {}
+        app = str(primary.get("application") or "").strip().lower()
+        native = str(primary.get("id") or "").strip().lower()
+        if app and native:
+            represented.add((app, native))
+        for candidate in detail.get("duplicates") or []:
+            account = candidate.get("account") or {}
+            app = str(account.get("application") or "").strip().lower()
+            native = str(account.get("id") or "").strip().lower()
+            if app and native:
+                represented.add((app, native))
+
+    for application, groups in schema_groups.items():
+        for group in groups:
+            detail = schema_details.get(int(group["groupId"]), {})
+            accounts = [detail.get("primaryAccount") or {}] + [
+                item.get("account") or {} for item in detail.get("duplicates") or []
+            ]
+            keys = {
+                (
+                    str(account.get("application") or application).strip().lower(),
+                    str(account.get("id") or "").strip().lower(),
+                )
+                for account in accounts
+                if str(account.get("id") or "").strip()
+            }
+            if keys and keys.intersection(represented):
+                continue
+            duplicate_groups.setdefault(application, []).append(group)
+            duplicate_details[int(group["groupId"])] = detail
+            represented.update(keys)
+
+
 def execute_integration(
     db: Session,
     *,
@@ -162,6 +209,12 @@ def execute_integration(
         )
 
         if integration.source_purpose == "AUTHORITATIVE":
+            inventory_stats = upsert_source_accounts(
+                db,
+                integration_id=integration.id,
+                accounts=records,
+                scan_id=None,
+            )
             identity_count = replace_authoritative_identities(
                 db,
                 integration_id=integration.id,
@@ -169,7 +222,8 @@ def execute_integration(
             )
             print(
                 "[Authoritative Identity Ingestion] "
-                f"Integration={integration.id}, IdentitiesLoaded={identity_count}"
+                f"Integration={integration.id}, IdentitiesLoaded={identity_count}, "
+                f"Inventory={inventory_stats}"
             )
             return _complete_execution(
                 db,
@@ -191,6 +245,20 @@ def execute_integration(
             pair_feedback=pair_feedback,
         )
 
+        next_group_id = max(duplicate_details.keys(), default=0) + 1
+        schema_groups, schema_details = detect_schema_duplicate_results(
+            db,
+            integration_id=integration.id,
+            accounts=records,
+            starting_group_id=next_group_id,
+        )
+        _merge_schema_results(
+            duplicate_groups,
+            duplicate_details,
+            schema_groups,
+            schema_details,
+        )
+
         scan = save_completed_scan(
             db=db,
             integration_id=integration.id,
@@ -200,6 +268,24 @@ def execute_integration(
             duplicate_details=duplicate_details,
         )
         _preserve_raw_attributes(db, scan_id=scan.id, accounts=records)
+
+        inventory_stats = upsert_source_accounts(
+            db,
+            integration_id=integration.id,
+            accounts=records,
+            scan_id=scan.id,
+        )
+        persistent_duplicates = persist_duplicate_findings(
+            db,
+            integration_id=integration.id,
+            scan_id=scan.id,
+            duplicate_details=duplicate_details,
+        )
+        print(
+            "[Account Inventory] "
+            f"Integration={integration.id}, Stats={inventory_stats}, "
+            f"PersistentDuplicateFindings={persistent_duplicates}"
+        )
 
         saved_review_candidates = save_review_candidates(
             db,
