@@ -29,6 +29,8 @@ from app.db_models.report_email_template import ReportEmailTemplateRecord
 from app.db_models.identity import IdentityRecord
 from app.db_models.orphan_finding import OrphanFindingRecord
 from app.db_models.correlation_policy import CorrelationPolicyRecord, CorrelationRuleRecord
+from app.db_models.source_account import SourceAccountRecord
+from app.db_models.duplicate_finding import DuplicateFindingRecord
 
 __all__ = [
     "AccountRecord",
@@ -64,4 +66,6 @@ __all__ = [
     "OrphanFindingRecord",
     "CorrelationPolicyRecord",
     "CorrelationRuleRecord",
+    "SourceAccountRecord",
+    "DuplicateFindingRecord",
 ]
