@@ -82,13 +82,11 @@ const ProductHome = () => {
   );
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "#f5f7fa" }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
       <Header />
       <Container maxWidth="lg" sx={{ py: { xs: 4, md: 7 } }}>
         <Box sx={{ mb: 4.5 }}>
-          <Typography variant="h4" fontWeight={800}>
-            IdentityAI
-          </Typography>
+          <Typography variant="h4" fontWeight={800}>IdentityAI</Typography>
           <Typography variant="h6" color="text.secondary" sx={{ mt: 1 }}>
             Choose a domain to continue
           </Typography>
@@ -97,13 +95,7 @@ const ProductHome = () => {
           </Typography>
         </Box>
 
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" },
-            gap: 3,
-          }}
-        >
+        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }, gap: 3 }}>
           {visibleDomains.map((domain) => {
             const available = domain.status === "AVAILABLE";
             return (
@@ -125,11 +117,7 @@ const ProductHome = () => {
                   }),
                 }}
               >
-                <CardActionArea
-                  disabled={!available}
-                  onClick={() => available && navigate(domain.route)}
-                  sx={{ height: "100%", alignItems: "stretch" }}
-                >
+                <CardActionArea disabled={!available} onClick={() => available && navigate(domain.route)} sx={{ height: "100%", alignItems: "stretch" }}>
                   <CardContent sx={{ p: 3.5, height: "100%" }}>
                     <Stack spacing={2.25} height="100%">
                       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
@@ -146,28 +134,17 @@ const ProductHome = () => {
                         >
                           {domain.icon}
                         </Box>
-                        <Chip
-                          size="small"
-                          label={available ? "Available" : "Coming Soon"}
-                          color={available ? "success" : "default"}
-                          variant={available ? "filled" : "outlined"}
-                        />
+                        <Chip size="small" label={available ? "Available" : "Coming Soon"} color={available ? "success" : "default"} variant={available ? "filled" : "outlined"} />
                       </Stack>
 
                       <Box sx={{ flex: 1 }}>
-                        <Typography variant="h6" fontWeight={800}>
-                          {domain.name}
-                        </Typography>
-                        <Typography color="text.secondary" sx={{ mt: 1.25, lineHeight: 1.65 }}>
-                          {domain.description}
-                        </Typography>
+                        <Typography variant="h6" fontWeight={800}>{domain.name}</Typography>
+                        <Typography color="text.secondary" sx={{ mt: 1.25, lineHeight: 1.65 }}>{domain.description}</Typography>
                       </Box>
 
                       {available && (
                         <Stack direction="row" spacing={1} alignItems="center" color="primary.main">
-                          <Typography variant="body2" fontWeight={800}>
-                            Open workspace
-                          </Typography>
+                          <Typography variant="body2" fontWeight={800}>Open workspace</Typography>
                           <ArrowForwardIcon fontSize="small" />
                         </Stack>
                       )}
