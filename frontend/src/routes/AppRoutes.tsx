@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import PermissionRoute from "../auth/PermissionRoute";
 import ProtectedRoute from "../auth/ProtectedRoute";
+import AdminLayout from "../layouts/AdminLayout/AdminLayout";
 import MainLayout from "../layouts/MainLayout/Mainlayout";
 
 import Dashboard from "../pages/Dashboard/Dashboard";
@@ -55,6 +56,29 @@ const AppRoutes = () => {
             }
           />
         </Route>
+
+        {/* Platform Administration uses its own navigation workspace. */}
+        <Route element={<PermissionRoute anyOf={["user.view", "role.view", "settings.manage"]} />}>
+          <Route path="/platform-admin" element={<AdminLayout />}>
+            <Route index element={<Admin />} />
+
+            <Route element={<PermissionRoute anyOf={["user.view"]} />}>
+              <Route path="users" element={<Admin />} />
+            </Route>
+
+            <Route element={<PermissionRoute anyOf={["role.view"]} />}>
+              <Route path="roles" element={<Admin />} />
+            </Route>
+
+            <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
+              <Route path="branding" element={<Admin />} />
+            </Route>
+          </Route>
+        </Route>
+
+        {/* Backward-compatible global administration aliases. */}
+        <Route path="/admin" element={<Navigate to="/platform-admin" replace />} />
+        <Route path="/users" element={<Navigate to="/platform-admin/users" replace />} />
 
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Navigate to="/home" replace />} />
@@ -112,20 +136,6 @@ const AppRoutes = () => {
             </Route>
           </Route>
 
-          {/* Platform Administration is global, not part of Account Intelligence. */}
-          <Route element={<PermissionRoute anyOf={["user.view", "role.view", "settings.manage"]} />}>
-            <Route path="platform-admin" element={<Admin />} />
-          </Route>
-          <Route element={<PermissionRoute anyOf={["user.view"]} />}>
-            <Route path="platform-admin/users" element={<Admin />} />
-          </Route>
-          <Route element={<PermissionRoute anyOf={["role.view"]} />}>
-            <Route path="platform-admin/roles" element={<Admin />} />
-          </Route>
-          <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
-            <Route path="platform-admin/branding" element={<Admin />} />
-          </Route>
-
           <Route element={<PermissionRoute anyOf={["operations.view"]} />}>
             <Route path="operations" element={<OperationsWorkspace />} />
           </Route>
@@ -146,8 +156,6 @@ const AppRoutes = () => {
           <Route path="settings" element={<Navigate to="/account-intelligence/settings" replace />} />
           <Route path="ml-training" element={<Navigate to="/account-intelligence/ml-training" replace />} />
           <Route path="ml-evaluation" element={<Navigate to="/account-intelligence/ml-evaluation" replace />} />
-          <Route path="admin" element={<Navigate to="/platform-admin" replace />} />
-          <Route path="users" element={<Navigate to="/platform-admin/users" replace />} />
 
           {/* Parameterized legacy aliases remain functional while old deep links are retired. */}
           <Route element={<PermissionRoute anyOf={["domain.account_intelligence.view"]} />}>
