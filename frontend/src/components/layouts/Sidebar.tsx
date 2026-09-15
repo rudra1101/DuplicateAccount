@@ -30,83 +30,17 @@ const drawerWidth = 250;
 const ACCOUNT_INTELLIGENCE_PERMISSION = "domain.account_intelligence.view";
 
 const menuItems = [
-  {
-    text: "Dashboard",
-    icon: <DashboardIcon />,
-    path: "/account-intelligence/dashboard",
-    permissions: ["dashboard.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Duplicate Detection",
-    icon: <SearchIcon />,
-    path: "/account-intelligence/duplicates",
-    permissions: ["duplicate.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Review Accounts",
-    icon: <FactCheckIcon />,
-    path: "/account-intelligence/review",
-    permissions: ["duplicate.review"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Remediation",
-    icon: <TaskAltIcon />,
-    path: "/account-intelligence/remediation",
-    permissions: ["remediation.view", "remediation.history.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Reports",
-    icon: <AssessmentIcon />,
-    path: "/account-intelligence/reports",
-    permissions: ["report.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Upload Accounts",
-    icon: <CloudUploadIcon />,
-    path: "/account-intelligence/upload",
-    permissions: ["upload.manage"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Integrations",
-    path: "/account-intelligence/integrations",
-    icon: <CableIcon />,
-    permissions: ["integration.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Accounts",
-    path: "/account-intelligence/accounts",
-    icon: <ManageAccountsIcon />,
-    permissions: ["integration.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "ML Training",
-    path: "/account-intelligence/ml-training",
-    icon: <ModelTrainingIcon />,
-    permissions: ["ml.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Model Evaluation",
-    path: "/account-intelligence/ml-evaluation",
-    icon: <AnalyticsOutlinedIcon />,
-    permissions: ["ml.analytics.view", "ml.calibration.view"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
-  {
-    text: "Settings",
-    icon: <SettingsIcon />,
-    path: "/account-intelligence/settings",
-    permissions: ["settings.manage"],
-    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
-  },
+  { text: "Dashboard", icon: <DashboardIcon />, path: "/account-intelligence/dashboard", permissions: ["dashboard.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Duplicate Detection", icon: <SearchIcon />, path: "/account-intelligence/duplicates", permissions: ["duplicate.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Review Accounts", icon: <FactCheckIcon />, path: "/account-intelligence/review", permissions: ["duplicate.review"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Remediation", icon: <TaskAltIcon />, path: "/account-intelligence/remediation", permissions: ["remediation.view", "remediation.history.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Reports", icon: <AssessmentIcon />, path: "/account-intelligence/reports", permissions: ["report.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/account-intelligence/upload", permissions: ["upload.manage"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Integrations", path: "/account-intelligence/integrations", icon: <CableIcon />, permissions: ["integration.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Accounts", path: "/account-intelligence/accounts", icon: <ManageAccountsIcon />, permissions: ["integration.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "ML Training", path: "/account-intelligence/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Model Evaluation", path: "/account-intelligence/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
+  { text: "Settings", icon: <SettingsIcon />, path: "/account-intelligence/settings", permissions: ["settings.manage"], domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
 ];
@@ -114,11 +48,10 @@ const menuItems = [
 const Sidebar = () => {
   const location = useLocation();
   const { hasPermission } = useAuth();
+  const navigationText = "var(--identityai-navigation-contrast, #FFFFFF)";
 
   const visibleItems = menuItems.filter((item) => {
-    if (item.domainPermission && !hasPermission(item.domainPermission)) {
-      return false;
-    }
+    if (item.domainPermission && !hasPermission(item.domainPermission)) return false;
     return item.permissions.some((permission) => hasPermission(permission));
   });
 
@@ -131,8 +64,8 @@ const Sidebar = () => {
         "& .MuiDrawer-paper": {
           width: drawerWidth,
           boxSizing: "border-box",
-          backgroundColor: "#0f172a",
-          color: "#fff",
+          backgroundColor: "var(--identityai-navigation, #0F172A)",
+          color: navigationText,
         },
       }}
     >
@@ -151,10 +84,10 @@ const Sidebar = () => {
             "&:hover": { opacity: 0.9 },
           }}
         >
-          <Typography variant="h6" sx={{ fontWeight: 700, color: "#fff" }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, color: navigationText }}>
             IdentityAI
           </Typography>
-          <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+          <Typography variant="caption" sx={{ color: navigationText, opacity: 0.7 }}>
             Account Intelligence Platform
           </Typography>
         </Box>
@@ -166,22 +99,17 @@ const Sidebar = () => {
             key={item.text}
             component={Link}
             to={item.path}
-            selected={
-              location.pathname === item.path ||
-              location.pathname.startsWith(`${item.path}/`)
-            }
+            selected={location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)}
             sx={{
               mx: 1,
               borderRadius: 2,
               mb: 0.5,
-              "&.Mui-selected": { backgroundColor: "#1976d2" },
-              "&.Mui-selected:hover": { backgroundColor: "#1565c0" },
-              "&:hover": { backgroundColor: "#1e293b" },
+              "&.Mui-selected": { backgroundColor: "primary.main", color: "primary.contrastText" },
+              "&.Mui-selected:hover": { backgroundColor: "primary.dark" },
+              "&:hover": { backgroundColor: "rgba(128,128,128,0.18)" },
             }}
           >
-            <ListItemIcon sx={{ color: "inherit", minWidth: 40 }}>
-              {item.icon}
-            </ListItemIcon>
+            <ListItemIcon sx={{ color: "inherit", minWidth: 40 }}>{item.icon}</ListItemIcon>
             <ListItemText primary={item.text} />
           </ListItemButton>
         ))}
