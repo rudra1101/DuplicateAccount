@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import {
   AppBar,
@@ -20,9 +21,13 @@ import {
 const DEFAULT_LOGO = "/nusummit-logo.svg";
 
 const Header = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const [logoSrc, setLogoSrc] = useState(DEFAULT_LOGO);
+  const canAccessAdministration =
+    hasPermission("user.view") ||
+    hasPermission("role.view") ||
+    hasPermission("settings.manage");
 
   const refreshBranding = useCallback(async () => {
     try {
@@ -104,6 +109,24 @@ const Header = () => {
 
         {user && (
           <Stack direction="row" spacing={1.5} alignItems="center">
+            {canAccessAdministration && (
+              <Button
+                color="inherit"
+                startIcon={<AdminPanelSettingsIcon />}
+                onClick={() => navigate("/platform-admin")}
+                sx={{
+                  textTransform: "none",
+                  color: "#FFFFFF",
+                  borderRadius: 2,
+                  px: 1.5,
+                  display: { xs: "none", md: "inline-flex" },
+                  "&:hover": { backgroundColor: "#1e293b" },
+                }}
+              >
+                Administration
+              </Button>
+            )}
+
             <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
               <Typography variant="body2" fontWeight={700} sx={{ color: "#FFFFFF" }}>
                 {user.fullName}
