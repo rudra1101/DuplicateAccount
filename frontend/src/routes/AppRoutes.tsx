@@ -98,31 +98,36 @@ const AppRoutes = () => {
             <Route element={<PermissionRoute anyOf={["integration.edit"]} />}>
               <Route path="account-intelligence/integrations/:integrationId/edit" element={<SourceWizard />} />
             </Route>
+
+            <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
+              <Route path="account-intelligence/settings" element={<Settings />} />
+            </Route>
+
+            <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
+              <Route path="account-intelligence/ml-training" element={<MlTrainingDashboard />} />
+            </Route>
+
+            <Route element={<PermissionRoute anyOf={["ml.analytics.view", "ml.calibration.view"]} />}>
+              <Route path="account-intelligence/ml-evaluation" element={<ReviewerAnalytics />} />
+            </Route>
           </Route>
 
-          {/* Platform-wide administration and advanced capabilities */}
+          {/* Platform Administration is global, not part of Account Intelligence. */}
+          <Route element={<PermissionRoute anyOf={["user.view", "role.view", "settings.manage"]} />}>
+            <Route path="platform-admin" element={<Admin />} />
+          </Route>
+          <Route element={<PermissionRoute anyOf={["user.view"]} />}>
+            <Route path="platform-admin/users" element={<Admin />} />
+          </Route>
+          <Route element={<PermissionRoute anyOf={["role.view"]} />}>
+            <Route path="platform-admin/roles" element={<Admin />} />
+          </Route>
           <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
-            <Route path="settings" element={<Settings />} />
+            <Route path="platform-admin/branding" element={<Admin />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["operations.view"]} />}>
             <Route path="operations" element={<OperationsWorkspace />} />
-          </Route>
-
-          <Route element={<PermissionRoute anyOf={["ml.view"]} />}>
-            <Route path="ml-training" element={<MlTrainingDashboard />} />
-          </Route>
-
-          <Route element={<PermissionRoute anyOf={["ml.analytics.view", "ml.calibration.view"]} />}>
-            <Route path="ml-evaluation" element={<ReviewerAnalytics />} />
-          </Route>
-
-          <Route element={<PermissionRoute anyOf={["user.view", "role.view"]} />}>
-            <Route path="admin" element={<Admin />} />
-          </Route>
-
-          <Route element={<PermissionRoute anyOf={["user.view"]} />}>
-            <Route path="users" element={<Admin />} />
           </Route>
 
           <Route element={<PermissionRoute anyOf={["knowledge.view"]} />}>
@@ -138,6 +143,11 @@ const AppRoutes = () => {
           <Route path="upload" element={<Navigate to="/account-intelligence/upload" replace />} />
           <Route path="integrations" element={<Navigate to="/account-intelligence/integrations" replace />} />
           <Route path="accounts" element={<Navigate to="/account-intelligence/accounts" replace />} />
+          <Route path="settings" element={<Navigate to="/account-intelligence/settings" replace />} />
+          <Route path="ml-training" element={<Navigate to="/account-intelligence/ml-training" replace />} />
+          <Route path="ml-evaluation" element={<Navigate to="/account-intelligence/ml-evaluation" replace />} />
+          <Route path="admin" element={<Navigate to="/platform-admin" replace />} />
+          <Route path="users" element={<Navigate to="/platform-admin/users" replace />} />
 
           {/* Parameterized legacy aliases remain functional while old deep links are retired. */}
           <Route element={<PermissionRoute anyOf={["domain.account_intelligence.view"]} />}>
