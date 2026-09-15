@@ -28,19 +28,68 @@ import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/AuthContext";
 
 const drawerWidth = 250;
+const ACCOUNT_INTELLIGENCE_PERMISSION = "domain.account_intelligence.view";
 
 const menuItems = [
-  { text: "Dashboard", icon: <DashboardIcon />, path: "/dashboard", permissions: ["dashboard.view"] },
-  { text: "Duplicate Detection", icon: <SearchIcon />, path: "/duplicates", permissions: ["duplicate.view"] },
-  { text: "Review Accounts", icon: <FactCheckIcon />, path: "/review", permissions: ["duplicate.review"] },
-  { text: "Remediation", icon: <TaskAltIcon />, path: "/remediation", permissions: ["remediation.view", "remediation.history.view"] },
-  { text: "Reports", icon: <AssessmentIcon />, path: "/reports", permissions: ["report.view"] },
+  {
+    text: "Dashboard",
+    icon: <DashboardIcon />,
+    path: "/account-intelligence/dashboard",
+    permissions: ["dashboard.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Duplicate Detection",
+    icon: <SearchIcon />,
+    path: "/account-intelligence/duplicates",
+    permissions: ["duplicate.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Review Accounts",
+    icon: <FactCheckIcon />,
+    path: "/account-intelligence/review",
+    permissions: ["duplicate.review"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Remediation",
+    icon: <TaskAltIcon />,
+    path: "/account-intelligence/remediation",
+    permissions: ["remediation.view", "remediation.history.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Reports",
+    icon: <AssessmentIcon />,
+    path: "/account-intelligence/reports",
+    permissions: ["report.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Upload Accounts",
+    icon: <CloudUploadIcon />,
+    path: "/account-intelligence/upload",
+    permissions: ["upload.manage"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Integrations",
+    path: "/account-intelligence/integrations",
+    icon: <CableIcon />,
+    permissions: ["integration.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Accounts",
+    path: "/account-intelligence/accounts",
+    icon: <ManageAccountsIcon />,
+    permissions: ["integration.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
   { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", permissions: ["user.view", "role.view"] },
-  { text: "Upload Accounts", icon: <CloudUploadIcon />, path: "/upload", permissions: ["upload.manage"] },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
   { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.manage"] },
-  { text: "Integrations", path: "/integrations", icon: <CableIcon />, permissions: ["integration.view"] },
-  { text: "Accounts", path: "/accounts", icon: <ManageAccountsIcon />, permissions: ["integration.view"] },
   { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
   { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
@@ -50,9 +99,12 @@ const Sidebar = () => {
   const location = useLocation();
   const { hasPermission } = useAuth();
 
-  const visibleItems = menuItems.filter((item) =>
-    item.permissions.some((permission) => hasPermission(permission)),
-  );
+  const visibleItems = menuItems.filter((item) => {
+    if (item.domainPermission && !hasPermission(item.domainPermission)) {
+      return false;
+    }
+    return item.permissions.some((permission) => hasPermission(permission));
+  });
 
   return (
     <Drawer
@@ -98,7 +150,10 @@ const Sidebar = () => {
             key={item.text}
             component={Link}
             to={item.path}
-            selected={location.pathname === item.path}
+            selected={
+              location.pathname === item.path ||
+              location.pathname.startsWith(`${item.path}/`)
+            }
             sx={{
               mx: 1,
               borderRadius: 2,
