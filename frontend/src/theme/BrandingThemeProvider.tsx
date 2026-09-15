@@ -32,11 +32,15 @@ export default function BrandingThemeProvider({ children }: Props) {
     return () => window.removeEventListener("identityai-branding-updated", handleBrandingUpdated);
   }, [refresh]);
 
+  const theme = useMemo(() => createIdentityAiTheme(palette), [palette]);
+
   useEffect(() => {
     document.documentElement.style.setProperty("--identityai-navigation", palette.navigationColor);
-  }, [palette.navigationColor]);
-
-  const theme = useMemo(() => createIdentityAiTheme(palette), [palette]);
+    document.documentElement.style.setProperty(
+      "--identityai-navigation-contrast",
+      theme.palette.getContrastText(palette.navigationColor),
+    );
+  }, [palette.navigationColor, theme]);
 
   return (
     <ThemeProvider theme={theme}>
