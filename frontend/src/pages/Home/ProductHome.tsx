@@ -16,6 +16,7 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 
+import { useAuth } from "../../auth/AuthContext";
 import Header from "../../components/layouts/Header";
 
 type DomainStatus = "AVAILABLE" | "COMING_SOON";
@@ -26,6 +27,7 @@ interface ProductDomain {
   description: string;
   route: string;
   status: DomainStatus;
+  permission?: string;
   icon: ReactNode;
 }
 
@@ -35,8 +37,9 @@ const domains: ProductDomain[] = [
     name: "Account Duplicate & Orphan Detection",
     description:
       "Discover duplicate accounts, identify orphan accounts, review findings, and manage source integrations.",
-    route: "/dashboard",
+    route: "/account-intelligence/dashboard",
     status: "AVAILABLE",
+    permission: "domain.account_intelligence.view",
     icon: <AccountTreeOutlinedIcon sx={{ fontSize: 34 }} />,
   },
   {
@@ -46,6 +49,7 @@ const domains: ProductDomain[] = [
       "Visualize account distribution, concentration, activity, and identity patterns across connected sources.",
     route: "/account-heatmap",
     status: "AVAILABLE",
+    permission: "domain.account_heatmap.view",
     icon: <GridViewOutlinedIcon sx={{ fontSize: 34 }} />,
   },
   {
@@ -55,6 +59,7 @@ const domains: ProductDomain[] = [
       "Discover and govern service accounts, shared accounts, bots, workloads, and other non-human identities.",
     route: "/non-human-identities",
     status: "AVAILABLE",
+    permission: "domain.non_human_identity.view",
     icon: <SmartToyOutlinedIcon sx={{ fontSize: 34 }} />,
   },
   {
@@ -70,6 +75,11 @@ const domains: ProductDomain[] = [
 
 const ProductHome = () => {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+
+  const visibleDomains = domains.filter(
+    (domain) => !domain.permission || hasPermission(domain.permission),
+  );
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#f5f7fa" }}>
@@ -83,7 +93,7 @@ const ProductHome = () => {
             Choose a domain to continue
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 1, maxWidth: 760 }}>
-            IdentityAI is organized into focused identity intelligence domains. Select the workspace you want to use.
+            IdentityAI is organized into focused identity intelligence domains. Select a workspace you are authorized to use.
           </Typography>
         </Box>
 
@@ -94,7 +104,7 @@ const ProductHome = () => {
             gap: 3,
           }}
         >
-          {domains.map((domain) => {
+          {visibleDomains.map((domain) => {
             const available = domain.status === "AVAILABLE";
             return (
               <Card
