@@ -1,15 +1,15 @@
 """Add global branding color palette.
 
-Revision ID: 0016
-Revises: 0015
+Revision ID: 20260915_0016
+Revises: 20260914_0015
 """
 
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0016"
-down_revision = "0015"
+revision = "20260915_0016"
+down_revision = "20260914_0015"
 branch_labels = None
 depends_on = None
 
@@ -41,7 +41,6 @@ def upgrade() -> None:
                 "application_settings",
                 sa.Column(name, sa.String(length=7), nullable=False, server_default=default),
             )
-
 
 
 def downgrade() -> None:
