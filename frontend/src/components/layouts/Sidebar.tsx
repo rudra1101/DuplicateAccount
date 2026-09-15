@@ -14,7 +14,6 @@ import SearchIcon from "@mui/icons-material/ManageSearch";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import TaskAltIcon from "@mui/icons-material/TaskAlt";
 import AssessmentIcon from "@mui/icons-material/Assessment";
-import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import SettingsIcon from "@mui/icons-material/Settings";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import CableIcon from "@mui/icons-material/Cable";
@@ -87,11 +86,28 @@ const menuItems = [
     permissions: ["integration.view"],
     domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
   },
-  { text: "Admin", icon: <AdminPanelSettingsIcon />, path: "/admin", permissions: ["user.view", "role.view"] },
+  {
+    text: "ML Training",
+    path: "/account-intelligence/ml-training",
+    icon: <ModelTrainingIcon />,
+    permissions: ["ml.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Model Evaluation",
+    path: "/account-intelligence/ml-evaluation",
+    icon: <AnalyticsOutlinedIcon />,
+    permissions: ["ml.analytics.view", "ml.calibration.view"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
+  {
+    text: "Settings",
+    icon: <SettingsIcon />,
+    path: "/account-intelligence/settings",
+    permissions: ["settings.manage"],
+    domainPermission: ACCOUNT_INTELLIGENCE_PERMISSION,
+  },
   { text: "Operations", path: "/operations", icon: <MonitorHeartOutlinedIcon />, permissions: ["operations.view"] },
-  { text: "Settings", icon: <SettingsIcon />, path: "/settings", permissions: ["settings.manage"] },
-  { text: "ML Training", path: "/ml-training", icon: <ModelTrainingIcon />, permissions: ["ml.view"] },
-  { text: "Model Evaluation", path: "/ml-evaluation", icon: <AnalyticsOutlinedIcon />, permissions: ["ml.analytics.view", "ml.calibration.view"] },
   { text: "Knowledge Base", path: "/knowledge", icon: <MenuBookOutlined />, permissions: ["knowledge.view"] },
 ];
 
