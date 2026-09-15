@@ -56,6 +56,7 @@ class ApplicationInput(BaseModel):
     objectType: str | None = None
     enabled: bool = True
     schemaName: str | None = None
+    nativeIdentityAttribute: str | None = None
     attributes: list[SchemaAttributeInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -65,6 +66,8 @@ class ApplicationInput(BaseModel):
             self.displayName = self.displayName.strip() or None
         if self.objectType is not None:
             self.objectType = self.objectType.strip() or None
+        if self.nativeIdentityAttribute is not None:
+            self.nativeIdentityAttribute = self.nativeIdentityAttribute.strip() or None
 
         seen: set[str] = set()
         for attribute in self.attributes:
@@ -72,6 +75,10 @@ class ApplicationInput(BaseModel):
             if key in seen:
                 raise ValueError(f"Duplicate schema attribute: {attribute.name}")
             seen.add(key)
+
+        if self.nativeIdentityAttribute is not None:
+            if self.nativeIdentityAttribute.lower() not in seen:
+                raise ValueError("Native identity attribute must exist in the application schema.")
 
         total_weight = sum(
             attribute.matchWeight

@@ -2,6 +2,8 @@ import { API_BASE_URL } from "../config/api";
 
 const API_URL = API_BASE_URL;
 
+export type SourcePurpose = "ACCOUNT" | "AUTHORITATIVE";
+export type AggregationType = "FULL" | "DELTA";
 export type ConnectorFieldType =
   "text" | "password" | "number" | "select" | "boolean";
 
@@ -53,6 +55,7 @@ export interface Integration {
   id: number;
   name: string;
   connectorType: string;
+  sourcePurpose: SourcePurpose;
   description: string | null;
   configuration: Record<string, unknown>;
   enabled: boolean;
@@ -71,6 +74,7 @@ export interface IntegrationListResponse {
 export interface CreateIntegrationPayload {
   name: string;
   connectorType: string;
+  sourcePurpose: SourcePurpose;
   description?: string | null;
   configuration: Record<string, unknown>;
   enabled: boolean;
@@ -78,6 +82,7 @@ export interface CreateIntegrationPayload {
 
 export interface UpdateIntegrationPayload {
   name?: string;
+  sourcePurpose?: SourcePurpose;
   description?: string | null;
   configuration?: Record<string, unknown>;
   enabled?: boolean;
@@ -116,10 +121,15 @@ export interface IntegrationExecution {
   integrationId: number;
   scanId: number | null;
   status: "RUNNING" | "COMPLETED" | "FAILED";
+  aggregationType: AggregationType;
   sourceFileName: string | null;
   sourcePath: string | null;
   fileChecksum: string | null;
   accountsScanned: number;
+  accountsCreated: number;
+  accountsUpdated: number;
+  accountsUnchanged: number;
+  accountsDeleted: number;
   duplicateGroups: number;
   duplicateAccounts: number;
   errorMessage: string | null;
@@ -203,13 +213,9 @@ export async function getIntegrations(
   search = "",
   enabled?: boolean,
 ): Promise<IntegrationListResponse> {
-  const params = new URLSearchParams({
-    page: String(page),
-    pageSize: String(pageSize),
-  });
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search.trim()) params.set("search", search.trim());
   if (enabled !== undefined) params.set("enabled", String(enabled));
-
   const response = await fetch(`${API_URL}/integrations/?${params.toString()}`);
   return parseResponse<IntegrationListResponse>(response, "Unable to load integrations.");
 }
@@ -228,10 +234,7 @@ export async function createIntegration(payload: CreateIntegrationPayload): Prom
   return parseResponse<Integration>(response, "Unable to create integration.");
 }
 
-export async function updateIntegration(
-  integrationId: number,
-  payload: UpdateIntegrationPayload,
-): Promise<Integration> {
+export async function updateIntegration(integrationId: number, payload: UpdateIntegrationPayload): Promise<Integration> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -245,13 +248,8 @@ export async function deleteIntegration(integrationId: number): Promise<void> {
   if (!response.ok) throw new Error((await response.text()) || "Unable to delete integration.");
 }
 
-export async function testIntegrationAuthentication(
-  integrationId: number,
-): Promise<IntegrationTestResult> {
-  const response = await fetch(
-    `${API_URL}/integrations/${integrationId}/test-authentication`,
-    { method: "POST" },
-  );
+export async function testIntegrationAuthentication(integrationId: number): Promise<IntegrationTestResult> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/test-authentication`, { method: "POST" });
   return parseResponse<IntegrationTestResult>(response, "Unable to test authentication.");
 }
 
@@ -260,31 +258,26 @@ export async function testIntegration(integrationId: number): Promise<Integratio
   return parseResponse<IntegrationTestResult>(response, "Unable to test integration.");
 }
 
-export async function runIntegration(integrationId: number): Promise<IntegrationExecution> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}/run`, { method: "POST" });
+export async function runIntegration(
+  integrationId: number,
+  aggregationType: AggregationType = "FULL",
+): Promise<IntegrationExecution> {
+  const params = new URLSearchParams({ aggregationType });
+  const response = await fetch(
+    `${API_URL}/integrations/${integrationId}/run?${params.toString()}`,
+    { method: "POST" },
+  );
   return parseResponse<IntegrationExecution>(response, "Unable to run integration.");
 }
 
-export async function getIntegrationExecutions(
-  integrationId: number,
-  limit = 20,
-): Promise<IntegrationExecution[]> {
+export async function getIntegrationExecutions(integrationId: number, limit = 20): Promise<IntegrationExecution[]> {
   const response = await fetch(`${API_URL}/integrations/${integrationId}/executions?limit=${limit}`);
   return parseResponse<IntegrationExecution[]>(response, "Unable to load execution history.");
 }
 
-export async function getScanAccounts(
-  scanId: number,
-  page = 1,
-  pageSize = 25,
-  search = "",
-): Promise<ScanAccountsResponse> {
-  const params = new URLSearchParams({
-    page: String(page),
-    pageSize: String(pageSize),
-  });
+export async function getScanAccounts(scanId: number, page = 1, pageSize = 25, search = ""): Promise<ScanAccountsResponse> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search.trim()) params.set("search", search.trim());
-
   const response = await fetch(`${API_URL}/scans/${scanId}/accounts?${params.toString()}`);
   return parseResponse<ScanAccountsResponse>(response, "Unable to load scanned accounts.");
 }
@@ -295,27 +288,13 @@ export async function getIntegrationSchedule(integrationId: number): Promise<Job
   return parseResponse<JobSchedule>(response, "Unable to load integration schedule.");
 }
 
-export async function createIntegrationSchedule(
-  integrationId: number,
-  payload: CreateSchedulePayload,
-): Promise<JobSchedule> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export async function createIntegrationSchedule(integrationId: number, payload: CreateSchedulePayload): Promise<JobSchedule> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   return parseResponse<JobSchedule>(response, "Unable to create integration schedule.");
 }
 
-export async function updateIntegrationSchedule(
-  integrationId: number,
-  payload: UpdateSchedulePayload,
-): Promise<JobSchedule> {
-  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+export async function updateIntegrationSchedule(integrationId: number, payload: UpdateSchedulePayload): Promise<JobSchedule> {
+  const response = await fetch(`${API_URL}/integrations/${integrationId}/schedule`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   return parseResponse<JobSchedule>(response, "Unable to update integration schedule.");
 }
 

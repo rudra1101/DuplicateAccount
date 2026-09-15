@@ -1,0 +1,4 @@
+application,id,workerId,employeeId,username,networkId,email,workEmail,displayName,status,department
+Workday HR,W1001,1001,1001,rshankar,rshankar,rudra@company.com,rudra@company.com,Rudra Shankar,ACTIVE,Security
+Workday HR,W1002,1002,1002,jdoe,jdoe,john@company.com,john@company.com,John Doe,ACTIVE,Finance
+Workday HR,W1003,1003,1003,olduser,olduser,old@company.com,old@company.com,Old User,TERMINATED,Operations

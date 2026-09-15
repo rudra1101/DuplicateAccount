@@ -20,8 +20,10 @@ from app.services.settings_service import (
     branding_response,
     clear_logo,
     get_application_settings,
+    reset_branding_palette,
     save_logo,
     smtp_settings_response,
+    update_branding_palette,
     update_smtp_settings,
 )
 
@@ -45,6 +47,13 @@ class SmtpSettingsUpdate(BaseModel):
 
 class SmtpTestRequest(BaseModel):
     recipient: EmailStr
+
+
+class BrandingPaletteUpdate(BaseModel):
+    primaryColor: str
+    secondaryColor: str
+    navigationColor: str
+    backgroundColor: str
 
 
 class ServiceDeskSettingsUpdate(BaseModel):
@@ -192,8 +201,40 @@ def put_remediation_sla_settings(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+# Branding is readable without settings.manage because it is needed to render
+# the login page and global shell before a user is authenticated.
 @router.get("/branding")
 def get_branding(db: Session = Depends(get_db)):
+    return branding_response(db)
+
+
+@router.put(
+    "/branding/palette",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def put_branding_palette(
+    payload: BrandingPaletteUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        update_branding_palette(
+            db,
+            primary_color=payload.primaryColor,
+            secondary_color=payload.secondaryColor,
+            navigation_color=payload.navigationColor,
+            background_color=payload.backgroundColor,
+        )
+        return branding_response(db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/branding/palette",
+    dependencies=[Depends(require_permission("settings.manage"))],
+)
+def delete_branding_palette(db: Session = Depends(get_db)):
+    reset_branding_palette(db)
     return branding_response(db)
 
 

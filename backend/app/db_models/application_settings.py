@@ -50,6 +50,12 @@ class ApplicationSettingsRecord(Base):
     logo_mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     logo_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
+    # Global IdentityAI color palette. These defaults preserve the existing UI.
+    branding_primary_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#1565C0")
+    branding_secondary_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#1976D2")
+    branding_navigation_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#0F172A")
+    branding_background_color: Mapped[str] = mapped_column(String(7), nullable=False, default="#F5F7FA")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
