@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import { useEffect, useState } from "react";
 import SendOutlinedIcon from "@mui/icons-material/SendOutlined";
 import {
   Alert,
@@ -22,33 +20,26 @@ import {
 } from "@mui/material";
 
 import {
-  customLogoUrl,
-  getBrandingSettings,
   getSmtpSettings,
-  resetLogo,
   saveSmtpSettings,
   sendSmtpTest,
-  uploadLogo,
-  type BrandingSettings,
   type SmtpSettings,
 } from "../../services/settingsService";
 import EmailTemplatesCard from "./EmailTemplatesCard";
 import RemediationSlaSettingsCard from "./RemediationSlaSettingsCard";
 import ServiceDeskSettingsCard from "./ServiceDeskSettingsCard";
 
-type SettingsTab = "smtp" | "branding" | "emailTemplates" | "serviceDesk" | "remediationSla";
+type SettingsTab = "smtp" | "emailTemplates" | "serviceDesk" | "remediationSla";
 
 const Settings = () => {
   const [activeTab, setActiveTab] = useState<SettingsTab>("smtp");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [brandingBusy, setBrandingBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
   const [smtp, setSmtp] = useState<SmtpSettings | null>(null);
-  const [branding, setBranding] = useState<BrandingSettings | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [host, setHost] = useState("");
   const [port, setPort] = useState(587);
@@ -74,12 +65,7 @@ const Settings = () => {
   useEffect(() => {
     void (async () => {
       try {
-        const [smtpValue, brandingValue] = await Promise.all([
-          getSmtpSettings(),
-          getBrandingSettings(),
-        ]);
-        applySmtp(smtpValue);
-        setBranding(brandingValue);
+        applySmtp(await getSmtpSettings());
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load settings.");
       } finally {
@@ -87,11 +73,6 @@ const Settings = () => {
       }
     })();
   }, []);
-
-  const logoSrc = useMemo(
-    () => branding?.customLogo ? customLogoUrl(branding.updatedAt) : "/nusummit-logo.svg",
-    [branding],
-  );
 
   const handleTabChange = (_event: React.SyntheticEvent, value: SettingsTab) => {
     setActiveTab(value);
@@ -141,43 +122,6 @@ const Settings = () => {
     }
   };
 
-  const notifyBrandingChanged = () => {
-    window.dispatchEvent(new Event("identityai-branding-updated"));
-  };
-
-  const handleLogoUpload = async (file: File | undefined) => {
-    if (!file) return;
-    setBrandingBusy(true);
-    setError("");
-    setSuccess("");
-    try {
-      const updated = await uploadLogo(file);
-      setBranding(updated);
-      notifyBrandingChanged();
-      setSuccess("Header logo updated successfully.");
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload logo.");
-    } finally {
-      setBrandingBusy(false);
-    }
-  };
-
-  const handleResetLogo = async () => {
-    setBrandingBusy(true);
-    setError("");
-    setSuccess("");
-    try {
-      const updated = await resetLogo();
-      setBranding(updated);
-      notifyBrandingChanged();
-      setSuccess("Header logo reset to the default logo.");
-    } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : "Unable to reset logo.");
-    } finally {
-      setBrandingBusy(false);
-    }
-  };
-
   if (loading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
@@ -189,16 +133,15 @@ const Settings = () => {
   return (
     <Stack spacing={3}>
       <Box>
-        <Typography variant="h4" fontWeight={800}>Settings</Typography>
+        <Typography variant="h4" fontWeight={800}>Account Intelligence Settings</Typography>
         <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-          Configure administrator-managed platform settings for email, branding, notifications, and downstream remediation integrations.
+          Configure email, notification, and remediation settings used by the Account Intelligence domain.
         </Typography>
       </Box>
 
       <Card variant="outlined">
         <Tabs value={activeTab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto" sx={{ px: 2 }}>
           <Tab value="smtp" label="SMTP" />
-          <Tab value="branding" label="Branding" />
           <Tab value="emailTemplates" label="Email Templates" />
           <Tab value="serviceDesk" label="Service Desk" />
           <Tab value="remediationSla" label="Remediation SLA" />
@@ -215,9 +158,14 @@ const Settings = () => {
               <Stack direction={{ xs: "column", sm: "row" }} justifyContent="space-between" gap={1}>
                 <Box>
                   <Typography variant="h6" fontWeight={800}>SMTP Configuration</Typography>
-                  <Typography variant="body2" color="text.secondary">Used by scheduled reports and other IdentityAI email notifications.</Typography>
+                  <Typography variant="body2" color="text.secondary">Used by scheduled reports and other Account Intelligence email notifications.</Typography>
                 </Box>
-                <Chip size="small" label={smtp?.source === "database" ? "Managed in IdentityAI" : smtp?.source === "environment" ? "Using environment values" : "Not configured"} color={smtp?.source === "database" ? "primary" : "default"} variant="outlined" />
+                <Chip
+                  size="small"
+                  label={smtp?.source === "database" ? "Managed in IdentityAI" : smtp?.source === "environment" ? "Using environment values" : "Not configured"}
+                  color={smtp?.source === "database" ? "primary" : "default"}
+                  variant="outlined"
+                />
               </Stack>
               <Divider />
               <FormControlLabel control={<Switch checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />} label="Enable SMTP email delivery" />
@@ -234,31 +182,6 @@ const Settings = () => {
                 <Button variant="contained" onClick={handleSaveSmtp} disabled={saving}>{saving ? "Saving…" : "Save SMTP settings"}</Button>
                 <TextField size="small" label="Test recipient" type="email" value={testRecipient} onChange={(event) => setTestRecipient(event.target.value)} sx={{ minWidth: { sm: 280 } }} />
                 <Button variant="outlined" startIcon={<SendOutlinedIcon />} onClick={handleTestSmtp} disabled={testing || !enabled}>{testing ? "Sending…" : "Send test email"}</Button>
-              </Stack>
-            </Stack>
-          </CardContent>
-        </Card>
-      )}
-
-      {activeTab === "branding" && (
-        <Card variant="outlined">
-          <CardContent>
-            <Stack spacing={2.5}>
-              <Box>
-                <Typography variant="h6" fontWeight={800}>Header Branding</Typography>
-                <Typography variant="body2" color="text.secondary">Upload the logo displayed in the application header. PNG, JPEG, and WebP are supported up to 2 MB.</Typography>
-              </Box>
-              <Divider />
-              <Box sx={{ minHeight: 110, border: "1px dashed", borderColor: "divider", borderRadius: 2, bgcolor: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", px: 3, py: 2 }}>
-                <Box component="img" src={logoSrc} alt="Header logo preview" sx={{ maxHeight: 64, maxWidth: "100%", objectFit: "contain" }} />
-              </Box>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
-                <Button component="label" variant="contained" startIcon={<CloudUploadOutlinedIcon />} disabled={brandingBusy}>
-                  {brandingBusy ? "Updating…" : "Upload logo"}
-                  <input hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => { void handleLogoUpload(event.target.files?.[0]); event.target.value = ""; }} />
-                </Button>
-                <Button variant="outlined" startIcon={<RestartAltIcon />} onClick={handleResetLogo} disabled={brandingBusy || !branding?.customLogo}>Reset to default</Button>
-                {branding?.customLogo && <Typography variant="body2" color="text.secondary">Current file: {branding.filename || "custom logo"}</Typography>}
               </Stack>
             </Stack>
           </CardContent>
