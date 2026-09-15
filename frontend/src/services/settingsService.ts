@@ -52,7 +52,14 @@ export interface RemediationSlaSettings {
   escalationEmails: string[];
 }
 
-export interface BrandingSettings {
+export interface BrandingPalette {
+  primaryColor: string;
+  secondaryColor: string;
+  navigationColor: string;
+  backgroundColor: string;
+}
+
+export interface BrandingSettings extends BrandingPalette {
   customLogo: boolean;
   filename: string | null;
   updatedAt: string | null;
@@ -78,15 +85,11 @@ async function expectJson<T>(response: Response, fallback: string): Promise<T> {
 }
 
 export async function getSmtpSettings(): Promise<SmtpSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/smtp`, {
-    credentials: "include",
-  });
+  const response = await fetch(`${API_BASE_URL}/settings/smtp`, { credentials: "include" });
   return expectJson<SmtpSettings>(response, "Unable to load SMTP settings.");
 }
 
-export async function saveSmtpSettings(
-  payload: SmtpSettingsUpdate,
-): Promise<SmtpSettings> {
+export async function saveSmtpSettings(payload: SmtpSettingsUpdate): Promise<SmtpSettings> {
   const response = await fetch(`${API_BASE_URL}/settings/smtp`, {
     method: "PUT",
     credentials: "include",
@@ -103,21 +106,15 @@ export async function sendSmtpTest(recipient: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ recipient }),
   });
-  if (!response.ok) {
-    throw new Error(await readError(response, "Unable to send SMTP test email."));
-  }
+  if (!response.ok) throw new Error(await readError(response, "Unable to send SMTP test email."));
 }
 
 export async function getServiceDeskSettings(): Promise<ServiceDeskSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/service-desk`, {
-    credentials: "include",
-  });
+  const response = await fetch(`${API_BASE_URL}/settings/service-desk`, { credentials: "include" });
   return expectJson<ServiceDeskSettings>(response, "Unable to load Service Desk settings.");
 }
 
-export async function saveServiceDeskSettings(
-  payload: ServiceDeskSettingsUpdate,
-): Promise<ServiceDeskSettings> {
+export async function saveServiceDeskSettings(payload: ServiceDeskSettingsUpdate): Promise<ServiceDeskSettings> {
   const response = await fetch(`${API_BASE_URL}/settings/service-desk`, {
     method: "PUT",
     credentials: "include",
@@ -128,15 +125,11 @@ export async function saveServiceDeskSettings(
 }
 
 export async function getRemediationSlaSettings(): Promise<RemediationSlaSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/remediation-sla`, {
-    credentials: "include",
-  });
+  const response = await fetch(`${API_BASE_URL}/settings/remediation-sla`, { credentials: "include" });
   return expectJson<RemediationSlaSettings>(response, "Unable to load remediation SLA settings.");
 }
 
-export async function saveRemediationSlaSettings(
-  payload: RemediationSlaSettings,
-): Promise<RemediationSlaSettings> {
+export async function saveRemediationSlaSettings(payload: RemediationSlaSettings): Promise<RemediationSlaSettings> {
   const response = await fetch(`${API_BASE_URL}/settings/remediation-sla`, {
     method: "PUT",
     credentials: "include",
@@ -147,10 +140,26 @@ export async function saveRemediationSlaSettings(
 }
 
 export async function getBrandingSettings(): Promise<BrandingSettings> {
-  const response = await fetch(`${API_BASE_URL}/settings/branding`, {
+  const response = await fetch(`${API_BASE_URL}/settings/branding`, { credentials: "include" });
+  return expectJson<BrandingSettings>(response, "Unable to load branding settings.");
+}
+
+export async function saveBrandingPalette(payload: BrandingPalette): Promise<BrandingSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/branding/palette`, {
+    method: "PUT",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return expectJson<BrandingSettings>(response, "Unable to save branding colors.");
+}
+
+export async function resetBrandingPalette(): Promise<BrandingSettings> {
+  const response = await fetch(`${API_BASE_URL}/settings/branding/palette`, {
+    method: "DELETE",
     credentials: "include",
   });
-  return expectJson<BrandingSettings>(response, "Unable to load branding settings.");
+  return expectJson<BrandingSettings>(response, "Unable to reset branding colors.");
 }
 
 export function customLogoUrl(updatedAt?: string | null): string {
@@ -161,7 +170,6 @@ export function customLogoUrl(updatedAt?: string | null): string {
 export async function uploadLogo(file: File): Promise<BrandingSettings> {
   const form = new FormData();
   form.append("logo", file);
-
   const response = await fetch(`${API_BASE_URL}/settings/branding/logo`, {
     method: "PUT",
     credentials: "include",
