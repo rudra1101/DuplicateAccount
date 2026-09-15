@@ -1,0 +1,35 @@
+{
+  "service": {
+    "key": "domains",
+    "name": "IdentityAI Domains",
+    "description": "Top-level product domain access controls for the IdentityAI launcher",
+    "category": "Domains",
+    "route": "/home",
+    "icon": "domains",
+    "enabled": true,
+    "sortOrder": 5
+  },
+  "permissions": [
+    {
+      "code": "domain.account_intelligence.view",
+      "name": "Access Account Intelligence",
+      "description": "Access the Account Duplicate & Orphan Detection domain"
+    },
+    {
+      "code": "domain.account_heatmap.view",
+      "name": "Access Account Heatmap",
+      "description": "Access the Account Heatmap domain"
+    },
+    {
+      "code": "domain.non_human_identity.view",
+      "name": "Access Non-Human Identity",
+      "description": "Access the Non-Human Identity domain"
+    }
+  ],
+  "defaultRoles": {
+    "OWNER": "ALL",
+    "SUPER_ADMIN": "ALL",
+    "ADMIN": "ALL",
+    "USER": ["domain.account_intelligence.view"]
+  }
+}
