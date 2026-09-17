@@ -23,6 +23,7 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
+import Header from "../../components/layouts/Header";
 import {
   customLogoUrl,
   getBrandingSettings,
@@ -127,10 +128,12 @@ const ProductHome = () => {
         overflow: "hidden",
       }}
     >
+      <Header />
+
       <Container
         maxWidth={false}
         sx={{
-          minHeight: "100vh",
+          minHeight: "calc(100vh - 64px)",
           px: { xs: 2.5, sm: 4, lg: 6 },
           py: { xs: 4, lg: 5 },
           display: "grid",
