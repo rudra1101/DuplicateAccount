@@ -20,8 +20,6 @@ def _attribute_to_dict(attribute: SchemaAttributeRecord) -> dict:
         "required": attribute.required,
         "multiValued": attribute.multi_valued,
         "position": attribute.position,
-        # Internal duplicate-detection settings are returned for backend/admin
-        # compatibility, but the integration UI no longer exposes them.
         "useForMatching": attribute.use_for_matching,
         "matchType": attribute.match_type,
         "matchWeight": attribute.match_weight,
@@ -46,6 +44,7 @@ def _application_to_dict(application: ApplicationRecord) -> dict:
                 "id": active_schema.id,
                 "version": active_schema.version,
                 "name": active_schema.name,
+                "nativeIdentityAttribute": active_schema.native_identity_attribute,
                 "isActive": active_schema.is_active,
                 "attributes": [
                     _attribute_to_dict(attribute)
@@ -77,11 +76,6 @@ def get_applications_for_integration(
 
 
 def _schema_input_for_policy(app_input) -> list[dict]:
-    """Convert an application schema into the policy engine's input shape.
-
-    Matching fields received from the client are intentionally ignored. The
-    backend owns selection, comparison method, normalization and weighting.
-    """
     return [
         {
             "name": attribute.name,
@@ -125,24 +119,17 @@ def replace_integration_applications(
             application_id=application.id,
             version=1,
             name=app_input.schemaName or f"{app_input.name} schema",
+            native_identity_attribute=app_input.nativeIdentityAttribute,
             is_active=True,
         )
         db.add(schema)
         db.flush()
 
-        # Internal policy generation happens automatically. The application
-        # integrator supplies only the source schema; no manual weights or
-        # comparison rules are required from the UI.
         policy = generate_matching_policy(_schema_input_for_policy(app_input))
         policy_attributes = policy.get("attributes", [])
 
         for position, attribute_input in enumerate(app_input.attributes):
-            generated = (
-                policy_attributes[position]
-                if position < len(policy_attributes)
-                else {}
-            )
-
+            generated = policy_attributes[position] if position < len(policy_attributes) else {}
             attribute = SchemaAttributeRecord(
                 schema_id=schema.id,
                 name=attribute_input.name,
@@ -158,9 +145,7 @@ def replace_integration_applications(
                 use_for_matching=bool(generated.get("useForMatching", False)),
                 match_type=str(generated.get("matchType") or "NONE"),
                 match_weight=float(generated.get("matchWeight") or 0.0),
-                normalization_type=str(
-                    generated.get("normalizationType") or "NONE"
-                ),
+                normalization_type=str(generated.get("normalizationType") or "NONE"),
             )
             db.add(attribute)
 

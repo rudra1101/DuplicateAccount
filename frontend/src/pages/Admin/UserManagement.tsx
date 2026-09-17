@@ -59,12 +59,30 @@ export default function UserManagement() {
     void load();
   }, []);
 
+  const currentRole = currentUser?.role?.toUpperCase() ?? "";
+  const canManageOwner = currentRole === "OWNER";
+  const canManageSuperAdmin = currentRole === "OWNER" || currentRole === "SUPER_ADMIN";
+
   const availableRoles = roles.length
-    ? roles.filter((role) => role.name !== "OWNER" || currentUser?.role === "OWNER")
+    ? roles.filter((role) => {
+        if (role.name === "OWNER") return canManageOwner;
+        if (role.name === "SUPER_ADMIN") return canManageSuperAdmin;
+        return true;
+      })
     : [
+        ...(canManageSuperAdmin
+          ? [{ id: 0, name: "SUPER_ADMIN", description: "", isSystem: true, permissions: [] }]
+          : []),
         { id: 1, name: "ADMIN", description: "", isSystem: true, permissions: [] },
         { id: 2, name: "USER", description: "", isSystem: true, permissions: [] },
       ];
+
+  const canChangeTargetRole = (target: AuthUser) => {
+    const targetRole = target.role.toUpperCase();
+    if (targetRole === "OWNER") return canManageOwner;
+    if (targetRole === "SUPER_ADMIN") return canManageSuperAdmin;
+    return true;
+  };
 
   const handleCreate = async () => {
     try {
@@ -115,30 +133,32 @@ export default function UserManagement() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>{item.username}</TableCell>
-                <TableCell>{item.fullName}</TableCell>
-                <TableCell>{item.email}</TableCell>
-                <TableCell>
-                  {hasPermission("user.assign_role") ? (
-                    <TextField
-                      select
-                      size="small"
-                      value={item.role}
-                      onChange={(event) => void handleRoleChange(item, event.target.value)}
-                      disabled={item.role === "OWNER" && currentUser?.role !== "OWNER"}
-                      sx={{ minWidth: 150 }}
-                    >
-                      {availableRoles.map((role) => (
-                        <MenuItem key={role.name} value={role.name}>{role.name}</MenuItem>
-                      ))}
-                    </TextField>
-                  ) : item.role}
-                </TableCell>
-                <TableCell>{item.isActive ? "Active" : "Disabled"}</TableCell>
-              </TableRow>
-            ))}
+            {users.map((item) => {
+              const editableRole = hasPermission("user.assign_role") && canChangeTargetRole(item);
+              return (
+                <TableRow key={item.id}>
+                  <TableCell>{item.username}</TableCell>
+                  <TableCell>{item.fullName}</TableCell>
+                  <TableCell>{item.email}</TableCell>
+                  <TableCell>
+                    {editableRole ? (
+                      <TextField
+                        select
+                        size="small"
+                        value={item.role}
+                        onChange={(event) => void handleRoleChange(item, event.target.value)}
+                        sx={{ minWidth: 150 }}
+                      >
+                        {availableRoles.map((role) => (
+                          <MenuItem key={role.name} value={role.name}>{role.name}</MenuItem>
+                        ))}
+                      </TextField>
+                    ) : item.role}
+                  </TableCell>
+                  <TableCell>{item.isActive ? "Active" : "Disabled"}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </Paper>

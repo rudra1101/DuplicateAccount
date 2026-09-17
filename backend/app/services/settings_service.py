@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import re
 from dataclasses import dataclass
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -11,6 +12,13 @@ from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
 from app.db_models.application_settings import ApplicationSettingsRecord
+
+
+DEFAULT_BRANDING_PRIMARY = "#1565C0"
+DEFAULT_BRANDING_SECONDARY = "#1976D2"
+DEFAULT_BRANDING_NAVIGATION = "#0F172A"
+DEFAULT_BRANDING_BACKGROUND = "#F5F7FA"
+HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
 @dataclass(frozen=True)
@@ -181,14 +189,53 @@ def update_smtp_settings(
     return settings
 
 
+def _normalized_color(value: str, label: str) -> str:
+    candidate = value.strip()
+    if not HEX_COLOR_RE.fullmatch(candidate):
+        raise ValueError(f"{label} must be a six-digit hex color such as #1565C0.")
+    return candidate.upper()
+
+
 def branding_response(db: Session) -> dict:
     settings = get_application_settings(db)
     custom_logo = bool(settings and settings.logo_data and settings.logo_mime_type)
     return {
         "customLogo": custom_logo,
         "filename": settings.logo_filename if custom_logo and settings else None,
+        "primaryColor": settings.branding_primary_color if settings else DEFAULT_BRANDING_PRIMARY,
+        "secondaryColor": settings.branding_secondary_color if settings else DEFAULT_BRANDING_SECONDARY,
+        "navigationColor": settings.branding_navigation_color if settings else DEFAULT_BRANDING_NAVIGATION,
+        "backgroundColor": settings.branding_background_color if settings else DEFAULT_BRANDING_BACKGROUND,
         "updatedAt": settings.updated_at.isoformat() if settings and settings.updated_at else None,
     }
+
+
+def update_branding_palette(
+    db: Session,
+    *,
+    primary_color: str,
+    secondary_color: str,
+    navigation_color: str,
+    background_color: str,
+) -> ApplicationSettingsRecord:
+    settings = get_or_create_application_settings(db)
+    settings.branding_primary_color = _normalized_color(primary_color, "Primary color")
+    settings.branding_secondary_color = _normalized_color(secondary_color, "Secondary color")
+    settings.branding_navigation_color = _normalized_color(navigation_color, "Navigation color")
+    settings.branding_background_color = _normalized_color(background_color, "Background color")
+    db.commit()
+    db.refresh(settings)
+    return settings
+
+
+def reset_branding_palette(db: Session) -> ApplicationSettingsRecord:
+    return update_branding_palette(
+        db,
+        primary_color=DEFAULT_BRANDING_PRIMARY,
+        secondary_color=DEFAULT_BRANDING_SECONDARY,
+        navigation_color=DEFAULT_BRANDING_NAVIGATION,
+        background_color=DEFAULT_BRANDING_BACKGROUND,
+    )
 
 
 def save_logo(

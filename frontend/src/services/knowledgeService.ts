@@ -13,43 +13,43 @@ export interface KnowledgeDocument {
   updatedAt: string | null;
 }
 
-export async function getKnowledgeDocuments(): Promise<
-  KnowledgeDocument[]
-> {
-  const response = await fetch(
-    `${API_BASE_URL}/knowledge/documents`
-  );
+export interface KnowledgeChunk {
+  id: number;
+  chunkId: string;
+  chunkIndex: number;
+  pageNumber: number | null;
+  content: string;
+  characterCount: number;
+  createdAt: string | null;
+}
+
+export interface KnowledgeDocumentDetail extends KnowledgeDocument {
+  chunks: KnowledgeChunk[];
+}
+
+export async function getKnowledgeDocuments(): Promise<KnowledgeDocument[]> {
+  const response = await fetch(`${API_BASE_URL}/knowledge/documents`);
 
   if (!response.ok) {
-    throw new Error(
-      "Failed to load knowledge documents."
-    );
+    throw new Error("Failed to load knowledge documents.");
   }
 
   const data = await response.json();
 
-  if (Array.isArray(data)) {
-    return data;
-  }
-
-  if (Array.isArray(data.documents)) {
-    return data.documents;
-  }
-
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data.documents)) return data.documents;
   return [];
 }
 
 export async function getKnowledgeDocument(
-  documentId: number
-): Promise<KnowledgeDocument> {
+  documentId: number,
+): Promise<KnowledgeDocumentDetail> {
   const response = await fetch(
-    `${API_BASE_URL}/knowledge/documents/${documentId}`
+    `${API_BASE_URL}/knowledge/documents/${documentId}`,
   );
 
   if (!response.ok) {
-    throw new Error(
-      "Failed to load knowledge document."
-    );
+    throw new Error("Failed to load knowledge document.");
   }
 
   return response.json();
@@ -57,38 +57,24 @@ export async function getKnowledgeDocument(
 
 export async function uploadKnowledgeDocument(
   file: File,
-  name?: string
+  name?: string,
 ): Promise<unknown> {
   const formData = new FormData();
-
-  formData.append(
-    "file",
-    file
-  );
+  formData.append("file", file);
 
   if (name?.trim()) {
-    formData.append(
-      "name",
-      name.trim()
-    );
+    formData.append("name", name.trim());
   }
 
-  const response = await fetch(
-    `${API_BASE_URL}/knowledge/upload`,
-    {
-      method: "POST",
-      body: formData,
-    }
-  );
+  const response = await fetch(`${API_BASE_URL}/knowledge/upload`, {
+    method: "POST",
+    body: formData,
+  });
 
   if (!response.ok) {
-    const errorData = await response
-      .json()
-      .catch(() => null);
-
+    const errorData = await response.json().catch(() => null);
     throw new Error(
-      errorData?.detail ??
-      "Failed to upload knowledge document."
+      errorData?.detail ?? "Failed to upload knowledge document.",
     );
   }
 
@@ -96,23 +82,17 @@ export async function uploadKnowledgeDocument(
 }
 
 export async function deleteKnowledgeDocument(
-  documentId: number
+  documentId: number,
 ): Promise<void> {
   const response = await fetch(
     `${API_BASE_URL}/knowledge/documents/${documentId}`,
-    {
-      method: "DELETE",
-    }
+    { method: "DELETE" },
   );
 
   if (!response.ok) {
-    const errorData = await response
-      .json()
-      .catch(() => null);
-
+    const errorData = await response.json().catch(() => null);
     throw new Error(
-      errorData?.detail ??
-      "Failed to delete knowledge document."
+      errorData?.detail ?? "Failed to delete knowledge document.",
     );
   }
 }

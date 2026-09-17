@@ -1,0 +1,6 @@
+application,id,employeeId,samAccountName,mail,displayName,status,privileged,accountType,owner
+Active Directory,A1,1001,rshankar,rudra@company.com,Rudra Shankar,enabled,false,HUMAN,
+Active Directory,A2,1002,jdoe,john@company.com,John Doe,enabled,false,HUMAN,
+Active Directory,A3,1003,olduser,old@company.com,Old User,enabled,false,HUMAN,
+Active Directory,A4,9999,old.admin,old.admin@company.com,Old Admin,enabled,true,HUMAN,
+Active Directory,A5,,svc_sap,,SAP Service Account,enabled,false,SERVICE,SAP Support

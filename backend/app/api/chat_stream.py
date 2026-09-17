@@ -5,18 +5,11 @@ import re
 import uuid
 from typing import Any
 
-from fastapi import (
-    APIRouter,
-    Depends,
-)
-from fastapi.responses import (
-    StreamingResponse,
-)
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.ai.fast_agent_service import (
-    run_identity_agent_stream_fast,
-)
+from app.ai.fast_agent_service import run_identity_agent_stream_fast
 from app.ai.authorization import (
     permissions_for_user,
     reset_rudrix_actor,
@@ -25,18 +18,14 @@ from app.ai.authorization import (
     set_rudrix_permissions,
 )
 from app.auth import get_current_user
-from app.database.session import (
-    get_db,
-)
-from app.schemas.chat import (
-    ChatRequest,
-    ChatResponse,
-    ToolInvocationResponse,
-)
+from app.database.session import get_db
+from app.db_models.chat_conversation import ChatConversationRecord
+from app.schemas.chat import ChatRequest, ChatResponse, ToolInvocationResponse
 from app.services.chat_history_service import (
     get_or_create_chat_conversation,
     save_chat_message,
 )
+from app.services.chat_ownership_service import assign_new_conversation_owner
 from app.services.service_desk_service import create_ticket
 
 
@@ -62,12 +51,7 @@ def _event(event_type: str, **payload: Any) -> str:
     return json.dumps({"type": event_type, **payload}, default=str) + "\n"
 
 
-def _next_authorized_event(
-    iterator,
-    permissions: frozenset[str],
-    actor: str,
-):
-    """Advance one streaming step with the user's current Rudrix context."""
+def _next_authorized_event(iterator, permissions: frozenset[str], actor: str):
     permission_token = set_rudrix_permissions(permissions)
     actor_token = set_rudrix_actor(actor)
     try:
@@ -78,13 +62,6 @@ def _next_authorized_event(
 
 
 def _ticket_confirmation_arguments(payload: ChatRequest) -> dict[str, Any] | None:
-    """Recover a ticket action only from Rudrix's immediately prior confirmation.
-
-    A one-word confirmation is intentionally not sent back through the LLM to
-    reinterpret a destructive action. The preceding assistant message must have
-    explicitly asked for confirmation and contain the remediation item, target
-    account, and requested DISABLE/DELETE action.
-    """
     current = " ".join(str(payload.message or "").strip().lower().split())
     if current not in _CONFIRMATION_WORDS:
         return None
@@ -209,6 +186,11 @@ def stream_chat(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    if payload.conversationId:
+        existing = db.get(ChatConversationRecord, payload.conversationId)
+        if existing is not None and existing.user_id != user.id:
+            raise HTTPException(status_code=404, detail="Conversation not found.")
+
     conversation_id = payload.conversationId or str(uuid.uuid4())
     request = payload.model_copy(update={"conversationId": conversation_id})
 
@@ -257,10 +239,7 @@ def stream_chat(
                     event_type = event.get("type")
 
                     if event_type == "status":
-                        yield _event(
-                            "status",
-                            message=event.get("message", ""),
-                        )
+                        yield _event("status", message=event.get("message", ""))
                         continue
 
                     if event_type == "delta":
@@ -273,15 +252,19 @@ def stream_chat(
                         final_response = event.get("response")
 
             if final_response is None:
-                raise RuntimeError(
-                    "Rudrix streaming finished without a final response."
-                )
+                raise RuntimeError("Rudrix streaming finished without a final response.")
 
-            get_or_create_chat_conversation(
+            conversation = get_or_create_chat_conversation(
                 db,
                 conversation_id=conversation_id,
                 first_message=payload.message,
             )
+            if conversation is not None:
+                assign_new_conversation_owner(
+                    db,
+                    conversation=conversation,
+                    user_id=user.id,
+                )
             save_chat_message(
                 db,
                 conversation_id=conversation_id,
@@ -316,10 +299,7 @@ def stream_chat(
         except Exception:
             if not committed:
                 db.rollback()
-            yield _event(
-                "error",
-                message="AI assistant streaming request failed.",
-            )
+            yield _event("error", message="AI assistant streaming request failed.")
 
     return StreamingResponse(
         generate(),

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import LogoutIcon from "@mui/icons-material/Logout";
 import {
   AppBar,
@@ -12,26 +13,23 @@ import {
 import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
-import {
-  customLogoUrl,
-  getBrandingSettings,
-} from "../../services/settingsService";
+import { customLogoUrl, getBrandingSettings } from "../../services/settingsService";
 
 const DEFAULT_LOGO = "/nusummit-logo.svg";
 
 const Header = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
   const [logoSrc, setLogoSrc] = useState(DEFAULT_LOGO);
+  const canAccessAdministration =
+    hasPermission("user.view") ||
+    hasPermission("role.view") ||
+    hasPermission("settings.manage");
 
   const refreshBranding = useCallback(async () => {
     try {
       const branding = await getBrandingSettings();
-      setLogoSrc(
-        branding.customLogo
-          ? customLogoUrl(branding.updatedAt)
-          : DEFAULT_LOGO,
-      );
+      setLogoSrc(branding.customLogo ? customLogoUrl(branding.updatedAt) : DEFAULT_LOGO);
     } catch {
       setLogoSrc(DEFAULT_LOGO);
     }
@@ -39,13 +37,9 @@ const Header = () => {
 
   useEffect(() => {
     void refreshBranding();
-    const handleBrandingUpdated = () => {
-      void refreshBranding();
-    };
+    const handleBrandingUpdated = () => void refreshBranding();
     window.addEventListener("identityai-branding-updated", handleBrandingUpdated);
-    return () => {
-      window.removeEventListener("identityai-branding-updated", handleBrandingUpdated);
-    };
+    return () => window.removeEventListener("identityai-branding-updated", handleBrandingUpdated);
   }, [refreshBranding]);
 
   const handleLogout = async () => {
@@ -53,46 +47,76 @@ const Header = () => {
     navigate("/login", { replace: true });
   };
 
+  const navigationText = "var(--identityai-navigation-contrast, #FFFFFF)";
+
   return (
     <AppBar
       position="sticky"
       elevation={0}
       sx={{
         zIndex: (theme) => theme.zIndex.drawer + 1,
-        backgroundColor: "#0f172a",
-        color: "#FFFFFF",
-        borderBottom: "1px solid #1e293b",
+        backgroundColor: "var(--identityai-navigation, #0F172A)",
+        color: navigationText,
+        borderBottom: "1px solid rgba(128,128,128,0.28)",
       }}
     >
-      <Toolbar
-        sx={{
-          minHeight: { xs: 64, sm: 70 },
-          gap: 2,
-          px: { xs: 2, md: 3 },
-        }}
-      >
+      <Toolbar sx={{ minHeight: { xs: 64, sm: 70 }, gap: 2, px: { xs: 2, md: 3 } }}>
         <Box
-          component="img"
-          src={logoSrc}
-          alt="IdentityAI"
-          onError={() => setLogoSrc(DEFAULT_LOGO)}
+          component="button"
+          type="button"
+          aria-label="Return to IdentityAI home"
+          onClick={() => navigate("/home")}
           sx={{
-            height: { xs: 38, sm: 44 },
-            width: "auto",
-            maxWidth: { xs: 190, sm: 240 },
-            objectFit: "contain",
+            p: 0,
+            m: 0,
+            border: 0,
+            background: "transparent",
+            display: "flex",
+            alignItems: "center",
+            cursor: "pointer",
           }}
-        />
+        >
+          <Box
+            component="img"
+            src={logoSrc}
+            alt="IdentityAI"
+            onError={() => setLogoSrc(DEFAULT_LOGO)}
+            sx={{
+              height: { xs: 38, sm: 44 },
+              width: "auto",
+              maxWidth: { xs: 190, sm: 240 },
+              objectFit: "contain",
+            }}
+          />
+        </Box>
 
         <Box sx={{ flex: 1 }} />
 
         {user && (
           <Stack direction="row" spacing={1.5} alignItems="center">
+            {canAccessAdministration && (
+              <Button
+                color="inherit"
+                startIcon={<AdminPanelSettingsIcon />}
+                onClick={() => navigate("/platform-admin")}
+                sx={{
+                  textTransform: "none",
+                  color: navigationText,
+                  borderRadius: 2,
+                  px: 1.5,
+                  display: { xs: "none", md: "inline-flex" },
+                  "&:hover": { backgroundColor: "rgba(128,128,128,0.18)" },
+                }}
+              >
+                Administration
+              </Button>
+            )}
+
             <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
-              <Typography variant="body2" fontWeight={700} sx={{ color: "#FFFFFF" }}>
+              <Typography variant="body2" fontWeight={700} sx={{ color: navigationText }}>
                 {user.fullName}
               </Typography>
-              <Typography variant="caption" sx={{ color: "#94a3b8" }}>
+              <Typography variant="caption" sx={{ color: navigationText, opacity: 0.72 }}>
                 {user.username}
               </Typography>
             </Box>
@@ -102,9 +126,9 @@ const Header = () => {
               label={user.role}
               variant="outlined"
               sx={{
-                color: "#FFFFFF",
-                borderColor: "#64748b",
-                backgroundColor: "rgba(255,255,255,0.04)",
+                color: navigationText,
+                borderColor: "currentColor",
+                backgroundColor: "rgba(128,128,128,0.10)",
                 fontWeight: 700,
               }}
             />
@@ -115,12 +139,10 @@ const Header = () => {
               onClick={handleLogout}
               sx={{
                 textTransform: "none",
-                color: "#FFFFFF",
+                color: navigationText,
                 borderRadius: 2,
                 px: 1.5,
-                "&:hover": {
-                  backgroundColor: "#1e293b",
-                },
+                "&:hover": { backgroundColor: "rgba(128,128,128,0.18)" },
               }}
             >
               Logout
