@@ -31,22 +31,24 @@ def chat(
     user=Depends(get_current_user),
 ):
     try:
-        conversation_id = payload.conversationId or str(uuid.uuid4())
+        if payload.conversationId:
+            existing = db.get(ChatConversationRecord, payload.conversationId)
+            if existing is not None and existing.user_id != user.id:
+                raise HTTPException(status_code=404, detail="Conversation not found.")
 
-        existing = db.get(ChatConversationRecord, conversation_id)
-        if existing is not None and existing.user_id != user.id:
-            raise HTTPException(status_code=404, detail="Conversation not found.")
+        conversation_id = payload.conversationId or str(uuid.uuid4())
 
         conversation = get_or_create_conversation(
             db=db,
             conversation_id=conversation_id,
             first_message=payload.message,
         )
-        assign_new_conversation_owner(
-            db,
-            conversation=conversation,
-            user_id=user.id,
-        )
+        if conversation is not None:
+            assign_new_conversation_owner(
+                db,
+                conversation=conversation,
+                user_id=user.id,
+            )
 
         save_chat_message(
             db=db,
