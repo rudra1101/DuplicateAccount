@@ -259,11 +259,12 @@ def stream_chat(
                 conversation_id=conversation_id,
                 first_message=payload.message,
             )
-            assign_new_conversation_owner(
-                db,
-                conversation=conversation,
-                user_id=user.id,
-            )
+            if conversation is not None:
+                assign_new_conversation_owner(
+                    db,
+                    conversation=conversation,
+                    user_id=user.id,
+                )
             save_chat_message(
                 db,
                 conversation_id=conversation_id,
