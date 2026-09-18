@@ -42,7 +42,7 @@ const workspaces: Workspace[] = [
     id: "account-intelligence",
     name: "Duplicate and Orphan Account Detection",
     description:
-      "Discover duplicate accounts, identify orphan accounts, review findings, and manage source integrations.",
+      "Discover duplicate accounts, identify orphan accounts, review and remediate findings.",
     route: "/account-intelligence/dashboard",
     status: "ACTIVE",
     permission: "domain.account_intelligence.view",
@@ -125,7 +125,7 @@ const ProductHome = () => {
               color: "#07184b",
             }}
           >
-            IdentityAI Intelligent Operations
+            IdentityAI
           </Typography>
 
           <Typography
@@ -136,7 +136,7 @@ const ProductHome = () => {
               color: "primary.main",
             }}
           >
-            Intelligent Identity. Confident Decisions.
+            Intelligent Operations
           </Typography>
 
           <Typography

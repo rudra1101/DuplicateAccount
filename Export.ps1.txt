@@ -1,0 +1,39 @@
+$ErrorActionPreference = "Stop"
+
+$handoff = "C:\IdentityAI-Handoff"
+$repo = Get-Location
+
+Write-Host "Creating handoff folder..."
+New-Item -ItemType Directory -Force $handoff | Out-Null
+
+Write-Host "Exporting PostgreSQL database from Windows PostgreSQL..."
+docker compose --env-file backend/.env exec postgres `
+  pg_dump `
+  -h host.docker.internal `
+  -p 5432 `
+  -U identityai `
+  -d identityai `
+  -W `
+  -Fc `
+  -f /tmp/identityai_original_full.dump
+
+Write-Host "Copying database dump..."
+docker cp duplicateaccount-postgres-1:/tmp/identityai_original_full.dump `
+  "$handoff\identityai_original_full.dump"
+
+Write-Host "Copying environment configuration..."
+Copy-Item ".\backend\.env" "$handoff\backend.env" -Force
+
+Write-Host "Copying FAISS/vector data..."
+$vectorSource = ".\backend\app\ai\vector_store\data"
+$vectorDest = "$handoff\vector_store"
+
+if (Test-Path $vectorSource) {
+    Remove-Item $vectorDest -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item $vectorSource $vectorDest -Recurse -Force
+}
+
+Write-Host ""
+Write-Host "Export complete."
+Write-Host "Handoff created at:"
+Write-Host $handoff
