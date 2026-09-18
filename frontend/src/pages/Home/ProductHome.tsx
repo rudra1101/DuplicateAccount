@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import GridViewOutlinedIcon from "@mui/icons-material/GridViewOutlined";
 import SmartToyOutlinedIcon from "@mui/icons-material/SmartToyOutlined";
@@ -24,12 +24,6 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "../../auth/AuthContext";
 import Header from "../../components/layouts/Header";
-import {
-  customLogoUrl,
-  getBrandingSettings,
-} from "../../services/settingsService";
-
-const DEFAULT_LOGO = "/nusummit-logo.svg";
 
 type WorkspaceStatus = "ACTIVE" | "DISABLED" | "COMING_SOON";
 
@@ -86,27 +80,6 @@ const workspaces: Workspace[] = [
 const ProductHome = () => {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
-  const [logoSrc, setLogoSrc] = useState(DEFAULT_LOGO);
-
-  const refreshBranding = useCallback(async () => {
-    try {
-      const branding = await getBrandingSettings();
-      setLogoSrc(
-        branding.customLogo
-          ? customLogoUrl(branding.updatedAt)
-          : DEFAULT_LOGO,
-      );
-    } catch {
-      setLogoSrc(DEFAULT_LOGO);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshBranding();
-    const handleBrandingUpdated = () => void refreshBranding();
-    window.addEventListener("identityai-branding-updated", handleBrandingUpdated);
-    return () => window.removeEventListener("identityai-branding-updated", handleBrandingUpdated);
-  }, [refreshBranding]);
 
   const visibleWorkspaces = useMemo(
     () =>
@@ -143,20 +116,6 @@ const ProductHome = () => {
         }}
       >
         <Box sx={{ position: "relative", minWidth: 0 }}>
-          <Box
-            component="img"
-            src={logoSrc}
-            alt="IdentityAI organization logo"
-            onError={() => setLogoSrc(DEFAULT_LOGO)}
-            sx={{
-              height: { xs: 42, sm: 50 },
-              width: "auto",
-              maxWidth: 250,
-              objectFit: "contain",
-              mb: { xs: 4, md: 5 },
-            }}
-          />
-
           <Typography
             sx={{
               fontSize: { xs: "3rem", sm: "4rem", lg: "4.4rem" },
@@ -166,7 +125,7 @@ const ProductHome = () => {
               color: "#07184b",
             }}
           >
-            IdentityAI
+            IdentityAI Intelligent Operations
           </Typography>
 
           <Typography
