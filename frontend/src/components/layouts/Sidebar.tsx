@@ -88,7 +88,7 @@ const Sidebar = () => {
             IdentityAI
           </Typography>
           <Typography variant="caption" sx={{ color: navigationText, opacity: 0.7 }}>
-            Account Intelligence Platform
+            Intelligent Operations
           </Typography>
         </Box>
       </Toolbar>
