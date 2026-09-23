@@ -82,7 +82,7 @@ const PendingDuplicateGroupCard = ({
             color="text.secondary"
             fontWeight={700}
           >
-            Potential Duplicate Group #{candidate.id}
+            Possible Duplicate #{candidate.id}
           </Typography>
 
           <Stack

@@ -160,7 +160,7 @@ const ReviewQueue = () => {
             candidateFailures.push(
               result.reason instanceof Error
                 ? result.reason.message
-                : "Unable to load pending duplicate groups.",
+                : "Unable to load possible duplicates.",
             );
           }
         }
@@ -249,20 +249,17 @@ const ReviewQueue = () => {
   };
 
 
-  const groupedMatchCount =
+  const totalPossibleDuplicates =
     applications.reduce(
       (total, application) =>
-        total + application.duplicateGroups,
+        total + application.duplicateAccounts,
       0,
-    );
-
-  const totalPotentialGroups =
-    groupedMatchCount
+    )
     + reviewCandidates.length;
 
 
   return (
-    <PageContainer title="Review Potential Duplicate Groups">
+    <PageContainer title="Review Possible Duplicates">
       <Box
         sx={{
           display: "flex",
@@ -280,7 +277,7 @@ const ReviewQueue = () => {
             variant="h5"
             fontWeight={700}
           >
-            Review Potential Duplicate Groups
+            Review Possible Duplicates
           </Typography>
 
           <Typography
@@ -288,8 +285,8 @@ const ReviewQueue = () => {
             color="text.secondary"
             sx={{ mt: 1 }}
           >
-            Review every detected group in one place. The status identifies
-            which potential duplicate groups still require a decision.
+            Review all accounts flagged as possible duplicates by application. The status identifies
+            which possible duplicates still require a decision.
           </Typography>
 
           <Stack
@@ -301,7 +298,7 @@ const ReviewQueue = () => {
           >
             <Chip
               size="small"
-              label={`${totalPotentialGroups.toLocaleString()} potential groups`}
+              label={`${totalPossibleDuplicates.toLocaleString()} possible duplicates`}
               variant="outlined"
             />
             <Chip

@@ -13,7 +13,6 @@ import { formatDateTime } from "../../utils/dateTime";
 export interface ApplicationSummary {
   application: string;
   totalAccounts: number;
-  duplicateGroups: number;
   duplicateAccounts: number;
   highConfidence: number;
   pendingReviewGroups?: number;
@@ -60,19 +59,14 @@ const ApplicationCard = ({
             </strong>
           </Typography>
 
-          <Typography>
-            Potential Duplicate Groups
-            <strong>
-              {" "}
-              {application.duplicateGroups.toLocaleString()}
-            </strong>
-          </Typography>
-
           <Typography color="error.main">
             Possible Duplicates
             <strong>
               {" "}
-              {application.duplicateAccounts.toLocaleString()}
+              {(
+                application.duplicateAccounts
+                + (application.pendingReviewGroups ?? 0)
+              ).toLocaleString()}
             </strong>
           </Typography>
 
