@@ -39,11 +39,17 @@ import {
 import PageContainer from "../../components/common/PageContainer";
 import DuplicatePairList from "../../components/review/DuplicatePairList";
 import AccountComparison from "../../components/review/AccountComparison";
+import PendingDuplicateGroupCard, {
+  type PendingGroupCandidate,
+} from "../../components/review/PendingDuplicateGroupCard";
 import {
   type DuplicateGroup,
   type DuplicateGroupDetails,
+  type ReviewDecision,
   getDuplicateGroupDetails,
   getDuplicateGroups,
+  getStandaloneReviewCandidates,
+  submitStandaloneReviewDecision,
 } from "../../services/reviewService";
 
 type ConfidenceFilter = "all" | "95" | "90" | "80" | "70" | "50";
@@ -76,6 +82,10 @@ const ApplicationReview = () => {
   const [searchText, setSearchText] = useState("");
   const [confidenceFilter, setConfidenceFilter] = useState<ConfidenceFilter>("all");
   const [duplicateCountFilter, setDuplicateCountFilter] = useState<DuplicateCountFilter>("all");
+  const [pendingGroups, setPendingGroups] = useState<PendingGroupCandidate[]>([]);
+  const [loadingPendingGroups, setLoadingPendingGroups] = useState(true);
+  const [pendingGroupsError, setPendingGroupsError] = useState("");
+  const [savingPendingGroupId, setSavingPendingGroupId] = useState<number | null>(null);
 
   const loadDetails = useCallback(
     async (group: DuplicateGroup) => {
@@ -148,13 +158,91 @@ const ApplicationReview = () => {
     [applicationName, integrationId, loadDetails],
   );
 
+  const loadPendingGroups = useCallback(async () => {
+    if (!applicationName) {
+      setLoadingPendingGroups(false);
+      return;
+    }
+
+    try {
+      setLoadingPendingGroups(true);
+      setPendingGroupsError("");
+
+      const candidates =
+        await getStandaloneReviewCandidates(
+          integrationId,
+        );
+
+      setPendingGroups(
+        candidates
+          .filter(
+            (candidate) =>
+              candidate.application
+                === applicationName,
+          )
+          .map((candidate) => ({
+            ...candidate,
+            integrationId,
+            integrationName,
+          }))
+          .sort(
+            (left, right) =>
+              right.confidence
+              - left.confidence,
+          ),
+      );
+    } catch (loadError) {
+      setPendingGroupsError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Unable to load pending duplicate groups.",
+      );
+    } finally {
+      setLoadingPendingGroups(false);
+    }
+  }, [
+    applicationName,
+    integrationId,
+    integrationName,
+  ]);
+
   useEffect(() => {
     void loadGroups();
-  }, [loadGroups]);
+    void loadPendingGroups();
+  }, [loadGroups, loadPendingGroups]);
 
   const handleReviewStateChanged = useCallback(async () => {
     await loadGroups(selectedGroup?.groupId ?? null);
   }, [loadGroups, selectedGroup?.groupId]);
+
+  const handlePendingGroupDecision = async (
+    candidate: PendingGroupCandidate,
+    decision: ReviewDecision,
+  ) => {
+    try {
+      setSavingPendingGroupId(candidate.id);
+      setPendingGroupsError("");
+
+      await submitStandaloneReviewDecision(
+        candidate.id,
+        { decision },
+      );
+
+      setPendingGroups((current) =>
+        current.filter(
+          (item) => item.id !== candidate.id,
+        ),
+      );
+    } catch (saveError) {
+      setPendingGroupsError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Unable to save the review decision.",
+      );
+    } finally {
+      setSavingPendingGroupId(null);
+    }
+  };
 
   const filteredGroups = useMemo(() => {
     const search = searchText.trim().toLowerCase();
@@ -179,6 +267,54 @@ const ApplicationReview = () => {
       return matchesSearch && matchesConfidence && matchesDuplicateCount;
     });
   }, [groups, searchText, confidenceFilter, duplicateCountFilter]);
+
+  const filteredPendingGroups = useMemo(() => {
+    const search = searchText.trim().toLowerCase();
+    const minimumConfidence =
+      confidenceFilter === "all"
+        ? 0
+        : Number(confidenceFilter);
+
+    return pendingGroups.filter((candidate) => {
+      const account1 = candidate.account1 ?? {};
+      const account2 = candidate.account2 ?? {};
+      const searchableValues = [
+        candidate.id,
+        account1.username,
+        account1.displayName,
+        account1.email,
+        account2.username,
+        account2.displayName,
+        account2.email,
+      ];
+
+      const matchesSearch =
+        search === ""
+        || searchableValues.some(
+          (value) =>
+            String(value ?? "")
+              .toLowerCase()
+              .includes(search),
+        );
+      const matchesConfidence =
+        candidate.confidence
+        >= minimumConfidence;
+      const matchesGroupSize =
+        duplicateCountFilter === "all"
+        || duplicateCountFilter === "1";
+
+      return (
+        matchesSearch
+        && matchesConfidence
+        && matchesGroupSize
+      );
+    });
+  }, [
+    pendingGroups,
+    searchText,
+    confidenceFilter,
+    duplicateCountFilter,
+  ]);
 
   useEffect(() => {
     if (
@@ -205,9 +341,22 @@ const ApplicationReview = () => {
     (total, group) => total + group.duplicates,
     0,
   );
-  const highConfidenceCount = groups.filter(
-    (group) => group.highestConfidence >= 95,
-  ).length;
+  const highConfidenceCount =
+    groups.filter(
+      (group) =>
+        group.highestConfidence >= 95,
+    ).length
+    + pendingGroups.filter(
+      (candidate) =>
+        candidate.confidence >= 95,
+    ).length;
+
+  const totalGroupCount =
+    groups.length + pendingGroups.length;
+
+  const totalPossibleDuplicates =
+    duplicateAccountCount
+    + pendingGroups.length;
 
   const resolvedIntegrationName =
     details?.integrationName
@@ -245,8 +394,14 @@ const ApplicationReview = () => {
           </Typography>
 
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
-            <Chip size="small" label={`${groups.length} groups`} variant="outlined" />
-            <Chip size="small" label={`${duplicateAccountCount} possible duplicates`} variant="outlined" />
+            <Chip size="small" label={`${totalGroupCount} groups`} variant="outlined" />
+            <Chip size="small" label={`${totalPossibleDuplicates} possible duplicates`} variant="outlined" />
+            <Chip
+              size="small"
+              color="warning"
+              label={`${pendingGroups.length} pending review`}
+              variant="outlined"
+            />
             <Chip
               size="small"
               color="success"
@@ -270,8 +425,18 @@ const ApplicationReview = () => {
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
-            onClick={() => void loadGroups(selectedGroup?.groupId ?? null)}
-            disabled={loadingGroups || loadingDetails}
+            onClick={() => {
+              void loadGroups(
+                selectedGroup?.groupId
+                ?? null,
+              );
+              void loadPendingGroups();
+            }}
+            disabled={
+              loadingGroups
+              || loadingPendingGroups
+              || loadingDetails
+            }
           >
             Refresh
           </Button>
@@ -349,7 +514,7 @@ const ApplicationReview = () => {
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
-          Showing {filteredGroups.length} of {groups.length} groups
+          Showing {filteredGroups.length + filteredPendingGroups.length} of {totalGroupCount} groups
         </Typography>
       </Paper>
 
@@ -360,9 +525,11 @@ const ApplicationReview = () => {
           <CircularProgress />
         </Box>
       ) : groups.length === 0 ? (
-        <Alert severity="info">
-          No potential duplicate groups were found for {applicationName} in {resolvedIntegrationName}.
-        </Alert>
+        pendingGroups.length === 0 ? (
+          <Alert severity="info">
+            No potential duplicate groups were found for {applicationName} in {resolvedIntegrationName}.
+          </Alert>
+        ) : null
       ) : (
         <Box
           sx={{
@@ -451,6 +618,92 @@ const ApplicationReview = () => {
               />
             )}
           </Box>
+        </Box>
+      )}
+
+      {(loadingPendingGroups
+        || pendingGroupsError
+        || filteredPendingGroups.length > 0) && (
+        <Box sx={{ mt: 3 }}>
+          <Paper
+            variant="outlined"
+            sx={{
+              px: 2.5,
+              py: 2,
+              mb: 2,
+              borderRadius: 3,
+              bgcolor: "action.hover",
+            }}
+          >
+            <Stack
+              direction={{
+                xs: "column",
+                sm: "row",
+              }}
+              justifyContent="space-between"
+              alignItems={{
+                xs: "flex-start",
+                sm: "center",
+              }}
+              spacing={1}
+            >
+              <Box>
+                <Typography
+                  variant="h6"
+                  fontWeight={700}
+                >
+                  Potential Duplicate Groups — Pending Review
+                </Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                >
+                  Pending groups for {applicationName}
+                </Typography>
+              </Box>
+              <Chip
+                size="small"
+                label={`${pendingGroups.length} pending review`}
+                color="warning"
+                variant="outlined"
+              />
+            </Stack>
+          </Paper>
+
+          {pendingGroupsError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {pendingGroupsError}
+            </Alert>
+          )}
+
+          {loadingPendingGroups ? (
+            <Box
+              sx={{
+                py: 5,
+                textAlign: "center",
+              }}
+            >
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Stack spacing={2}>
+              {filteredPendingGroups.map(
+                (candidate) => (
+                  <PendingDuplicateGroupCard
+                    key={candidate.id}
+                    candidate={candidate}
+                    saving={
+                      savingPendingGroupId
+                      === candidate.id
+                    }
+                    onDecision={
+                      handlePendingGroupDecision
+                    }
+                  />
+                ),
+              )}
+            </Stack>
+          )}
         </Box>
       )}
     </PageContainer>
