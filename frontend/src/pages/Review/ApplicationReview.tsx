@@ -20,6 +20,8 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -54,6 +56,7 @@ import {
 
 type ConfidenceFilter = "all" | "95" | "90" | "80" | "70" | "50";
 type DuplicateCountFilter = "all" | "1" | "2" | "3";
+type ReviewTab = "possible" | "pending";
 
 const WORKSPACE_HEIGHT = "clamp(620px, calc(100dvh - 245px), 860px)";
 
@@ -86,6 +89,7 @@ const ApplicationReview = () => {
   const [loadingPendingGroups, setLoadingPendingGroups] = useState(true);
   const [pendingGroupsError, setPendingGroupsError] = useState("");
   const [savingPendingGroupId, setSavingPendingGroupId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<ReviewTab>("possible");
 
   const loadDetails = useCallback(
     async (group: DuplicateGroup) => {
@@ -299,21 +303,15 @@ const ApplicationReview = () => {
       const matchesConfidence =
         candidate.confidence
         >= minimumConfidence;
-      const matchesGroupSize =
-        duplicateCountFilter === "all"
-        || duplicateCountFilter === "1";
-
       return (
         matchesSearch
         && matchesConfidence
-        && matchesGroupSize
       );
     });
   }, [
     pendingGroups,
     searchText,
     confidenceFilter,
-    duplicateCountFilter,
   ]);
 
   useEffect(() => {
@@ -335,7 +333,10 @@ const ApplicationReview = () => {
   const hasActiveFilters =
     searchText.trim() !== ""
     || confidenceFilter !== "all"
-    || duplicateCountFilter !== "all";
+    || (
+      activeTab === "possible"
+      && duplicateCountFilter !== "all"
+    );
 
   const duplicateAccountCount = groups.reduce(
     (total, group) => total + group.duplicates,
@@ -350,9 +351,6 @@ const ApplicationReview = () => {
       (candidate) =>
         candidate.confidence >= 95,
     ).length;
-
-  const totalGroupCount =
-    groups.length + pendingGroups.length;
 
   const totalPossibleDuplicates =
     duplicateAccountCount
@@ -442,6 +440,37 @@ const ApplicationReview = () => {
         </Stack>
       </Box>
 
+      <Paper
+        variant="outlined"
+        sx={{
+          borderRadius: 3,
+          mb: 2,
+          overflow: "hidden",
+        }}
+      >
+        <Tabs
+          value={activeTab}
+          onChange={(_, value: ReviewTab) => {
+            setActiveTab(value);
+            if (value === "pending") {
+              setDuplicateCountFilter("all");
+            }
+          }}
+          aria-label="Application duplicate review sections"
+          variant="scrollable"
+          scrollButtons="auto"
+        >
+          <Tab
+            value="possible"
+            label={`Possible Duplicates (${duplicateAccountCount})`}
+          />
+          <Tab
+            value="pending"
+            label={`Pending Review (${pendingGroups.length})`}
+          />
+        </Tabs>
+      </Paper>
+
       <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, mb: 2 }}>
         <Box
           sx={{
@@ -449,7 +478,9 @@ const ApplicationReview = () => {
             gridTemplateColumns: {
               xs: "1fr",
               sm: "1fr 1fr",
-              lg: "minmax(280px, 2fr) 1fr 1fr auto",
+              lg: activeTab === "possible"
+                ? "minmax(280px, 2fr) 1fr 1fr auto"
+                : "minmax(280px, 2fr) 1fr auto",
             },
             gap: 2,
             alignItems: "center",
@@ -458,8 +489,16 @@ const ApplicationReview = () => {
           <TextField
             fullWidth
             size="small"
-            label="Search primary account"
-            placeholder="Username or group ID"
+            label={
+              activeTab === "possible"
+                ? "Search primary account"
+                : "Search pending accounts"
+            }
+            placeholder={
+              activeTab === "possible"
+                ? "Username or group ID"
+                : "Username, email or match ID"
+            }
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
             slotProps={{
@@ -487,19 +526,21 @@ const ApplicationReview = () => {
             </Select>
           </FormControl>
 
-          <FormControl fullWidth size="small">
-            <InputLabel>Group Size</InputLabel>
-            <Select<DuplicateCountFilter>
-              label="Group Size"
-              value={duplicateCountFilter}
-              onChange={(event) => setDuplicateCountFilter(event.target.value)}
-            >
-              <MenuItem value="all">All sizes</MenuItem>
-              <MenuItem value="1">1 duplicate</MenuItem>
-              <MenuItem value="2">2 duplicates</MenuItem>
-              <MenuItem value="3">3 or more</MenuItem>
-            </Select>
-          </FormControl>
+          {activeTab === "possible" && (
+            <FormControl fullWidth size="small">
+              <InputLabel>Group Size</InputLabel>
+              <Select<DuplicateCountFilter>
+                label="Group Size"
+                value={duplicateCountFilter}
+                onChange={(event) => setDuplicateCountFilter(event.target.value)}
+              >
+                <MenuItem value="all">All sizes</MenuItem>
+                <MenuItem value="1">1 duplicate</MenuItem>
+                <MenuItem value="2">2 duplicates</MenuItem>
+                <MenuItem value="3">3 or more</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
           <Button
             color="inherit"
@@ -513,23 +554,25 @@ const ApplicationReview = () => {
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
-          Showing {filteredGroups.length + filteredPendingGroups.length} of {totalGroupCount} groups
+          {activeTab === "possible"
+            ? `Showing ${filteredGroups.length} of ${groups.length} duplicate matches`
+            : `Showing ${filteredPendingGroups.length} of ${pendingGroups.length} pending reviews`}
         </Typography>
       </Paper>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {activeTab === "possible" && (
+        <>
+          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {loadingGroups ? (
+          {loadingGroups ? (
         <Box sx={{ minHeight: 500, display: "flex", justifyContent: "center", alignItems: "center" }}>
           <CircularProgress />
         </Box>
-      ) : groups.length === 0 ? (
-        pendingGroups.length === 0 ? (
-          <Alert severity="info">
-            No possible duplicates were found for {applicationName} in {resolvedIntegrationName}.
-          </Alert>
-        ) : null
-      ) : (
+          ) : groups.length === 0 ? (
+            <Alert severity="info">
+              No possible duplicates are available in this tab for {applicationName}.
+            </Alert>
+          ) : (
         <Box
           sx={{
             display: "grid",
@@ -566,12 +609,12 @@ const ApplicationReview = () => {
               }}
             >
               <Typography variant="h6" fontWeight={700}>Possible Duplicates</Typography>
-              <Typography variant="caption" color="text.secondary">Select a group to review</Typography>
+              <Typography variant="caption" color="text.secondary">Select a match to review</Typography>
             </Box>
 
             <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", p: 1.5 }}>
               {filteredGroups.length === 0 ? (
-                <Alert severity="info">No groups match the selected filters.</Alert>
+                <Alert severity="info">No matches meet the selected filters.</Alert>
               ) : (
                 <DuplicatePairList
                   pairs={filteredGroups}
@@ -619,56 +662,11 @@ const ApplicationReview = () => {
           </Box>
         </Box>
       )}
+        </>
+      )}
 
-      {(loadingPendingGroups
-        || pendingGroupsError
-        || filteredPendingGroups.length > 0) && (
-        <Box sx={{ mt: 3 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              px: 2.5,
-              py: 2,
-              mb: 2,
-              borderRadius: 3,
-              bgcolor: "action.hover",
-            }}
-          >
-            <Stack
-              direction={{
-                xs: "column",
-                sm: "row",
-              }}
-              justifyContent="space-between"
-              alignItems={{
-                xs: "flex-start",
-                sm: "center",
-              }}
-              spacing={1}
-            >
-              <Box>
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  Possible Duplicates — Pending Review
-                </Typography>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                >
-                  Pending groups for {applicationName}
-                </Typography>
-              </Box>
-              <Chip
-                size="small"
-                label={`${pendingGroups.length} pending review`}
-                color="warning"
-                variant="outlined"
-              />
-            </Stack>
-          </Paper>
-
+      {activeTab === "pending" && (
+        <Box>
           {pendingGroupsError && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {pendingGroupsError}
@@ -678,12 +676,18 @@ const ApplicationReview = () => {
           {loadingPendingGroups ? (
             <Box
               sx={{
-                py: 5,
+                py: 8,
                 textAlign: "center",
               }}
             >
               <CircularProgress />
             </Box>
+          ) : filteredPendingGroups.length === 0 ? (
+            <Alert severity="info">
+              {pendingGroups.length === 0
+                ? `No duplicates are currently pending review for ${applicationName}.`
+                : "No pending reviews match the selected filters."}
+            </Alert>
           ) : (
             <Stack spacing={2}>
               {filteredPendingGroups.map(
