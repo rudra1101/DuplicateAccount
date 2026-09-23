@@ -2,6 +2,20 @@ import { API_BASE_URL } from "../config/api";
 
 const API_URL = API_BASE_URL;
 
+/**
+ * Chat endpoints require the HTTP-only login cookie. Local development uses
+ * different frontend and backend origins, so fetch must explicitly include it.
+ */
+function authenticatedFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    credentials: "include",
+  });
+}
+
 export interface ChatSource {
   documentId: number | null;
   documentName: string;
@@ -185,7 +199,7 @@ export async function askAI(
   useReasoningModel = false,
   signal?: AbortSignal,
 ): Promise<AIResponse> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat/`,
     {
       method: "POST",
@@ -229,7 +243,7 @@ export async function getKnowledgeDocument(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/knowledge/documents/${documentId}`,
   );
 
@@ -250,7 +264,7 @@ export async function getChatConversations(
     ),
   );
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/?limit=${safeLimit}`,
   );
 
@@ -274,7 +288,7 @@ export async function getChatConversation(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}`,
   );
 
@@ -300,7 +314,7 @@ export async function regenerateChatResponse(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}/regenerate`,
     {
       method: "POST",
@@ -344,7 +358,7 @@ export async function generateChatConversationTitle(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}/generate-title`,
     {
       method: "POST",
@@ -387,7 +401,7 @@ export async function renameChatConversation(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}`,
     {
       method: "PATCH",
@@ -420,7 +434,7 @@ export async function deleteChatConversation(
     );
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/${encodeURIComponent(normalizedId)}`,
     {
       method: "DELETE",
@@ -435,7 +449,7 @@ export async function deleteChatConversation(
 
 export async function clearChatConversations():
 Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-history/`,
     {
       method: "DELETE",
@@ -475,7 +489,7 @@ export async function submitChatFeedback(
   const normalizedComment =
     comment?.trim() || null;
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-feedback/`,
     {
       method: "POST",
@@ -514,7 +528,7 @@ export async function getConversationFeedback(
     return [];
   }
 
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat-feedback/conversation/${encodeURIComponent(normalizedId)}`,
   );
 
@@ -541,7 +555,7 @@ export async function streamAI(
   handlers: StreamAIHandlers = {},
   signal?: AbortSignal,
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authenticatedFetch(
     `${API_URL}/chat/stream`,
     {
       method: "POST",
