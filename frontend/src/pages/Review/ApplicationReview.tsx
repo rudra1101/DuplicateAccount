@@ -216,7 +216,7 @@ const ApplicationReview = () => {
     ?? (integrationId ? `Integration #${integrationId}` : "All integrations");
 
   return (
-    <PageContainer title="Review Duplicate Accounts">
+    <PageContainer title="Review Potential Duplicate Groups">
       <Breadcrumbs sx={{ mb: 1.5 }}>
         <Link component={RouterLink} to="/review" underline="hover" color="inherit">
           Review Queue
@@ -241,12 +241,12 @@ const ApplicationReview = () => {
             Integration: <strong>{resolvedIntegrationName}</strong>
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Select a duplicate group to compare its primary account with possible duplicate accounts.
+            Select a potential duplicate group to compare its primary account with the other flagged accounts.
           </Typography>
 
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
             <Chip size="small" label={`${groups.length} groups`} variant="outlined" />
-            <Chip size="small" label={`${duplicateAccountCount} duplicate accounts`} variant="outlined" />
+            <Chip size="small" label={`${duplicateAccountCount} possible duplicates`} variant="outlined" />
             <Chip
               size="small"
               color="success"
@@ -361,7 +361,7 @@ const ApplicationReview = () => {
         </Box>
       ) : groups.length === 0 ? (
         <Alert severity="info">
-          No duplicate groups were found for {applicationName} in {resolvedIntegrationName}.
+          No potential duplicate groups were found for {applicationName} in {resolvedIntegrationName}.
         </Alert>
       ) : (
         <Box
@@ -399,7 +399,7 @@ const ApplicationReview = () => {
                 backgroundColor: "background.paper",
               }}
             >
-              <Typography variant="h6" fontWeight={700}>Duplicate Groups</Typography>
+              <Typography variant="h6" fontWeight={700}>Potential Duplicate Groups</Typography>
               <Typography variant="caption" color="text.secondary">Select a group to review</Typography>
             </Box>
 
