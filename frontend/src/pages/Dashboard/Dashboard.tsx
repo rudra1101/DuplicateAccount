@@ -358,7 +358,7 @@ const Dashboard = () => {
         spacing={3}
         sx={{ mb: 4 }}
       >
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <KpiCard
             title="Accounts Scanned"
             value={Number(
@@ -369,18 +369,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
-          <KpiCard
-            title="Integrations"
-            value={
-              summary.integrations
-              ?? 0
-            }
-            color="#455a64"
-          />
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <KpiCard
             title="Applications"
             value={
@@ -391,7 +380,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <KpiCard
             title="Duplicate Groups"
             value={
@@ -402,7 +391,7 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 6, lg: 2.4 }}>
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }}>
           <KpiCard
             title="High Confidence"
             value={
