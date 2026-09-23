@@ -16,6 +16,7 @@ export interface ApplicationSummary {
   duplicateGroups: number;
   duplicateAccounts: number;
   highConfidence: number;
+  pendingReviewGroups?: number;
   lastScan: string | null;
 }
 
@@ -80,6 +81,14 @@ const ApplicationCard = ({
             <strong>
               {" "}
               {application.highConfidence.toLocaleString()}
+            </strong>
+          </Typography>
+
+          <Typography color="warning.main">
+            Pending Review
+            <strong>
+              {" "}
+              {(application.pendingReviewGroups ?? 0).toLocaleString()}
             </strong>
           </Typography>
 
