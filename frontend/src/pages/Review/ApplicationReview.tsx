@@ -303,21 +303,15 @@ const ApplicationReview = () => {
       const matchesConfidence =
         candidate.confidence
         >= minimumConfidence;
-      const matchesGroupSize =
-        duplicateCountFilter === "all"
-        || duplicateCountFilter === "1";
-
       return (
         matchesSearch
         && matchesConfidence
-        && matchesGroupSize
       );
     });
   }, [
     pendingGroups,
     searchText,
     confidenceFilter,
-    duplicateCountFilter,
   ]);
 
   useEffect(() => {
@@ -478,7 +472,9 @@ const ApplicationReview = () => {
             gridTemplateColumns: {
               xs: "1fr",
               sm: "1fr 1fr",
-              lg: "minmax(280px, 2fr) 1fr 1fr auto",
+              lg: activeTab === "possible"
+                ? "minmax(280px, 2fr) 1fr 1fr auto"
+                : "minmax(280px, 2fr) 1fr auto",
             },
             gap: 2,
             alignItems: "center",
@@ -487,8 +483,16 @@ const ApplicationReview = () => {
           <TextField
             fullWidth
             size="small"
-            label="Search primary account"
-            placeholder="Username or group ID"
+            label={
+              activeTab === "possible"
+                ? "Search primary account"
+                : "Search pending accounts"
+            }
+            placeholder={
+              activeTab === "possible"
+                ? "Username or group ID"
+                : "Username, email or match ID"
+            }
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
             slotProps={{
@@ -516,19 +520,21 @@ const ApplicationReview = () => {
             </Select>
           </FormControl>
 
-          <FormControl fullWidth size="small">
-            <InputLabel>Group Size</InputLabel>
-            <Select<DuplicateCountFilter>
-              label="Group Size"
-              value={duplicateCountFilter}
-              onChange={(event) => setDuplicateCountFilter(event.target.value)}
-            >
-              <MenuItem value="all">All sizes</MenuItem>
-              <MenuItem value="1">1 duplicate</MenuItem>
-              <MenuItem value="2">2 duplicates</MenuItem>
-              <MenuItem value="3">3 or more</MenuItem>
-            </Select>
-          </FormControl>
+          {activeTab === "possible" && (
+            <FormControl fullWidth size="small">
+              <InputLabel>Group Size</InputLabel>
+              <Select<DuplicateCountFilter>
+                label="Group Size"
+                value={duplicateCountFilter}
+                onChange={(event) => setDuplicateCountFilter(event.target.value)}
+              >
+                <MenuItem value="all">All sizes</MenuItem>
+                <MenuItem value="1">1 duplicate</MenuItem>
+                <MenuItem value="2">2 duplicates</MenuItem>
+                <MenuItem value="3">3 or more</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
           <Button
             color="inherit"
@@ -650,8 +656,6 @@ const ApplicationReview = () => {
           </Box>
         </Box>
       )}
-
-          )}
         </>
       )}
 
