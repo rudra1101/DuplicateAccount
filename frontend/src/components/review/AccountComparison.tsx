@@ -128,7 +128,7 @@ const AccountComparison = ({
         variant="outlined"
         sx={{ width: "100%", height: "100%", minHeight: 500, borderRadius: 3, p: 4 }}
       >
-        <Alert severity="info">No duplicate candidates were found.</Alert>
+        <Alert severity="info">No possible duplicate accounts were found.</Alert>
       </Paper>
     );
   }
@@ -139,7 +139,7 @@ const AccountComparison = ({
         variant="outlined"
         sx={{ width: "100%", height: "100%", minHeight: 500, borderRadius: 3, p: 4 }}
       >
-        <Alert severity="info">Select a duplicate candidate.</Alert>
+        <Alert severity="info">Select a possible duplicate account.</Alert>
       </Paper>
     );
   }
@@ -287,7 +287,7 @@ const AccountComparison = ({
                 <TableRow>
                   <TableCell><strong>Attribute</strong></TableCell>
                   <TableCell><strong>Primary Account</strong></TableCell>
-                  <TableCell><strong>Duplicate Candidate</strong></TableCell>
+                  <TableCell><strong>Possible Duplicate</strong></TableCell>
                   <TableCell align="center"><strong>Result</strong></TableCell>
                 </TableRow>
               </TableHead>
