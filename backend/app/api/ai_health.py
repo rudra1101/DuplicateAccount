@@ -26,7 +26,8 @@ def ai_health():
     settings = get_ai_settings()
 
     client = Client(
-        host=settings.ollama_base_url
+        host=settings.ollama_base_url,
+        trust_env=False,
     )
 
     try:
