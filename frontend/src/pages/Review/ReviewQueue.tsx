@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
 } from "react";
 
@@ -19,8 +18,6 @@ import {
   Grid,
   Paper,
   Stack,
-  Tab,
-  Tabs,
   Typography,
 } from "@mui/material";
 
@@ -43,8 +40,6 @@ import {
   submitStandaloneReviewDecision,
 } from "../../services/reviewService";
 
-
-type ReviewTab = "groups" | "candidates";
 
 type CandidateWithIntegration =
   StandaloneReviewCandidate & {
@@ -73,11 +68,6 @@ const displayValue = (
 
 const ReviewQueue = () => {
   const navigate = useNavigate();
-
-  const [
-    activeTab,
-    setActiveTab,
-  ] = useState<ReviewTab>("groups");
 
   const [
     applications,
@@ -198,7 +188,7 @@ const ReviewQueue = () => {
             candidateFailures.push(
               result.reason instanceof Error
                 ? result.reason.message
-                : "Unable to load review candidates.",
+                : "Unable to load pending duplicate groups.",
             );
           }
         }
@@ -314,7 +304,7 @@ const ReviewQueue = () => {
         );
       } catch (saveError) {
         console.error(
-          "Unable to save review candidate decision:",
+          "Unable to save duplicate-group decision:",
           saveError,
         );
 
@@ -329,15 +319,8 @@ const ReviewQueue = () => {
     };
 
 
-  const candidateCountLabel =
-    useMemo(
-      () => `Review Candidates (${reviewCandidates.length})`,
-      [reviewCandidates.length],
-    );
-
-
   return (
-    <PageContainer title="Review Queue">
+    <PageContainer title="Review Potential Duplicate Groups">
       <Box
         sx={{
           display: "flex",
@@ -355,7 +338,7 @@ const ReviewQueue = () => {
             variant="h5"
             fontWeight={700}
           >
-            Review Duplicate Accounts
+            Review Potential Duplicate Groups
           </Typography>
 
           <Typography
@@ -363,9 +346,9 @@ const ReviewQueue = () => {
             color="text.secondary"
             sx={{ mt: 1 }}
           >
-            Review confirmed duplicate groups
-            and evidence-aware candidates from
-            the latest completed integration scans.
+            Review every potential duplicate group from the latest
+            completed integration scans. Uncertain account pairs are
+            treated as two-account groups pending review.
           </Typography>
         </Box>
 
@@ -388,33 +371,6 @@ const ReviewQueue = () => {
             : "Refresh"}
         </Button>
       </Box>
-
-      <Paper
-        variant="outlined"
-        sx={{
-          borderRadius: 3,
-          mb: 3,
-          overflow: "hidden",
-        }}
-      >
-        <Tabs
-          value={activeTab}
-          onChange={(
-            _event,
-            value: ReviewTab,
-          ) => setActiveTab(value)}
-          sx={{ px: 1 }}
-        >
-          <Tab
-            value="groups"
-            label="Duplicate Groups"
-          />
-          <Tab
-            value="candidates"
-            label={candidateCountLabel}
-          />
-        </Tabs>
-      </Paper>
 
       {loading && (
         <Box
@@ -451,7 +407,6 @@ const ReviewQueue = () => {
 
       {!loading
         && !error
-        && activeTab === "groups"
         && applications.length === 0
         && (
           <Paper
@@ -502,7 +457,6 @@ const ReviewQueue = () => {
 
       {!loading
         && !error
-        && activeTab === "groups"
         && applications.length > 0
         && (
           <Grid
@@ -579,9 +533,17 @@ const ReviewQueue = () => {
 
       {!loading
         && !error
-        && activeTab === "candidates"
         && (
-          <Box>
+          <Box sx={{ mt: applications.length > 0 ? 4 : 0 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6" fontWeight={700}>
+                Pending Review Groups ({reviewCandidates.length})
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Two-account potential duplicate groups that require a reviewer decision.
+              </Typography>
+            </Box>
+
             {candidateError && (
               <Alert
                 severity="error"
@@ -612,15 +574,14 @@ const ReviewQueue = () => {
                   variant="h6"
                   fontWeight={700}
                 >
-                  No pending review candidates
+                  No pending duplicate groups
                 </Typography>
                 <Typography
                   color="text.secondary"
                   sx={{ mt: 1 }}
                 >
-                  Evidence-aware candidates will
-                  appear here when a scan finds
-                  uncertain duplicate pairs.
+                  Two-account groups will appear here when a scan
+                  finds uncertain potential duplicates.
                 </Typography>
               </Paper>
             ) : (
@@ -655,6 +616,13 @@ const ReviewQueue = () => {
                           }}
                         >
                           <Box>
+                            <Typography
+                              variant="overline"
+                              color="text.secondary"
+                              fontWeight={700}
+                            >
+                              Potential Duplicate Group #{candidate.id}
+                            </Typography>
                             <Stack
                               direction="row"
                               spacing={1}
