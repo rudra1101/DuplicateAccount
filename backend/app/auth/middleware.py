@@ -19,8 +19,8 @@ PUBLIC_PATHS = {
     "/api/health/",
     "/api/health/live",
     "/api/health/ready",
-    "/api/ai-health",
-    "/api/ai-health/",
+    "/api/ai/health",
+    "/api/ai/health/",
 }
 
 

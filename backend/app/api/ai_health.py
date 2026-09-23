@@ -14,6 +14,13 @@ router = APIRouter(
 )
 
 
+def _canonical_model_name(model: str) -> str:
+    normalized = str(model or "").strip()
+    if normalized.endswith(":latest"):
+        return normalized[:-7]
+    return normalized
+
+
 @router.get("/")
 def ai_health():
     settings = get_ai_settings()
@@ -43,10 +50,16 @@ def ai_health():
         settings.embedding_model,
     ]
 
+    installed_model_names = {
+        _canonical_model_name(model)
+        for model in installed_models
+    }
+
     missing_models = [
         model
         for model in required_models
-        if model not in installed_models
+        if _canonical_model_name(model)
+        not in installed_model_names
     ]
 
     return {

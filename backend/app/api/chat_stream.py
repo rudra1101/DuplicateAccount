@@ -19,6 +19,7 @@ from app.ai.authorization import (
 )
 from app.auth import get_current_user
 from app.database.session import get_db
+from app.observability import logger
 from app.db_models.chat_conversation import ChatConversationRecord
 from app.schemas.chat import ChatRequest, ChatResponse, ToolInvocationResponse
 from app.services.chat_history_service import (
@@ -49,6 +50,30 @@ _CONFIRMATION_WORDS = {
 
 def _event(event_type: str, **payload: Any) -> str:
     return json.dumps({"type": event_type, **payload}, default=str) + "\n"
+
+
+def _safe_stream_error_message(exc: Exception) -> str:
+    detail = str(exc or "").strip().lower()
+
+    if "ollama" in detail and any(
+        marker in detail
+        for marker in ("connect", "connection", "unavailable", "refused")
+    ):
+        return (
+            "Rudrix cannot connect to Ollama. Start Ollama and verify "
+            "the configured OLLAMA_BASE_URL."
+        )
+
+    if "model" in detail and any(
+        marker in detail
+        for marker in ("not found", "missing", "pull")
+    ):
+        return (
+            "A required Ollama model is not installed. Pull the configured "
+            "chat and embedding models, then try again."
+        )
+
+    return "AI assistant streaming request failed."
 
 
 def _next_authorized_event(iterator, permissions: frozenset[str], actor: str):
@@ -296,10 +321,21 @@ def stream_chat(
             if not committed:
                 db.rollback()
             raise
-        except Exception:
+        except Exception as exc:
             if not committed:
                 db.rollback()
-            yield _event("error", message="AI assistant streaming request failed.")
+            logger.exception(
+                "rudrix_stream_failed",
+                exc_info=exc,
+                extra={
+                    "conversation_id": conversation_id,
+                    "actor": actor,
+                },
+            )
+            yield _event(
+                "error",
+                message=_safe_stream_error_message(exc),
+            )
 
     return StreamingResponse(
         generate(),
