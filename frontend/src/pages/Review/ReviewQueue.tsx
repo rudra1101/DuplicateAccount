@@ -23,7 +23,6 @@ import {
 
 import RefreshIcon from "@mui/icons-material/Refresh";
 import InboxOutlinedIcon from "@mui/icons-material/InboxOutlined";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
 
 import PageContainer from "../../components/common/PageContainer";
 
@@ -319,6 +318,18 @@ const ReviewQueue = () => {
     };
 
 
+  const groupedMatchCount =
+    applications.reduce(
+      (total, application) =>
+        total + application.duplicateGroups,
+      0,
+    );
+
+  const totalPotentialGroups =
+    groupedMatchCount
+    + reviewCandidates.length;
+
+
   return (
     <PageContainer title="Review Potential Duplicate Groups">
       <Box
@@ -346,10 +357,29 @@ const ReviewQueue = () => {
             color="text.secondary"
             sx={{ mt: 1 }}
           >
-            Review every potential duplicate group from the latest
-            completed integration scans. Uncertain account pairs are
-            treated as two-account groups pending review.
+            Review every detected group in one place. The status identifies
+            which potential duplicate groups still require a decision.
           </Typography>
+
+          <Stack
+            direction="row"
+            spacing={1}
+            useFlexGap
+            flexWrap="wrap"
+            sx={{ mt: 1.5 }}
+          >
+            <Chip
+              size="small"
+              label={`${totalPotentialGroups.toLocaleString()} potential groups`}
+              variant="outlined"
+            />
+            <Chip
+              size="small"
+              label={`${reviewCandidates.length.toLocaleString()} pending review`}
+              color="warning"
+              variant="outlined"
+            />
+          </Stack>
         </Box>
 
         <Button
@@ -408,6 +438,7 @@ const ReviewQueue = () => {
       {!loading
         && !error
         && applications.length === 0
+        && reviewCandidates.length === 0
         && (
           <Paper
             variant="outlined"
@@ -534,16 +565,11 @@ const ReviewQueue = () => {
       {!loading
         && !error
         && (
-          <Box sx={{ mt: applications.length > 0 ? 4 : 0 }}>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="h6" fontWeight={700}>
-                Pending Review Groups ({reviewCandidates.length})
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Two-account potential duplicate groups that require a reviewer decision.
-              </Typography>
-            </Box>
-
+          reviewCandidates.length > 0
+          || Boolean(candidateError)
+        )
+        && (
+          <Box sx={{ mt: applications.length > 0 ? 3 : 0 }}>
             {candidateError && (
               <Alert
                 severity="error"
@@ -553,38 +579,7 @@ const ReviewQueue = () => {
               </Alert>
             )}
 
-            {reviewCandidates.length === 0 ? (
-              <Paper
-                variant="outlined"
-                sx={{
-                  p: 6,
-                  borderRadius: 3,
-                  textAlign: "center",
-                  borderStyle: "dashed",
-                }}
-              >
-                <CompareArrowsIcon
-                  sx={{
-                    fontSize: 64,
-                    color: "text.secondary",
-                    mb: 2,
-                  }}
-                />
-                <Typography
-                  variant="h6"
-                  fontWeight={700}
-                >
-                  No pending duplicate groups
-                </Typography>
-                <Typography
-                  color="text.secondary"
-                  sx={{ mt: 1 }}
-                >
-                  Two-account groups will appear here when a scan
-                  finds uncertain potential duplicates.
-                </Typography>
-              </Paper>
-            ) : (
+            {reviewCandidates.length > 0 && (
               <Stack spacing={2}>
                 {reviewCandidates.map(
                   (candidate) => {
@@ -630,6 +625,11 @@ const ReviewQueue = () => {
                               flexWrap="wrap"
                               sx={{ mb: 1 }}
                             >
+                              <Chip
+                                size="small"
+                                label="Pending Review"
+                                color="warning"
+                              />
                               <Chip
                                 size="small"
                                 label={`${candidate.confidence}% confidence`}
