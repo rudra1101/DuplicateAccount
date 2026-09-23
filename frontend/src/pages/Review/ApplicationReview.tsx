@@ -195,7 +195,7 @@ const ApplicationReview = () => {
       setPendingGroupsError(
         loadError instanceof Error
           ? loadError.message
-          : "Unable to load pending duplicate groups.",
+          : "Unable to load possible duplicates.",
       );
     } finally {
       setLoadingPendingGroups(false);
@@ -365,7 +365,7 @@ const ApplicationReview = () => {
     ?? (integrationId ? `Integration #${integrationId}` : "All integrations");
 
   return (
-    <PageContainer title="Review Potential Duplicate Groups">
+    <PageContainer title="Review Possible Duplicates">
       <Breadcrumbs sx={{ mb: 1.5 }}>
         <Link component={RouterLink} to="/review" underline="hover" color="inherit">
           Review Queue
@@ -390,11 +390,10 @@ const ApplicationReview = () => {
             Integration: <strong>{resolvedIntegrationName}</strong>
           </Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Select a potential duplicate group to compare its primary account with the other flagged accounts.
+            Select a possible duplicate to compare its primary account with the other flagged accounts.
           </Typography>
 
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
-            <Chip size="small" label={`${totalGroupCount} groups`} variant="outlined" />
             <Chip size="small" label={`${totalPossibleDuplicates} possible duplicates`} variant="outlined" />
             <Chip
               size="small"
@@ -527,7 +526,7 @@ const ApplicationReview = () => {
       ) : groups.length === 0 ? (
         pendingGroups.length === 0 ? (
           <Alert severity="info">
-            No potential duplicate groups were found for {applicationName} in {resolvedIntegrationName}.
+            No possible duplicates were found for {applicationName} in {resolvedIntegrationName}.
           </Alert>
         ) : null
       ) : (
@@ -566,7 +565,7 @@ const ApplicationReview = () => {
                 backgroundColor: "background.paper",
               }}
             >
-              <Typography variant="h6" fontWeight={700}>Potential Duplicate Groups</Typography>
+              <Typography variant="h6" fontWeight={700}>Possible Duplicates</Typography>
               <Typography variant="caption" color="text.secondary">Select a group to review</Typography>
             </Box>
 
@@ -652,7 +651,7 @@ const ApplicationReview = () => {
                   variant="h6"
                   fontWeight={700}
                 >
-                  Potential Duplicate Groups — Pending Review
+                  Possible Duplicates — Pending Review
                 </Typography>
                 <Typography
                   variant="body2"
