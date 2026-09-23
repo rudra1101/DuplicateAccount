@@ -318,6 +318,35 @@ const ReviewQueue = () => {
     };
 
 
+  const pendingGroupsByApplication =
+    Array.from(
+      reviewCandidates.reduce(
+        (groups, candidate) => {
+          const applicationName =
+            candidate.application
+            || "Unknown Application";
+          const existing =
+            groups.get(applicationName)
+            ?? [];
+
+          existing.push(candidate);
+          groups.set(
+            applicationName,
+            existing,
+          );
+
+          return groups;
+        },
+        new Map<
+          string,
+          CandidateWithIntegration[]
+        >(),
+      ),
+    ).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+
+
   const groupedMatchCount =
     applications.reduce(
       (total, application) =>
@@ -580,9 +609,61 @@ const ReviewQueue = () => {
             )}
 
             {reviewCandidates.length > 0 && (
-              <Stack spacing={2}>
-                {reviewCandidates.map(
-                  (candidate) => {
+              <Stack spacing={3}>
+                {pendingGroupsByApplication.map(
+                  ([
+                    applicationName,
+                    applicationCandidates,
+                  ]) => (
+                    <Box key={applicationName}>
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          px: 2.5,
+                          py: 1.75,
+                          mb: 2,
+                          borderRadius: 3,
+                          bgcolor: "action.hover",
+                        }}
+                      >
+                        <Stack
+                          direction={{
+                            xs: "column",
+                            sm: "row",
+                          }}
+                          justifyContent="space-between"
+                          alignItems={{
+                            xs: "flex-start",
+                            sm: "center",
+                          }}
+                          spacing={1}
+                        >
+                          <Box>
+                            <Typography
+                              variant="h6"
+                              fontWeight={700}
+                            >
+                              {applicationName}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                            >
+                              Potential duplicate groups for this application
+                            </Typography>
+                          </Box>
+                          <Chip
+                            size="small"
+                            label={`${applicationCandidates.length} pending review`}
+                            color="warning"
+                            variant="outlined"
+                          />
+                        </Stack>
+                      </Paper>
+
+                      <Stack spacing={2}>
+                        {applicationCandidates.map(
+                          (candidate) => {
                     const account1 =
                       candidate.account1 ?? {};
                     const account2 =
@@ -838,7 +919,11 @@ const ReviewQueue = () => {
                         )}
                       </Paper>
                     );
-                  },
+                          },
+                        )}
+                      </Stack>
+                    </Box>
+                  ),
                 )}
               </Stack>
             )}
