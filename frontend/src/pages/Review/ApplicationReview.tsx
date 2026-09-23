@@ -333,7 +333,10 @@ const ApplicationReview = () => {
   const hasActiveFilters =
     searchText.trim() !== ""
     || confidenceFilter !== "all"
-    || duplicateCountFilter !== "all";
+    || (
+      activeTab === "possible"
+      && duplicateCountFilter !== "all"
+    );
 
   const duplicateAccountCount = groups.reduce(
     (total, group) => total + group.duplicates,
@@ -449,6 +452,9 @@ const ApplicationReview = () => {
           value={activeTab}
           onChange={(_, value: ReviewTab) => {
             setActiveTab(value);
+            if (value === "pending") {
+              setDuplicateCountFilter("all");
+            }
           }}
           aria-label="Application duplicate review sections"
           variant="scrollable"
@@ -603,12 +609,12 @@ const ApplicationReview = () => {
               }}
             >
               <Typography variant="h6" fontWeight={700}>Possible Duplicates</Typography>
-              <Typography variant="caption" color="text.secondary">Select a group to review</Typography>
+              <Typography variant="caption" color="text.secondary">Select a match to review</Typography>
             </Box>
 
             <Box sx={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", p: 1.5 }}>
               {filteredGroups.length === 0 ? (
-                <Alert severity="info">No groups match the selected filters.</Alert>
+                <Alert severity="info">No matches meet the selected filters.</Alert>
               ) : (
                 <DuplicatePairList
                   pairs={filteredGroups}
