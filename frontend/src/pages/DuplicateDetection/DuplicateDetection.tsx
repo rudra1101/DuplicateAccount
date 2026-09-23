@@ -180,8 +180,11 @@ const DuplicateDetection = () => {
     return filteredRows.slice(start, start + rowsPerPage);
   }, [filteredRows, page, rowsPerPage]);
 
-  const totalCandidates = useMemo(
-    () => filteredRows.reduce((sum, row) => sum + row.duplicates, 0),
+  const accountsFlagged = useMemo(
+    () => filteredRows.reduce(
+      (sum, row) => sum + row.duplicates + 1,
+      0,
+    ),
     [filteredRows],
   );
 
@@ -237,9 +240,9 @@ const DuplicateDetection = () => {
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ mb: 3 }}>
         {[
-          ["Duplicate Groups", filteredRows.length],
-          ["Candidate Accounts", totalCandidates],
-          ["High Confidence", highConfidence],
+          ["Potential Duplicate Groups", filteredRows.length],
+          ["Accounts Flagged", accountsFlagged],
+          ["High-Confidence Groups", highConfidence],
         ].map(([label, value]) => (
           <Paper key={String(label)} variant="outlined" sx={{ px: 2.5, py: 2, borderRadius: 3, minWidth: 190 }}>
             <Typography variant="body2" color="text.secondary">{label}</Typography>
@@ -297,7 +300,7 @@ const DuplicateDetection = () => {
                 <TableCell>Primary Account</TableCell>
                 <TableCell>Application</TableCell>
                 <TableCell>Integration</TableCell>
-                <TableCell align="center">Candidates</TableCell>
+                <TableCell align="center">Possible Duplicates</TableCell>
                 <TableCell align="center">Confidence</TableCell>
                 <TableCell align="right">Action</TableCell>
               </TableRow>
@@ -392,7 +395,7 @@ const DuplicateDetection = () => {
               </Stack>
             </Paper>
 
-            <Typography variant="subtitle1" fontWeight={700}>Candidate Accounts ({details.duplicates.length})</Typography>
+            <Typography variant="subtitle1" fontWeight={700}>Possible Duplicate Accounts ({details.duplicates.length})</Typography>
 
             {details.duplicates.map((candidate) => {
               const account = candidate.account ?? {};
