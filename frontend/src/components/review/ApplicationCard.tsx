@@ -60,7 +60,7 @@ const ApplicationCard = ({
           </Typography>
 
           <Typography>
-            Duplicate Groups
+            Potential Duplicate Groups
             <strong>
               {" "}
               {application.duplicateGroups.toLocaleString()}
@@ -68,7 +68,7 @@ const ApplicationCard = ({
           </Typography>
 
           <Typography color="error.main">
-            Duplicate Accounts
+            Possible Duplicates
             <strong>
               {" "}
               {application.duplicateAccounts.toLocaleString()}
