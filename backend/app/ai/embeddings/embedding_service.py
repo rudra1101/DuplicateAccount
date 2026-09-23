@@ -27,7 +27,8 @@ class EmbeddingService:
         )
 
         self._client = Client(
-            host=self._settings.ollama_base_url
+            host=self._settings.ollama_base_url,
+            trust_env=False,
         )
 
         self._model = (
