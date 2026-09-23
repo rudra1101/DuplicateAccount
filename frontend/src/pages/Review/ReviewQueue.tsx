@@ -14,7 +14,6 @@ import {
   Button,
   Chip,
   CircularProgress,
-  Divider,
   Grid,
   Paper,
   Stack,
@@ -31,12 +30,10 @@ import ApplicationCard, {
 } from "../../components/review/ApplicationCard";
 
 import {
-  type ReviewDecision,
   type ReviewSummary,
   type StandaloneReviewCandidate,
   getReviewQueue,
   getStandaloneReviewCandidates,
-  submitStandaloneReviewDecision,
 } from "../../services/reviewService";
 
 
@@ -45,24 +42,6 @@ type CandidateWithIntegration =
     integrationId: number | null;
     integrationName: string | null;
   };
-
-
-const displayValue = (
-  account: Record<string, unknown>,
-  key: string,
-): string => {
-  const value = account[key];
-
-  if (
-    value === null ||
-    value === undefined ||
-    String(value).trim() === ""
-  ) {
-    return "Not available";
-  }
-
-  return String(value);
-};
 
 
 const ReviewQueue = () => {
@@ -92,12 +71,6 @@ const ReviewQueue = () => {
     candidateError,
     setCandidateError,
   ] = useState("");
-
-  const [
-    savingCandidateId,
-    setSavingCandidateId,
-  ] = useState<number | null>(null);
-
 
   const loadApplications =
     useCallback(async () => {
@@ -274,77 +247,6 @@ const ReviewQueue = () => {
       }`,
     );
   };
-
-
-  const handleCandidateDecision =
-    async (
-      candidate: CandidateWithIntegration,
-      decision: ReviewDecision,
-    ) => {
-      try {
-        setSavingCandidateId(
-          candidate.id,
-        );
-        setCandidateError("");
-
-        await submitStandaloneReviewDecision(
-          candidate.id,
-          {
-            decision,
-          },
-        );
-
-        setReviewCandidates(
-          (current) =>
-            current.filter(
-              (item) =>
-                item.id !== candidate.id,
-            ),
-        );
-      } catch (saveError) {
-        console.error(
-          "Unable to save duplicate-group decision:",
-          saveError,
-        );
-
-        setCandidateError(
-          saveError instanceof Error
-            ? saveError.message
-            : "Unable to save the review decision.",
-        );
-      } finally {
-        setSavingCandidateId(null);
-      }
-    };
-
-
-  const pendingGroupsByApplication =
-    Array.from(
-      reviewCandidates.reduce(
-        (groups, candidate) => {
-          const applicationName =
-            candidate.application
-            || "Unknown Application";
-          const existing =
-            groups.get(applicationName)
-            ?? [];
-
-          existing.push(candidate);
-          groups.set(
-            applicationName,
-            existing,
-          );
-
-          return groups;
-        },
-        new Map<
-          string,
-          CandidateWithIntegration[]
-        >(),
-      ),
-    ).sort(([left], [right]) =>
-      left.localeCompare(right),
-    );
 
 
   const groupedMatchCount =
@@ -525,8 +427,20 @@ const ReviewQueue = () => {
           >
             {applications.map(
               (summary) => {
-                const cardData =
-                  summary as ApplicationSummary;
+                const pendingReviewGroups =
+                  reviewCandidates.filter(
+                    (candidate) =>
+                      candidate.application
+                        === summary.application
+                      && candidate.integrationId
+                        === summary.integrationId,
+                  ).length;
+
+                const cardData:
+                  ApplicationSummary = {
+                    ...summary,
+                    pendingReviewGroups,
+                  };
 
                 return (
                   <Grid
@@ -593,341 +507,12 @@ const ReviewQueue = () => {
 
       {!loading
         && !error
+        && candidateError
         && (
-          reviewCandidates.length > 0
-          || Boolean(candidateError)
-        )
-        && (
-          <Box sx={{ mt: applications.length > 0 ? 3 : 0 }}>
-            {candidateError && (
-              <Alert
-                severity="error"
-                sx={{ mb: 2 }}
-              >
-                {candidateError}
-              </Alert>
-            )}
-
-            {reviewCandidates.length > 0 && (
-              <Stack spacing={3}>
-                {pendingGroupsByApplication.map(
-                  ([
-                    applicationName,
-                    applicationCandidates,
-                  ]) => (
-                    <Box key={applicationName}>
-                      <Paper
-                        variant="outlined"
-                        sx={{
-                          px: 2.5,
-                          py: 1.75,
-                          mb: 2,
-                          borderRadius: 3,
-                          bgcolor: "action.hover",
-                        }}
-                      >
-                        <Stack
-                          direction={{
-                            xs: "column",
-                            sm: "row",
-                          }}
-                          justifyContent="space-between"
-                          alignItems={{
-                            xs: "flex-start",
-                            sm: "center",
-                          }}
-                          spacing={1}
-                        >
-                          <Box>
-                            <Typography
-                              variant="h6"
-                              fontWeight={700}
-                            >
-                              {applicationName}
-                            </Typography>
-                            <Typography
-                              variant="body2"
-                              color="text.secondary"
-                            >
-                              Potential duplicate groups for this application
-                            </Typography>
-                          </Box>
-                          <Chip
-                            size="small"
-                            label={`${applicationCandidates.length} pending review`}
-                            color="warning"
-                            variant="outlined"
-                          />
-                        </Stack>
-                      </Paper>
-
-                      <Stack spacing={2}>
-                        {applicationCandidates.map(
-                          (candidate) => {
-                    const account1 =
-                      candidate.account1 ?? {};
-                    const account2 =
-                      candidate.account2 ?? {};
-                    const isSaving =
-                      savingCandidateId
-                      === candidate.id;
-
-                    return (
-                      <Paper
-                        key={candidate.id}
-                        variant="outlined"
-                        sx={{
-                          p: 2.5,
-                          borderRadius: 3,
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            display: "flex",
-                            justifyContent:
-                              "space-between",
-                            alignItems: "flex-start",
-                            gap: 2,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <Box>
-                            <Typography
-                              variant="overline"
-                              color="text.secondary"
-                              fontWeight={700}
-                            >
-                              Potential Duplicate Group #{candidate.id}
-                            </Typography>
-                            <Stack
-                              direction="row"
-                              spacing={1}
-                              useFlexGap
-                              flexWrap="wrap"
-                              sx={{ mb: 1 }}
-                            >
-                              <Chip
-                                size="small"
-                                label="Pending Review"
-                                color="warning"
-                              />
-                              <Chip
-                                size="small"
-                                label={`${candidate.confidence}% confidence`}
-                                color="warning"
-                                variant="outlined"
-                              />
-                              <Chip
-                                size="small"
-                                label={candidate.reviewReason
-                                  .replaceAll("_", " ")}
-                                variant="outlined"
-                              />
-                              <Chip
-                                size="small"
-                                label={candidate.application}
-                              />
-                            </Stack>
-
-                            <Typography
-                              variant="h6"
-                              fontWeight={700}
-                            >
-                              {displayValue(
-                                account1,
-                                "username",
-                              )}
-                              {"  ↔  "}
-                              {displayValue(
-                                account2,
-                                "username",
-                              )}
-                            </Typography>
-
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Integration:{" "}
-                              {candidate.integrationName
-                                ?? (
-                                  candidate.integrationId
-                                    ? `#${candidate.integrationId}`
-                                    : "Legacy upload"
-                                )}
-                              {" · "}
-                              Scan #{candidate.scanId}
-                            </Typography>
-                          </Box>
-
-                          <Stack
-                            direction="row"
-                            spacing={1}
-                            useFlexGap
-                            flexWrap="wrap"
-                          >
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="success"
-                              disabled={isSaving}
-                              onClick={() =>
-                                handleCandidateDecision(
-                                  candidate,
-                                  "DUPLICATE",
-                                )
-                              }
-                            >
-                              Confirm Duplicate
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              color="error"
-                              disabled={isSaving}
-                              onClick={() =>
-                                handleCandidateDecision(
-                                  candidate,
-                                  "NOT_DUPLICATE",
-                                )
-                              }
-                            >
-                              Not Duplicate
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              disabled={isSaving}
-                              onClick={() =>
-                                handleCandidateDecision(
-                                  candidate,
-                                  "UNCERTAIN",
-                                )
-                              }
-                            >
-                              Uncertain
-                            </Button>
-                          </Stack>
-                        </Box>
-
-                        <Divider sx={{ my: 2 }} />
-
-                        <Grid
-                          container
-                          spacing={2}
-                        >
-                          <Grid
-                            size={{
-                              xs: 12,
-                              md: 6,
-                            }}
-                          >
-                            <Paper
-                              variant="outlined"
-                              sx={{
-                                p: 2,
-                                borderRadius: 2,
-                                height: "100%",
-                              }}
-                            >
-                              <Typography
-                                fontWeight={700}
-                                sx={{ mb: 1 }}
-                              >
-                                Account 1
-                              </Typography>
-                              <Typography variant="body2">
-                                Display Name: {displayValue(
-                                  account1,
-                                  "displayName",
-                                )}
-                              </Typography>
-                              <Typography variant="body2">
-                                Email: {displayValue(
-                                  account1,
-                                  "email",
-                                )}
-                              </Typography>
-                              <Typography variant="body2">
-                                Employee ID: {displayValue(
-                                  account1,
-                                  "employeeId",
-                                )}
-                              </Typography>
-                            </Paper>
-                          </Grid>
-
-                          <Grid
-                            size={{
-                              xs: 12,
-                              md: 6,
-                            }}
-                          >
-                            <Paper
-                              variant="outlined"
-                              sx={{
-                                p: 2,
-                                borderRadius: 2,
-                                height: "100%",
-                              }}
-                            >
-                              <Typography
-                                fontWeight={700}
-                                sx={{ mb: 1 }}
-                              >
-                                Account 2
-                              </Typography>
-                              <Typography variant="body2">
-                                Display Name: {displayValue(
-                                  account2,
-                                  "displayName",
-                                )}
-                              </Typography>
-                              <Typography variant="body2">
-                                Email: {displayValue(
-                                  account2,
-                                  "email",
-                                )}
-                              </Typography>
-                              <Typography variant="body2">
-                                Employee ID: {displayValue(
-                                  account2,
-                                  "employeeId",
-                                )}
-                              </Typography>
-                            </Paper>
-                          </Grid>
-                        </Grid>
-
-                        {isSaving && (
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                              mt: 2,
-                            }}
-                          >
-                            <CircularProgress size={16} />
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                            >
-                              Saving decision...
-                            </Typography>
-                          </Box>
-                        )}
-                      </Paper>
-                    );
-                          },
-                        )}
-                      </Stack>
-                    </Box>
-                  ),
-                )}
-              </Stack>
-            )}
-          </Box>
+          <Alert severity="warning" sx={{ mt: 3 }}>
+            Application cards are available, but some pending-review
+            counts could not be loaded: {candidateError}
+          </Alert>
         )}
     </PageContainer>
   );
