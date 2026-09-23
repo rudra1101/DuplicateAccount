@@ -41,7 +41,7 @@ const DuplicateCandidateList = ({
   if (candidates.length === 0) {
     return (
       <Typography color="text.secondary">
-        No duplicate candidates found.
+        No possible duplicate accounts found.
       </Typography>
     );
   }
