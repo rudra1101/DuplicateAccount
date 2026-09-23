@@ -51,7 +51,34 @@ http://localhost:8080
 
 The backend and PostgreSQL services are intentionally not published to host ports by Compose.
 
-## 3. Check service health
+## 3. Enable Rudrix locally
+
+Rudrix requires Ollama and the configured chat and embedding models on the host.
+
+```powershell
+ollama serve
+ollama pull llama3.1:8b
+ollama pull nomic-embed-text
+```
+
+For Docker Desktop, the backend automatically connects to host Ollama through
+`http://host.docker.internal:11434`. To use another address, set this in
+`backend/.env`:
+
+```env
+DOCKER_OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+Check the AI dependency through the application:
+
+```text
+http://localhost:8080/api/ai/health/
+```
+
+A healthy response must show `status: healthy` and an empty
+`missingModels` list.
+
+## 4. Check service health
 
 ```powershell
 docker compose --env-file backend/.env ps
@@ -76,7 +103,7 @@ PostgreSQL logs:
 docker compose --env-file backend/.env logs -f postgres
 ```
 
-## 4. Optional Prometheus monitoring
+## 5. Optional Prometheus monitoring
 
 Start the stack with the monitoring profile:
 
@@ -102,7 +129,7 @@ The default alert set covers:
 
 In an actual production environment, Prometheus and alert delivery should be integrated with the organization's monitoring and access-control platform instead of exposing the monitoring UI publicly.
 
-## 5. Stop the stack
+## 6. Stop the stack
 
 ```powershell
 docker compose --env-file backend/.env down
@@ -118,13 +145,13 @@ docker compose --env-file backend/.env down -v
 
 Do not use `-v` if the Docker PostgreSQL data must be retained.
 
-## 6. Important data note
+## 7. Important data note
 
 The Docker PostgreSQL volume is a separate database from PostgreSQL installed directly on your Windows machine. Starting the Docker stack does not copy your existing local IdentityAI PostgreSQL data into the container database.
 
 For initial container testing, an empty migrated schema is expected. Data migration/import should be handled explicitly before using the Docker database as the authoritative environment.
 
-## 7. Actual production settings
+## 8. Actual production settings
 
 For a real HTTPS deployment, update the same `backend/.env` with production-safe values before deployment:
 
