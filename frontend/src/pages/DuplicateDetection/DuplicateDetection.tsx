@@ -180,14 +180,6 @@ const DuplicateDetection = () => {
     return filteredRows.slice(start, start + rowsPerPage);
   }, [filteredRows, page, rowsPerPage]);
 
-  const accountsFlagged = useMemo(
-    () => filteredRows.reduce(
-      (sum, row) => sum + row.duplicates + 1,
-      0,
-    ),
-    [filteredRows],
-  );
-
   const highConfidence = useMemo(
     () => filteredRows.filter((row) => row.highestConfidence >= 95).length,
     [filteredRows],
@@ -212,7 +204,7 @@ const DuplicateDetection = () => {
         <Box>
           <Typography variant="h5" fontWeight={700}>Detected Duplicate Accounts</Typography>
           <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Search and investigate duplicate groups from the latest completed integration scans.
+            Search and investigate possible duplicates from the latest completed integration scans.
           </Typography>
         </Box>
         <Stack direction="row" spacing={1} alignItems="center">
@@ -240,9 +232,14 @@ const DuplicateDetection = () => {
 
       <Stack direction={{ xs: "column", lg: "row" }} spacing={2} sx={{ mb: 3 }}>
         {[
-          ["Potential Duplicate Groups", filteredRows.length],
-          ["Accounts Flagged", accountsFlagged],
-          ["High-Confidence Groups", highConfidence],
+          [
+            "Possible Duplicates",
+            filteredRows.reduce(
+              (total, row) => total + row.duplicates,
+              0,
+            ),
+          ],
+          ["High-Confidence Matches", highConfidence],
         ].map(([label, value]) => (
           <Paper key={String(label)} variant="outlined" sx={{ px: 2.5, py: 2, borderRadius: 3, minWidth: 190 }}>
             <Typography variant="body2" color="text.secondary">{label}</Typography>
@@ -311,7 +308,7 @@ const DuplicateDetection = () => {
               ) : filteredRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 7 }}>
-                    <Typography fontWeight={700}>No duplicate groups match the current filters.</Typography>
+                    <Typography fontWeight={700}>No possible duplicates match the current filters.</Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                       Change the filters or run a new integration scan.
                     </Typography>
@@ -369,7 +366,7 @@ const DuplicateDetection = () => {
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
           <Box>
-            <Typography variant="h6" fontWeight={700}>Duplicate Group Investigation</Typography>
+            <Typography variant="h6" fontWeight={700}>Possible Duplicate Investigation</Typography>
             {details && <Typography variant="caption" color="text.secondary">Group #{details.groupId} · {details.application}</Typography>}
           </Box>
           <IconButton onClick={() => { setDetails(null); setDetailsError(""); }}><CloseIcon /></IconButton>
