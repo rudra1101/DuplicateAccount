@@ -30,11 +30,21 @@ class LocalFileConnector(
         "fields": [
             {
                 "name": "folderPath",
-                "label": "Folder Path",
+                "label": (
+                    "Backend/Container "
+                    "Folder Path"
+                ),
                 "type": "text",
                 "required": True,
-                "placeholder": (
-                    "C:\\IdentityFiles\\Incoming"
+                "placeholder": "/data/accounts",
+                "helpText": (
+                    "Enter a path accessible to "
+                    "the backend service or "
+                    "container. A path on the "
+                    "browser user's computer "
+                    "works only when it is "
+                    "mounted into the backend "
+                    "container."
                 ),
             },
             {
@@ -151,8 +161,12 @@ class LocalFileConnector(
             return ConnectionTestResult(
                 success=False,
                 message=(
-                    "Configured folder "
-                    "does not exist."
+                    "Configured backend/container "
+                    "folder does not exist. Mount "
+                    "the host folder into the "
+                    "backend container and use its "
+                    "mounted path (for example, "
+                    "/data/accounts)."
                 ),
                 details={
                     "folderPath": str(
@@ -165,8 +179,8 @@ class LocalFileConnector(
             return ConnectionTestResult(
                 success=False,
                 message=(
-                    "Configured path is "
-                    "not a directory."
+                    "Configured backend/container "
+                    "path is not a directory."
                 ),
                 details={
                     "folderPath": str(
@@ -190,7 +204,8 @@ class LocalFileConnector(
         return ConnectionTestResult(
             success=True,
             message=(
-                "Local folder is accessible."
+                "Backend/container folder is "
+                "accessible."
             ),
             details={
                 "folderPath": str(folder),

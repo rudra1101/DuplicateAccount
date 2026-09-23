@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.connectors.exceptions import ConnectorConfigurationError
 from app.connectors.factory import ConnectorFactory
 from app.connectors.registry import ConnectorRegistry
 from app.db_models.integration import IntegrationRecord
@@ -50,10 +51,37 @@ def list_connector_types() -> list[dict]:
     return ConnectorRegistry.connector_catalog()
 
 
+def _ensure_local_connection_ready(
+    connector_type: str,
+    configuration: dict,
+    enabled: bool,
+) -> None:
+    if connector_type != "LOCAL" or not enabled:
+        return
+
+    connector = ConnectorFactory.create(
+        connector_type=connector_type,
+        configuration=configuration,
+    )
+    with connector:
+        result = connector.test_connection()
+
+    if not result.success:
+        raise ConnectorConfigurationError(
+            "Cannot enable local-folder integration: "
+            f"{result.message}"
+        )
+
+
 def create_integration(db: Session, payload: IntegrationCreate) -> IntegrationRecord:
     connector_type = payload.connectorType.strip().upper()
     connector = ConnectorFactory.create(connector_type=connector_type, configuration=payload.configuration)
     connector.validate_configuration()
+    _ensure_local_connection_ready(
+        connector_type,
+        payload.configuration or {},
+        payload.enabled,
+    )
     integration = IntegrationRecord(
         name=payload.name.strip(),
         connector_type=connector_type,
@@ -114,6 +142,12 @@ def update_integration(db: Session, integration: IntegrationRecord, payload: Int
         connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=new_configuration)
         connector.validate_configuration()
         integration.configuration = new_configuration
+
+    _ensure_local_connection_ready(
+        integration.connector_type,
+        integration.configuration or {},
+        integration.enabled,
+    )
     try:
         db.commit()
         db.refresh(integration)
@@ -158,6 +192,11 @@ def test_integration(integration: IntegrationRecord) -> dict:
 
 
 def run_integration(db: Session, integration: IntegrationRecord, aggregation_type: str = "FULL") -> dict:
+    _ensure_local_connection_ready(
+        integration.connector_type,
+        integration.configuration or {},
+        True,
+    )
     execution = execute_integration(db=db, integration=integration, aggregation_type=aggregation_type)
     return execution_to_dict(execution)
 
