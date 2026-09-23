@@ -3,21 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import (
-    case,
-    func,
-    select,
-)
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db_models.duplicate_group import (
-    DuplicateGroupRecord,
-)
 from app.db_models.integration import (
     IntegrationRecord,
 )
 from app.db_models.scan import (
     ScanRecord,
+)
+from app.services.review_visibility_service import (
+    get_visible_duplicate_groups,
+    get_visible_review_summary,
 )
 
 
@@ -140,158 +137,201 @@ def get_integration_names(
     }
 
 
-def get_application_statistics(
+def get_visible_duplicate_snapshot(
     db: Session,
-    *,
-    scan_ids: list[int],
-) -> list[dict[str, Any]]:
-    if not scan_ids:
-        return []
+) -> tuple[
+    list[dict[str, Any]],
+    dict[int, dict[str, int]],
+    dict[str, int],
+]:
+    """
+    Build current duplicate metrics from the exact same visible
+    Review Queue data used by the Duplicate Detection page.
 
-    statement = (
-        select(
-            DuplicateGroupRecord.application,
-            func.count(
-                DuplicateGroupRecord.id
-            ).label(
-                "duplicate_group_count"
-            ),
-            func.coalesce(
-                func.sum(
-                    DuplicateGroupRecord
-                    .duplicate_count
-                ),
-                0,
-            ).label(
-                "duplicate_account_count"
-            ),
-            func.coalesce(
-                func.max(
-                    DuplicateGroupRecord
-                    .highest_confidence
-                ),
-                0,
-            ).label(
-                "highest_confidence"
-            ),
-            func.coalesce(
-                func.sum(
-                    case(
-                        (
-                            DuplicateGroupRecord
-                            .highest_confidence
-                            >= 95,
-                            1,
-                        ),
-                        else_=0,
-                    )
-                ),
-                0,
-            ).label(
-                "high_confidence_count"
-            ),
-        )
-        .where(
-            DuplicateGroupRecord.scan_id.in_(
-                scan_ids
-            )
-        )
-        .group_by(
-            DuplicateGroupRecord.application
-        )
-        .order_by(
-            func.sum(
-                DuplicateGroupRecord
-                .duplicate_count
-            ).desc(),
-            DuplicateGroupRecord
-            .application
-            .asc(),
-        )
+    Reviewed/remediated pairs that are hidden from Duplicate Detection
+    are therefore also excluded from the dashboard's current-state KPIs.
+    Historical trend data remains based on the scan snapshot recorded at
+    scan time.
+    """
+
+    cards = get_visible_review_summary(
+        db=db,
     )
 
-    rows = db.execute(
-        statement
-    ).all()
-
-    combined: dict[
+    applications: dict[
         str,
         dict[str, Any],
     ] = {}
 
-    for row in rows:
-        key = normalize_application_name(
-            row.application
+    scan_totals: dict[
+        int,
+        dict[str, int],
+    ] = {}
+
+    totals = {
+        "duplicateGroups": 0,
+        "duplicateAccounts": 0,
+        "highConfidenceMatches": 0,
+    }
+
+    for card in cards:
+        if int(
+            card.get(
+                "duplicateGroups",
+                0,
+            )
+            or 0
+        ) <= 0:
+            continue
+
+        application = str(
+            card.get(
+                "application",
+                "",
+            )
+            or ""
+        ).strip()
+
+        integration_id = (
+            int(card["integrationId"])
+            if card.get(
+                "integrationId"
+            )
+            is not None
+            else None
         )
 
-        current = {
-            "application": str(
-                row.application or ""
-            ).strip(),
-            "duplicateGroups": int(
-                row.duplicate_group_count
-                or 0
-            ),
-            "duplicateAccounts": int(
-                row.duplicate_account_count
-                or 0
-            ),
-            "highestConfidence": float(
-                row.highest_confidence
-                or 0
-            ),
-            "highConfidenceGroups": int(
-                row.high_confidence_count
-                or 0
-            ),
-        }
+        groups = (
+            get_visible_duplicate_groups(
+                db=db,
+                application=application,
+                integration_id=(
+                    integration_id
+                ),
+            )
+        )
 
-        existing = combined.get(
+        if not groups:
+            continue
+
+        duplicate_groups = len(
+            groups
+        )
+        duplicate_accounts = sum(
+            int(
+                group.get(
+                    "duplicates",
+                    0,
+                )
+                or 0
+            )
+            for group in groups
+        )
+        high_confidence_groups = sum(
+            1
+            for group in groups
+            if float(
+                group.get(
+                    "highestConfidence",
+                    0,
+                )
+                or 0
+            )
+            >= 95
+        )
+        highest_confidence = max(
+            float(
+                group.get(
+                    "highestConfidence",
+                    0,
+                )
+                or 0
+            )
+            for group in groups
+        )
+
+        totals[
+            "duplicateGroups"
+        ] += duplicate_groups
+        totals[
+            "duplicateAccounts"
+        ] += duplicate_accounts
+        totals[
+            "highConfidenceMatches"
+        ] += high_confidence_groups
+
+        scan_id = int(
+            card["scanId"]
+        )
+        scan_summary = (
+            scan_totals.setdefault(
+                scan_id,
+                {
+                    "duplicateGroups": 0,
+                    "duplicateAccounts": 0,
+                    "highConfidenceMatches": 0,
+                },
+            )
+        )
+        scan_summary[
+            "duplicateGroups"
+        ] += duplicate_groups
+        scan_summary[
+            "duplicateAccounts"
+        ] += duplicate_accounts
+        scan_summary[
+            "highConfidenceMatches"
+        ] += high_confidence_groups
+
+        key = normalize_application_name(
+            application
+        )
+        current = applications.get(
             key
         )
 
-        if existing is None:
-            combined[key] = current
+        if current is None:
+            applications[key] = {
+                "application": application,
+                "duplicateGroups": (
+                    duplicate_groups
+                ),
+                "duplicateAccounts": (
+                    duplicate_accounts
+                ),
+                "highestConfidence": (
+                    highest_confidence
+                ),
+                "highConfidenceGroups": (
+                    high_confidence_groups
+                ),
+            }
             continue
 
-        existing[
+        current[
             "duplicateGroups"
-        ] += current[
-            "duplicateGroups"
-        ]
-
-        existing[
+        ] += duplicate_groups
+        current[
             "duplicateAccounts"
-        ] += current[
-            "duplicateAccounts"
-        ]
-
-        existing[
+        ] += duplicate_accounts
+        current[
             "highConfidenceGroups"
-        ] += current[
-            "highConfidenceGroups"
-        ]
-
-        existing[
+        ] += high_confidence_groups
+        current[
             "highestConfidence"
         ] = max(
-            float(
-                existing[
-                    "highestConfidence"
-                ]
-            ),
             float(
                 current[
                     "highestConfidence"
                 ]
             ),
+            highest_confidence,
         )
 
-    result = list(
-        combined.values()
+    application_statistics = list(
+        applications.values()
     )
-
-    result.sort(
+    application_statistics.sort(
         key=lambda item: (
             -int(
                 item[
@@ -306,8 +346,11 @@ def get_application_statistics(
         )
     )
 
-    return result
-
+    return (
+        application_statistics,
+        scan_totals,
+        totals,
+    )
 
 def get_period_start(
     period: str,
@@ -514,11 +557,6 @@ def build_dashboard_response(
             )
         )
 
-    scan_ids = [
-        scan.id
-        for scan in latest_scans
-    ]
-
     latest_overall_scan = max(
         latest_scans,
         key=lambda scan: (
@@ -541,11 +579,12 @@ def build_dashboard_response(
         )
     )
 
-    application_statistics = (
-        get_application_statistics(
-            db,
-            scan_ids=scan_ids,
-        )
+    (
+        application_statistics,
+        visible_scan_totals,
+        visible_duplicate_totals,
+    ) = get_visible_duplicate_snapshot(
+        db
     )
 
     trend = get_scan_trend(
@@ -583,13 +622,37 @@ def build_dashboard_response(
                 scan.application_count
             ),
             "duplicateGroups": (
-                scan.duplicate_group_count
+                visible_scan_totals
+                .get(
+                    scan.id,
+                    {},
+                )
+                .get(
+                    "duplicateGroups",
+                    0,
+                )
             ),
             "duplicateAccounts": (
-                scan.duplicate_account_count
+                visible_scan_totals
+                .get(
+                    scan.id,
+                    {},
+                )
+                .get(
+                    "duplicateAccounts",
+                    0,
+                )
             ),
             "highConfidenceMatches": (
-                scan.high_confidence_count
+                visible_scan_totals
+                .get(
+                    scan.id,
+                    {},
+                )
+                .get(
+                    "highConfidenceMatches",
+                    0,
+                )
             ),
         }
         for scan in sorted(
@@ -657,26 +720,20 @@ def build_dashboard_response(
             "integrations": len(
                 integration_ids
             ),
-            "duplicateGroups": sum(
-                int(
-                    scan.duplicate_group_count
-                    or 0
-                )
-                for scan in latest_scans
+            "duplicateGroups": (
+                visible_duplicate_totals[
+                    "duplicateGroups"
+                ]
             ),
-            "duplicateAccounts": sum(
-                int(
-                    scan.duplicate_account_count
-                    or 0
-                )
-                for scan in latest_scans
+            "duplicateAccounts": (
+                visible_duplicate_totals[
+                    "duplicateAccounts"
+                ]
             ),
-            "highConfidenceMatches": sum(
-                int(
-                    scan.high_confidence_count
-                    or 0
-                )
-                for scan in latest_scans
+            "highConfidenceMatches": (
+                visible_duplicate_totals[
+                    "highConfidenceMatches"
+                ]
             ),
         },
         "applications": application_statistics[:DASHBOARD_TOP_APPLICATIONS],
