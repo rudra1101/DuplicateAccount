@@ -101,7 +101,7 @@ const DuplicatePairList = ({
   if (pairs.length === 0) {
     return (
       <Alert severity="info">
-        No potential duplicate groups were found.
+        No possible duplicates were found.
       </Alert>
     );
   }
@@ -122,7 +122,7 @@ const DuplicatePairList = ({
             variant="subtitle2"
             color="text.secondary"
           >
-            {pairs.length.toLocaleString()} potential duplicate group
+            {pairs.length.toLocaleString()} possible duplicate match
             {pairs.length === 1 ? "" : "s"}
           </Typography>
 
