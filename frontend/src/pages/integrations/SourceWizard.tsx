@@ -128,6 +128,9 @@ const SourceWizard = () => {
   const [connectionId, setConnectionId] = useState<number | null>(integrationId ? Number(integrationId) : null);
   const [connectionDirty, setConnectionDirty] = useState(!editing);
   const [connectionMessage, setConnectionMessage] = useState("");
+  const [connectionMessageSeverity, setConnectionMessageSeverity] =
+    useState<"success" | "warning" | "error">("success");
+  const [connectionValidated, setConnectionValidated] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -159,6 +162,7 @@ const SourceWizard = () => {
   );
   const selectedApplication = applications[selectedApplicationIndex] ?? null;
   const isWebService = connectorType === "WEB_SERVICE";
+  const isLocalFile = connectorType === "LOCAL";
   const authoritativeSources = useMemo(
     () => allIntegrations.filter((item) => item.sourcePurpose === "AUTHORITATIVE" && item.id !== connectionId),
     [allIntegrations, connectionId],
@@ -202,6 +206,11 @@ const SourceWizard = () => {
           setEnabled(integration.enabled);
           setConnectionId(integration.id);
           setConnectionDirty(false);
+          setConnectionValidated(
+            integration.connectorType !== "LOCAL"
+            || integration.enabled,
+          );
+          setConnectionMessageSeverity("success");
           setConnectionMessage("Connection configuration is saved.");
 
           const existingApplications = await getIntegrationApplications(id);
@@ -262,6 +271,7 @@ const SourceWizard = () => {
   const markConnectionDirty = () => {
     setConnectionDirty(true);
     setConnectionMessage("");
+    setConnectionValidated(false);
     setAuthResult(null);
     setTestResult(null);
   };
@@ -335,19 +345,68 @@ const SourceWizard = () => {
     try {
       setSavingConnection(true);
       setError("");
+      setConnectionMessage("");
+      setTestResult(null);
+
+      const requestedEnabled = enabled;
       const payload = {
         name: name.trim(),
         sourcePurpose,
         description: description.trim() || null,
         configuration,
-        enabled,
+        enabled: isLocalFile ? false : requestedEnabled,
       };
       const saved = connectionId
         ? await updateIntegration(connectionId, payload)
         : await createIntegration({ ...payload, connectorType });
+
       setConnectionId(saved.id);
       setConnectionDirty(false);
-      setConnectionMessage("Source configuration saved successfully.");
+
+      if (isLocalFile) {
+        try {
+          const validation = await testIntegration(saved.id);
+          setConnectionValidated(validation.success);
+
+          if (!validation.success) {
+            setEnabled(false);
+            setConnectionMessageSeverity("error");
+            setConnectionMessage(
+              "Source configuration saved, but connection validation failed: "
+              + validation.message
+              + " The integration remains disabled.",
+            );
+          } else {
+            if (requestedEnabled) {
+              await updateIntegration(saved.id, { enabled: true });
+            }
+            setEnabled(requestedEnabled);
+            setConnectionMessageSeverity("success");
+            setConnectionMessage(
+              "Source configuration saved and connection validated. "
+              + validation.message,
+            );
+          }
+        } catch (validationError) {
+          setConnectionValidated(false);
+          setEnabled(false);
+          setConnectionMessageSeverity("error");
+          setConnectionMessage(
+            "Source configuration saved, but connection validation could not be completed: "
+            + (
+              validationError instanceof Error
+                ? validationError.message
+                : "Unknown validation error."
+            )
+            + " The integration remains disabled.",
+          );
+        }
+      } else {
+        setConnectionValidated(true);
+        setConnectionMessageSeverity("success");
+        setConnectionMessage("Source configuration saved successfully.");
+      }
+
       setAllIntegrations(await getCorrelationIntegrations());
       return saved.id;
     } catch (saveError) {
@@ -374,8 +433,21 @@ const SourceWizard = () => {
     if (!connectionId || connectionDirty) return setError("Save the latest source configuration before testing it.");
     try {
       setTestingConnection(true);
-      setTestResult(await testIntegration(connectionId));
+      setError("");
+      const result = await testIntegration(connectionId);
+      setTestResult(result);
+      setConnectionValidated(result.success);
+
+      if (isLocalFile && !result.success && enabled) {
+        await updateIntegration(connectionId, { enabled: false });
+        setEnabled(false);
+        setConnectionMessageSeverity("warning");
+        setConnectionMessage(
+          "Connection validation failed, so the integration has been disabled.",
+        );
+      }
     } catch (testError) {
+      setConnectionValidated(false);
       setError(testError instanceof Error ? testError.message : "Connection test failed.");
     } finally {
       setTestingConnection(false);
@@ -471,6 +543,9 @@ const SourceWizard = () => {
     if (activeStep === 0) {
       if (!validateConnection()) return;
       if (!connectionId || connectionDirty) return setError("Save the source configuration before continuing.");
+      if (isLocalFile && !connectionValidated) {
+        return setError("Validate the backend/container folder successfully before continuing.");
+      }
     }
     if (activeStep === 1 && !validateApplications()) return setError("Every application requires a name.");
     if (activeStep === 2) {
@@ -571,8 +646,20 @@ const SourceWizard = () => {
                 />
               </Paper>
               {selectedConnector && <><Alert severity="info">{selectedConnector.description}</Alert><DynamicConnectorForm connector={selectedConnector} values={configuration} errors={fieldErrors} onChange={handleConnectorFieldChange} /></>}
-              <FormControlLabel control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />} label="Enable integration" />
-              {connectionMessage && <Alert severity="success">{connectionMessage}</Alert>}
+              <FormControlLabel
+                control={<Switch checked={enabled} onChange={(event) => { setEnabled(event.target.checked); markConnectionDirty(); }} />}
+                label={(
+                  <Box>
+                    <Typography>Enable integration</Typography>
+                    {isLocalFile && (
+                      <Typography variant="caption" color="text.secondary">
+                        The source is enabled only after its backend/container folder is validated.
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              />
+              {connectionMessage && <Alert severity={connectionMessageSeverity}>{connectionMessage}</Alert>}
               {connectionDirty && connectionId && <Alert severity="warning">Source settings changed. Save them before continuing.</Alert>}
               {authResult && <Alert severity={authResult.success ? "success" : "error"}>{authResult.message}</Alert>}
               {testResult && <Alert severity={testResult.success ? "success" : "error"}>{testResult.message}</Alert>}
