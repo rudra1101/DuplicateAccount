@@ -76,7 +76,7 @@ def test_navigation_tool_enforces_destination_permission():
                 "integration_id": None,
             },
         )
-        assert result["route"] == "/reports"
+        assert result["route"] == "/account-intelligence/reports"
 
         try:
             tool.execute(
