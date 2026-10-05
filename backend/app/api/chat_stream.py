@@ -328,6 +328,7 @@ def stream_chat(
                 actor=actor,
             )
 
+            navigation_requested = _requested_navigation_destination(payload.message) is not None
             streamed_deltas: list[str] = []
 
             if final_response is not None:
@@ -360,18 +361,20 @@ def stream_chat(
                     if event_type == "delta":
                         text = str(event.get("text") or "")
                         if text:
-                            streamed_deltas.append(text)
+                            if navigation_requested:
+                                streamed_deltas.append(text)
+                            else:
+                                yield _event("delta", text=text)
                         continue
 
                     if event_type == "done":
                         final_response = event.get("response")
 
                 if final_response is not None:
-                    repaired_response = _repair_navigation_response(
+                    final_response = _repair_navigation_response(
                         final_response,
                         payload.message,
                     )
-                    final_response = repaired_response
 
                     navigation_used = any(
                         tool.name == "navigate_app"
@@ -380,11 +383,12 @@ def stream_chat(
                         for tool in final_response.toolsUsed
                     )
 
-                    if navigation_used:
-                        yield _event("delta", text=final_response.message)
-                    else:
-                        for text in streamed_deltas:
-                            yield _event("delta", text=text)
+                    if navigation_requested:
+                        if navigation_used:
+                            yield _event("delta", text=final_response.message)
+                        else:
+                            for text in streamed_deltas:
+                                yield _event("delta", text=text)
 
             if final_response is None:
                 raise RuntimeError("Rudrix streaming finished without a final response.")
