@@ -83,6 +83,61 @@ export interface StreamAIHandlers {
   ) => void;
 }
 
+interface RudrixClientAction {
+  type?: unknown;
+  route?: unknown;
+  autoExecute?: unknown;
+}
+
+function executeNavigationAction(
+  toolsUsed: unknown[] | undefined,
+): void {
+  if (!Array.isArray(toolsUsed) || typeof window === "undefined") {
+    return;
+  }
+
+  for (const tool of toolsUsed) {
+    if (typeof tool !== "object" || tool === null) {
+      continue;
+    }
+
+    const invocation = tool as {
+      name?: unknown;
+      result?: {
+        success?: unknown;
+        data?: {
+          clientAction?: RudrixClientAction;
+        };
+      };
+    };
+
+    if (
+      invocation.name !== "navigate_app"
+      || invocation.result?.success !== true
+    ) {
+      continue;
+    }
+
+    const action = invocation.result.data?.clientAction;
+    const route =
+      typeof action?.route === "string"
+        ? action.route.trim()
+        : "";
+
+    if (
+      action?.type !== "NAVIGATE"
+      || action.autoExecute !== true
+      || !route.startsWith("/")
+      || route.startsWith("//")
+    ) {
+      continue;
+    }
+
+    window.location.assign(route);
+    return;
+  }
+}
+
 export interface KnowledgeChunk {
   id: number;
   chunkId: string;
@@ -660,6 +715,10 @@ export async function streamAI(
     ) {
       handlers.onDone?.(
         event,
+      );
+
+      executeNavigationAction(
+        event.toolsUsed,
       );
 
       return;
