@@ -55,8 +55,8 @@ _NAVIGATION_DESTINATIONS: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
     ("duplicates", ("duplicate detection", "duplicates", "duplicate page"), "/account-intelligence/duplicates", "Duplicate Detection"),
     ("review", ("review accounts", "review queue", "review page", "reviews"), "/account-intelligence/review", "Review Accounts"),
     ("reports", ("reports", "report page", "reporting"), "/account-intelligence/reports", "Reports"),
-    ("accounts", ("account inventory", "accounts page", "accounts"), "/account-intelligence/accounts", "Accounts"),
     ("upload", ("upload accounts", "upload page", "upload"), "/account-intelligence/upload", "Upload Accounts"),
+    ("accounts", ("account inventory", "accounts page", "accounts"), "/account-intelligence/accounts", "Accounts"),
     ("settings", ("settings", "settings page"), "/account-intelligence/settings", "Settings"),
     ("operations", ("operations", "operations page"), "/operations", "Operations"),
     ("knowledge", ("knowledge base", "knowledge page", "knowledge"), "/knowledge", "Knowledge Base"),
@@ -132,7 +132,7 @@ def _repair_navigation_response(final_response: ChatResponse, user_message: str)
                 "type": "NAVIGATE",
                 "label": f"Open {label}",
                 "route": route,
-                "autoExecute": False,
+                "autoExecute": True,
             },
         }
     )
