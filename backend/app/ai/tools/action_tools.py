@@ -332,18 +332,96 @@ class CreateRemediationTicketTool(BaseAITool):
 
 
 _DESTINATIONS: dict[str, dict[str, Any]] = {
-    "dashboard": {"route": "/", "label": "Dashboard", "permissions": ["dashboard.view"]},
-    "duplicates": {"route": "/duplicates", "label": "Duplicate Detection", "permissions": ["duplicate.view"]},
-    "review": {"route": "/review", "label": "Review Queue", "permissions": ["duplicate.review"]},
-    "remediation": {"route": "/remediation", "label": "Remediation", "permissions": ["remediation.view", "remediation.history.view"]},
-    "reports": {"route": "/reports", "label": "Reports", "permissions": ["report.view"]},
-    "integrations": {"route": "/integrations", "label": "Integrations", "permissions": ["integration.view"]},
-    "operations": {"route": "/operations", "label": "Operations", "permissions": ["operations.view"]},
-    "settings": {"route": "/settings", "label": "Settings", "permissions": ["settings.manage"]},
-    "knowledge": {"route": "/knowledge", "label": "Knowledge Base", "permissions": ["knowledge.view"]},
-    "ml_training": {"route": "/ml-training", "label": "ML Training", "permissions": ["ml.view"]},
-    "ml_evaluation": {"route": "/ml-evaluation", "label": "ML Evaluation", "permissions": ["ml.analytics.view", "ml.calibration.view"]},
-    "admin": {"route": "/admin", "label": "Administration", "permissions": ["user.view", "role.view"]},
+    "home": {
+        "route": "/home",
+        "label": "Home",
+        "permissions": ["domain.account_intelligence.view"],
+    },
+    "dashboard": {
+        "route": "/account-intelligence/dashboard",
+        "label": "Dashboard",
+        "permissions": ["dashboard.view"],
+    },
+    "duplicates": {
+        "route": "/account-intelligence/duplicates",
+        "label": "Duplicate Detection",
+        "permissions": ["duplicate.view"],
+    },
+    "review": {
+        "route": "/account-intelligence/review",
+        "label": "Review Accounts",
+        "permissions": ["duplicate.review"],
+    },
+    "remediation": {
+        "route": "/account-intelligence/remediation",
+        "label": "Remediation",
+        "permissions": ["remediation.view", "remediation.history.view"],
+    },
+    "reports": {
+        "route": "/account-intelligence/reports",
+        "label": "Reports",
+        "permissions": ["report.view"],
+    },
+    "integrations": {
+        "route": "/account-intelligence/integrations",
+        "label": "Integrations",
+        "permissions": ["integration.view"],
+    },
+    "accounts": {
+        "route": "/account-intelligence/accounts",
+        "label": "Accounts",
+        "permissions": ["integration.view"],
+    },
+    "upload": {
+        "route": "/account-intelligence/upload",
+        "label": "Upload Accounts",
+        "permissions": ["upload.manage"],
+    },
+    "operations": {
+        "route": "/operations",
+        "label": "Operations",
+        "permissions": ["operations.view"],
+    },
+    "settings": {
+        "route": "/account-intelligence/settings",
+        "label": "Settings",
+        "permissions": ["settings.manage"],
+    },
+    "knowledge": {
+        "route": "/knowledge",
+        "label": "Knowledge Base",
+        "permissions": ["knowledge.view"],
+    },
+    "ml_training": {
+        "route": "/account-intelligence/ml-training",
+        "label": "ML Training",
+        "permissions": ["ml.view"],
+    },
+    "ml_evaluation": {
+        "route": "/account-intelligence/ml-evaluation",
+        "label": "ML Evaluation",
+        "permissions": ["ml.analytics.view", "ml.calibration.view"],
+    },
+    "admin": {
+        "route": "/platform-admin",
+        "label": "Administration",
+        "permissions": ["user.view", "role.view", "settings.manage"],
+    },
+    "users": {
+        "route": "/platform-admin/users",
+        "label": "Users",
+        "permissions": ["user.view"],
+    },
+    "roles": {
+        "route": "/platform-admin/roles",
+        "label": "Roles",
+        "permissions": ["role.view"],
+    },
+    "branding": {
+        "route": "/platform-admin/branding",
+        "label": "Branding",
+        "permissions": ["settings.manage"],
+    },
 }
 
 
@@ -353,6 +431,8 @@ class NavigateAppTool(BaseAITool):
     description = (
         "Navigate the authenticated user to an IdentityAI screen. Use only when "
         "the user explicitly asks to go to, open, navigate to, or show a page. "
+        "Choose the exact destination that matches the requested screen; for example "
+        "use review for Review Accounts/Review Queue and accounts for Account Inventory. "
         "This tool returns a client navigation action and validates that the user "
         "has permission to access the requested destination."
     )
@@ -402,7 +482,10 @@ class NavigateAppTool(BaseAITool):
             application = str(arguments.get("application") or "").strip()
             integration_id = arguments.get("integration_id")
             if application:
-                route = f"/review/{quote(application, safe='')}"
+                route = (
+                    f"/account-intelligence/review/"
+                    f"{quote(application, safe='')}"
+                )
                 if integration_id:
                     route += "?" + urlencode({"integrationId": int(integration_id)})
 
