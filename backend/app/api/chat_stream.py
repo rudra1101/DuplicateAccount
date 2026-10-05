@@ -47,9 +47,97 @@ _CONFIRMATION_WORDS = {
     "do it",
 }
 
+_NAVIGATION_DESTINATIONS: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
+    ("ml_evaluation", ("ml evaluation", "reviewer analytics"), "/account-intelligence/ml-evaluation", "ML Evaluation"),
+    ("ml_training", ("ml training", "training dashboard"), "/account-intelligence/ml-training", "ML Training"),
+    ("integrations", ("integrations", "integration page", "connectors", "connector page"), "/account-intelligence/integrations", "Integrations"),
+    ("remediation", ("remediation", "remediation queue"), "/account-intelligence/remediation", "Remediation"),
+    ("duplicates", ("duplicate detection", "duplicates", "duplicate page"), "/account-intelligence/duplicates", "Duplicate Detection"),
+    ("review", ("review accounts", "review queue", "review page", "reviews"), "/account-intelligence/review", "Review Accounts"),
+    ("reports", ("reports", "report page", "reporting"), "/account-intelligence/reports", "Reports"),
+    ("accounts", ("account inventory", "accounts page", "accounts"), "/account-intelligence/accounts", "Accounts"),
+    ("upload", ("upload accounts", "upload page", "upload"), "/account-intelligence/upload", "Upload Accounts"),
+    ("settings", ("settings", "settings page"), "/account-intelligence/settings", "Settings"),
+    ("operations", ("operations", "operations page"), "/operations", "Operations"),
+    ("knowledge", ("knowledge base", "knowledge page", "knowledge"), "/knowledge", "Knowledge Base"),
+    ("users", ("user management", "users page", "users"), "/platform-admin/users", "Users"),
+    ("roles", ("role management", "roles page", "roles"), "/platform-admin/roles", "Roles"),
+    ("branding", ("branding", "branding settings"), "/platform-admin/branding", "Branding"),
+    ("admin", ("administration", "platform admin", "admin page"), "/platform-admin", "Administration"),
+    ("home", ("home page", "home"), "/home", "Home"),
+    ("dashboard", ("dashboard", "dashboard page"), "/account-intelligence/dashboard", "Dashboard"),
+)
+
 
 def _event(event_type: str, **payload: Any) -> str:
     return json.dumps({"type": event_type, **payload}, default=str) + "\n"
+
+
+def _requested_navigation_destination(message: str) -> tuple[str, str, str] | None:
+    text = " ".join(str(message or "").strip().lower().split())
+    if not text:
+        return None
+
+    navigation_intent = any(
+        phrase in text
+        for phrase in (
+            "open ",
+            "go to ",
+            "take me to ",
+            "navigate to ",
+            "show me ",
+            "show the ",
+        )
+    )
+    if not navigation_intent:
+        return None
+
+    for destination, aliases, route, label in _NAVIGATION_DESTINATIONS:
+        if any(alias in text for alias in aliases):
+            return destination, route, label
+
+    return None
+
+
+def _repair_navigation_response(final_response: ChatResponse, user_message: str) -> ChatResponse:
+    requested = _requested_navigation_destination(user_message)
+    if requested is None:
+        return final_response
+
+    navigation_tool = next(
+        (
+            tool
+            for tool in final_response.toolsUsed
+            if tool.name == "navigate_app"
+            and isinstance(tool.result, dict)
+            and tool.result.get("success") is True
+        ),
+        None,
+    )
+    if navigation_tool is None:
+        return final_response
+
+    destination, route, label = requested
+    data = navigation_tool.result.get("data")
+    if not isinstance(data, dict):
+        data = {}
+        navigation_tool.result["data"] = data
+
+    data.update(
+        {
+            "message": f"[Open **{label}**]({route})",
+            "destination": destination,
+            "route": route,
+            "clientAction": {
+                "type": "NAVIGATE",
+                "label": f"Open {label}",
+                "route": route,
+                "autoExecute": False,
+            },
+        }
+    )
+    final_response.message = str(data["message"])
+    return final_response
 
 
 def _safe_stream_error_message(exc: Exception) -> str:
@@ -240,6 +328,8 @@ def stream_chat(
                 actor=actor,
             )
 
+            streamed_deltas: list[str] = []
+
             if final_response is not None:
                 yield _event("status", message="Creating Service Desk ticket...")
                 yield _event("delta", text=final_response.message)
@@ -270,11 +360,31 @@ def stream_chat(
                     if event_type == "delta":
                         text = str(event.get("text") or "")
                         if text:
-                            yield _event("delta", text=text)
+                            streamed_deltas.append(text)
                         continue
 
                     if event_type == "done":
                         final_response = event.get("response")
+
+                if final_response is not None:
+                    repaired_response = _repair_navigation_response(
+                        final_response,
+                        payload.message,
+                    )
+                    final_response = repaired_response
+
+                    navigation_used = any(
+                        tool.name == "navigate_app"
+                        and isinstance(tool.result, dict)
+                        and tool.result.get("success") is True
+                        for tool in final_response.toolsUsed
+                    )
+
+                    if navigation_used:
+                        yield _event("delta", text=final_response.message)
+                    else:
+                        for text in streamed_deltas:
+                            yield _event("delta", text=text)
 
             if final_response is None:
                 raise RuntimeError("Rudrix streaming finished without a final response.")
