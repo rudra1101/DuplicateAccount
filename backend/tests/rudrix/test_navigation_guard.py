@@ -13,6 +13,7 @@ from app.api.chat_stream import _requested_navigation_destination
         ("Open the reports page", "reports", "/account-intelligence/reports"),
         ("Show the review queue", "review", "/account-intelligence/review"),
         ("Go to remediation", "remediation", "/account-intelligence/remediation"),
+        ("Open upload accounts", "upload", "/account-intelligence/upload"),
         ("Open accounts", "accounts", "/account-intelligence/accounts"),
         ("Navigate to duplicate detection", "duplicates", "/account-intelligence/duplicates"),
         ("Open settings", "settings", "/account-intelligence/settings"),
