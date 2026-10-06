@@ -17,6 +17,7 @@ _NULLISH_FILTER_VALUES = {
     "",
     "null",
     "none",
+    "undefined",
     "n/a",
     "na",
     "any",
@@ -39,14 +40,31 @@ _ACCOUNT_QUERY_PREFIXES = (
 def _optional_filter(value: Any) -> str:
     """Normalize optional model-supplied filters.
 
-    Local models sometimes serialize an omitted nullable argument as strings
-    such as ``null`` or ``null application``. Treat those values exactly like
-    an omitted filter so broad account searches are not accidentally narrowed
-    to a non-existent source.
+    Local models sometimes serialize an omitted nullable argument as natural-
+    language placeholders such as ``null``, ``the null application``, or
+    ``application is unspecified``. Treat any clearly null-like placeholder as
+    an omitted filter so a broad account lookup cannot be narrowed to a source
+    that does not exist.
     """
-    text = str(value or "").strip()
-    if text.casefold() in _NULLISH_FILTER_VALUES:
+    text = " ".join(str(value or "").strip().split())
+    if not text:
         return ""
+
+    normalized = text.casefold().strip(" \t\r\n\"'?.!,;:()[]{}")
+    if normalized in _NULLISH_FILTER_VALUES:
+        return ""
+
+    # Be defensive with local-model prose variants. A real application or
+    # integration name should never need words such as null/undefined/
+    # unspecified, so these tokens are safe indicators that no filter was
+    # intended.
+    if re.search(r"\b(?:null|none|undefined|unspecified)\b", normalized):
+        return ""
+    if "not specified" in normalized:
+        return ""
+    if re.match(r"^(?:no|any|all)\s+(?:application|integration|source)\b", normalized):
+        return ""
+
     return text
 
 
@@ -101,14 +119,16 @@ class InvestigateAccountsTool(BaseAITool):
                 "type": "string",
                 "description": (
                     "Optional application name, for example Active Directory. "
-                    "Omit this field when the user did not specify an application."
+                    "Omit this field completely when the user did not specify an application; "
+                    "never send null-like placeholder text."
                 ),
             },
             "integration": {
                 "type": "string",
                 "description": (
                     "Optional integration/source name used to narrow the search. "
-                    "Omit this field when the user did not specify an integration."
+                    "Omit this field completely when the user did not specify an integration; "
+                    "never send null-like placeholder text."
                 ),
             },
             "limit": {
