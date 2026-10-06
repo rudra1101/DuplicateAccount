@@ -79,10 +79,19 @@ def test_optional_filter_treats_model_null_strings_as_omitted():
         "null",
         "NULL",
         "none",
+        "undefined",
         "N/A",
         "any",
         "null application",
         "null integration",
+        "the null application",
+        "the null integration",
+        "application is null",
+        "integration is undefined",
+        "application is unspecified",
+        "not specified application",
+        "no source",
+        "any source",
     ):
         assert _optional_filter(value) == ""
 
@@ -90,6 +99,7 @@ def test_optional_filter_treats_model_null_strings_as_omitted():
 def test_optional_filter_preserves_real_filter_values():
     assert _optional_filter("Active Directory") == "Active Directory"
     assert _optional_filter(" ServiceNow ") == "ServiceNow"
+    assert _optional_filter("Microsoft Entra ID") == "Microsoft Entra ID"
 
 
 def test_account_query_normalizes_full_find_sentence():
@@ -138,3 +148,19 @@ def test_account_lookup_matches_visible_inventory_semantics():
     assert "source_accounts.active" in where_sql
     assert "source_accounts.deleted" not in where_sql
     assert "source_accounts.application" in where_sql
+
+
+def test_null_like_integration_does_not_trigger_integration_lookup():
+    db = _CaptureDb()
+    result = InvestigateAccountsTool().execute(
+        db=db,
+        arguments={
+            "query": "Aditya Sinha",
+            "integration": "the null application",
+        },
+    )
+
+    assert result["count"] == 0
+    # Only the source-account inventory query should run. A bogus integration
+    # lookup would add a second statement and reproduce the UI failure.
+    assert len(db.statements) == 1
