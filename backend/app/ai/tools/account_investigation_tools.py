@@ -12,6 +12,37 @@ from app.db_models.orphan_state import OrphanStateRecord
 from app.db_models.source_account import SourceAccountRecord
 
 
+_NULLISH_FILTER_VALUES = {
+    "",
+    "null",
+    "none",
+    "n/a",
+    "na",
+    "any",
+    "all",
+    "not specified",
+    "unspecified",
+    "no application",
+    "null application",
+    "no integration",
+    "null integration",
+}
+
+
+def _optional_filter(value: Any) -> str:
+    """Normalize optional model-supplied filters.
+
+    Local models sometimes serialize an omitted nullable argument as strings
+    such as ``null`` or ``null application``. Treat those values exactly like
+    an omitted filter so broad account searches are not accidentally narrowed
+    to a non-existent source.
+    """
+    text = str(value or "").strip()
+    if text.casefold() in _NULLISH_FILTER_VALUES:
+        return ""
+    return text
+
+
 class InvestigateAccountsTool(BaseAITool):
     name = "investigate_accounts"
 
@@ -34,12 +65,18 @@ class InvestigateAccountsTool(BaseAITool):
                 ),
             },
             "application": {
-                "type": ["string", "null"],
-                "description": "Optional application name, for example Active Directory.",
+                "type": "string",
+                "description": (
+                    "Optional application name, for example Active Directory. "
+                    "Omit this field when the user did not specify an application."
+                ),
             },
             "integration": {
-                "type": ["string", "null"],
-                "description": "Optional integration/source name used to narrow the search.",
+                "type": "string",
+                "description": (
+                    "Optional integration/source name used to narrow the search. "
+                    "Omit this field when the user did not specify an integration."
+                ),
             },
             "orphan_only": {
                 "type": "boolean",
@@ -51,7 +88,7 @@ class InvestigateAccountsTool(BaseAITool):
                 "maximum": 20,
             },
         },
-        "required": ["query", "application", "integration", "orphan_only", "limit"],
+        "required": ["query"],
         "additionalProperties": False,
     }
 
@@ -65,8 +102,8 @@ class InvestigateAccountsTool(BaseAITool):
         if not query:
             raise ValueError("Account search text is required.")
 
-        application = str(arguments.get("application") or "").strip()
-        integration = str(arguments.get("integration") or "").strip()
+        application = _optional_filter(arguments.get("application"))
+        integration = _optional_filter(arguments.get("integration"))
         orphan_only = bool(arguments.get("orphan_only", False))
         limit = max(1, min(int(arguments.get("limit") or 10), 20))
 
