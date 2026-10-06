@@ -321,6 +321,13 @@ def _select_definitions(
         selected.add("get_dashboard_summary")
 
     if has(
+        "find ", "locate ", "search account", "account lookup",
+        "orphan", "uncorrelated", "correlation", "correlat",
+        "why is this account", "why is the account",
+    ):
+        selected.add("investigate_accounts")
+
+    if has(
         "integration", "connector", "source connection",
     ):
         selected.update(
