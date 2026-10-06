@@ -67,6 +67,11 @@ def test_only_query_is_required_for_account_investigation():
     assert tool.parameters["required"] == ["query"]
 
 
+def test_account_investigation_does_not_expose_orphan_only_filter():
+    tool = InvestigateAccountsTool()
+    assert "orphan_only" not in tool.parameters["properties"]
+
+
 def test_optional_filter_treats_model_null_strings_as_omitted():
     for value in (
         None,
@@ -103,3 +108,33 @@ def test_account_query_preserves_actual_account_values():
     assert _normalize_account_query("jsmith") == "jsmith"
     assert _normalize_account_query("jsmith@example.com") == "jsmith@example.com"
     assert _normalize_account_query("W00003") == "W00003"
+
+
+class _EmptyScalarResult:
+    def all(self):
+        return []
+
+
+class _CaptureDb:
+    def __init__(self):
+        self.statements = []
+
+    def scalars(self, statement):
+        self.statements.append(statement)
+        return _EmptyScalarResult()
+
+
+def test_account_lookup_matches_visible_inventory_semantics():
+    db = _CaptureDb()
+    result = InvestigateAccountsTool().execute(
+        db=db,
+        arguments={"query": "Aditya Sinha"},
+    )
+
+    assert result["count"] == 0
+    assert len(db.statements) == 1
+
+    where_sql = str(db.statements[0]).partition("WHERE")[2]
+    assert "source_accounts.active" in where_sql
+    assert "source_accounts.deleted" not in where_sql
+    assert "source_accounts.application" in where_sql
