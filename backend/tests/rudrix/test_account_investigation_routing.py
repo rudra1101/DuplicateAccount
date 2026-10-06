@@ -1,5 +1,9 @@
 from app.ai.fast_agent_service import _select_definitions
 from app.ai.tools import create_ai_tool_registry
+from app.ai.tools.account_investigation_tools import (
+    InvestigateAccountsTool,
+    _optional_filter,
+)
 from app.schemas.chat import ChatHistoryMessage, ChatRequest
 
 
@@ -55,3 +59,28 @@ def test_general_iam_question_does_not_force_account_lookup():
     assert "investigate_accounts" not in _selected_names(
         "Explain the principle of least privilege"
     )
+
+
+def test_only_query_is_required_for_account_investigation():
+    tool = InvestigateAccountsTool()
+    assert tool.parameters["required"] == ["query"]
+
+
+def test_optional_filter_treats_model_null_strings_as_omitted():
+    for value in (
+        None,
+        "",
+        "null",
+        "NULL",
+        "none",
+        "N/A",
+        "any",
+        "null application",
+        "null integration",
+    ):
+        assert _optional_filter(value) == ""
+
+
+def test_optional_filter_preserves_real_filter_values():
+    assert _optional_filter("Active Directory") == "Active Directory"
+    assert _optional_filter(" ServiceNow ") == "ServiceNow"
