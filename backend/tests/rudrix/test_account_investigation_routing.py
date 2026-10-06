@@ -1,0 +1,57 @@
+from app.ai.fast_agent_service import _select_definitions
+from app.ai.tools import create_ai_tool_registry
+from app.schemas.chat import ChatHistoryMessage, ChatRequest
+
+
+def _selected_names(message: str, history=None) -> set[str]:
+    request = ChatRequest(
+        message=message,
+        conversationId=None,
+        history=history or [],
+        useReasoningModel=False,
+    )
+    definitions = create_ai_tool_registry().definitions()
+    selected = _select_definitions(definitions, request)
+    return {str(item.get("name") or "") for item in selected}
+
+
+def test_find_account_exposes_investigation_tool():
+    assert "investigate_accounts" in _selected_names("Find account jsmith")
+
+
+def test_find_identifier_exposes_investigation_tool():
+    assert "investigate_accounts" in _selected_names("Find rudra.shankar")
+
+
+def test_orphan_explanation_exposes_investigation_tool():
+    assert "investigate_accounts" in _selected_names(
+        "Why is the ServiceNow account orphaned?"
+    )
+
+
+def test_correlation_failure_exposes_investigation_tool():
+    assert "investigate_accounts" in _selected_names(
+        "Why did correlation fail for jsmith?"
+    )
+
+
+def test_followup_orphan_question_keeps_investigation_available():
+    history = [
+        ChatHistoryMessage(
+            role="assistant",
+            content=(
+                "I found jsmith in Active Directory and ServiceNow. "
+                "The ServiceNow account is orphaned."
+            ),
+        )
+    ]
+    assert "investigate_accounts" in _selected_names(
+        "Why is that one orphaned?",
+        history=history,
+    )
+
+
+def test_general_iam_question_does_not_force_account_lookup():
+    assert "investigate_accounts" not in _selected_names(
+        "Explain the principle of least privilege"
+    )
