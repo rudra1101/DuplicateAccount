@@ -111,10 +111,6 @@ class InvestigateAccountsTool(BaseAITool):
                     "Omit this field when the user did not specify an integration."
                 ),
             },
-            "orphan_only": {
-                "type": "boolean",
-                "description": "Return only accounts currently flagged as active orphans.",
-            },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
@@ -138,12 +134,14 @@ class InvestigateAccountsTool(BaseAITool):
 
         application = _optional_filter(arguments.get("application"))
         integration = _optional_filter(arguments.get("integration"))
-        orphan_only = bool(arguments.get("orphan_only", False))
         limit = max(1, min(int(arguments.get("limit") or 10), 20))
 
+        # Match the Account Inventory page semantics: current inventory is
+        # defined by active=True. Do not add a second deleted=False constraint,
+        # because legacy rows can have inconsistent flags and still appear in
+        # the UI inventory. Investigation must search the same visible dataset.
         statement = select(SourceAccountRecord).where(
             SourceAccountRecord.active.is_(True),
-            SourceAccountRecord.deleted.is_(False),
         )
 
         needle = f"%{query}%"
@@ -154,6 +152,7 @@ class InvestigateAccountsTool(BaseAITool):
                 SourceAccountRecord.email.ilike(needle),
                 SourceAccountRecord.employee_id.ilike(needle),
                 SourceAccountRecord.display_name.ilike(needle),
+                SourceAccountRecord.application.ilike(needle),
             )
         )
 
@@ -180,15 +179,6 @@ class InvestigateAccountsTool(BaseAITool):
                 }
             statement = statement.where(
                 SourceAccountRecord.integration_id.in_(integration_ids)
-            )
-
-        if orphan_only:
-            statement = statement.join(
-                OrphanStateRecord,
-                OrphanStateRecord.source_account_id == SourceAccountRecord.id,
-            ).where(
-                OrphanStateRecord.active.is_(True),
-                OrphanStateRecord.status == "OPEN",
             )
 
         rows = list(
