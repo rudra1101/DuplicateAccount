@@ -3,6 +3,9 @@ from app.ai.tools.action_tools import (
     GenerateReportTool,
     NavigateAppTool,
 )
+from app.ai.tools.account_investigation_tools import (
+    InvestigateAccountsTool,
+)
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
 )
@@ -45,6 +48,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
 
     registry.register(ListIntegrationsTool())
     registry.register(GetIntegrationDetailsTool())
+    registry.register(InvestigateAccountsTool())
 
     registry.register(GetOperationsSummaryTool())
     registry.register(SearchOperationsTool())
