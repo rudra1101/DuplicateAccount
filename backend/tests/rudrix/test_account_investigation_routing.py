@@ -2,6 +2,7 @@ from app.ai.fast_agent_service import _select_definitions
 from app.ai.tools import create_ai_tool_registry
 from app.ai.tools.account_investigation_tools import (
     InvestigateAccountsTool,
+    _normalize_account_query,
     _optional_filter,
 )
 from app.schemas.chat import ChatHistoryMessage, ChatRequest
@@ -84,3 +85,21 @@ def test_optional_filter_treats_model_null_strings_as_omitted():
 def test_optional_filter_preserves_real_filter_values():
     assert _optional_filter("Active Directory") == "Active Directory"
     assert _optional_filter(" ServiceNow ") == "ServiceNow"
+
+
+def test_account_query_normalizes_full_find_sentence():
+    assert _normalize_account_query("find account for Aditya Sinha") == "Aditya Sinha"
+    assert _normalize_account_query("Find account jsmith") == "jsmith"
+
+
+def test_account_query_handles_common_typo_and_search_phrases():
+    assert _normalize_account_query("find accout for Aditya Sinha") == "Aditya Sinha"
+    assert _normalize_account_query("search for account W00003") == "W00003"
+    assert _normalize_account_query("look up account for rudra.shankar") == "rudra.shankar"
+
+
+def test_account_query_preserves_actual_account_values():
+    assert _normalize_account_query("Aditya Sinha") == "Aditya Sinha"
+    assert _normalize_account_query("jsmith") == "jsmith"
+    assert _normalize_account_query("jsmith@example.com") == "jsmith@example.com"
+    assert _normalize_account_query("W00003") == "W00003"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlalchemy import or_, select
@@ -28,6 +29,12 @@ _NULLISH_FILTER_VALUES = {
     "null integration",
 }
 
+_ACCOUNT_QUERY_PREFIXES = (
+    r"^\s*(?:find|locate|lookup|look\s+up)\s+(?:the\s+)?(?:account|accout)?\s*(?:for\s+)?",
+    r"^\s*search\s+(?:for\s+)?(?:the\s+)?(?:account|accout)?\s*(?:for\s+)?",
+    r"^\s*(?:account|accout)\s+(?:for\s+)?",
+)
+
 
 def _optional_filter(value: Any) -> str:
     """Normalize optional model-supplied filters.
@@ -41,6 +48,31 @@ def _optional_filter(value: Any) -> str:
     if text.casefold() in _NULLISH_FILTER_VALUES:
         return ""
     return text
+
+
+def _normalize_account_query(value: Any) -> str:
+    """Reduce a model-supplied natural-language search phrase to search text.
+
+    Local models sometimes pass the entire user sentence as the tool's ``query``
+    argument (for example ``find account for Aditya Sinha``). Source account
+    inventory stores only the actual account attributes, so searching for the
+    complete sentence can never match. Strip only known leading lookup phrases
+    and leave real usernames, emails, employee IDs, and display names unchanged.
+    """
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return ""
+
+    for pattern in _ACCOUNT_QUERY_PREFIXES:
+        normalized = re.sub(pattern, "", text, count=1, flags=re.IGNORECASE).strip()
+        if normalized != text:
+            text = normalized
+            break
+
+    # Models occasionally wrap the extracted value in quotes or append simple
+    # punctuation from the user sentence. These characters are not meaningful
+    # for account lookup and can prevent an otherwise exact display-name match.
+    return text.strip(" \t\r\n\"'?.!,;:")
 
 
 class InvestigateAccountsTool(BaseAITool):
@@ -61,7 +93,8 @@ class InvestigateAccountsTool(BaseAITool):
             "query": {
                 "type": "string",
                 "description": (
-                    "Username, email, employee ID, native identity, or display-name text."
+                    "Username, email, employee ID, native identity, or display-name text. "
+                    "Pass only the account value/name, not the full user sentence."
                 ),
             },
             "application": {
@@ -98,7 +131,8 @@ class InvestigateAccountsTool(BaseAITool):
         db: Session,
         arguments: dict[str, Any],
     ) -> Any:
-        query = str(arguments.get("query") or "").strip()
+        raw_query = str(arguments.get("query") or "").strip()
+        query = _normalize_account_query(raw_query)
         if not query:
             raise ValueError("Account search text is required.")
 
@@ -139,6 +173,7 @@ class InvestigateAccountsTool(BaseAITool):
             if not integration_ids:
                 return {
                     "query": query,
+                    "originalQuery": raw_query if raw_query != query else None,
                     "count": 0,
                     "items": [],
                     "message": f"No integration matched '{integration}'.",
@@ -170,6 +205,7 @@ class InvestigateAccountsTool(BaseAITool):
         if not rows:
             return {
                 "query": query,
+                "originalQuery": raw_query if raw_query != query else None,
                 "count": 0,
                 "items": [],
                 "message": "No matching active accounts were found.",
@@ -272,6 +308,7 @@ class InvestigateAccountsTool(BaseAITool):
 
         return {
             "query": query,
+            "originalQuery": raw_query if raw_query != query else None,
             "count": len(items),
             "items": items,
             "statusMeaning": {
