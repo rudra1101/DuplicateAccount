@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -14,8 +15,61 @@ from app.ai.tools.workflow_action_tools import RudrixReviewOperationsTool
 from app.services.remediation_service import list_remediation_items
 
 
+_NULLISH = {
+    "",
+    "null",
+    "none",
+    "undefined",
+    "n/a",
+    "na",
+    "any",
+    "all",
+    "unspecified",
+    "not specified",
+}
+
+
 def _text(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
+
+
+def _optional_scope(value: Any) -> str | None:
+    text = _text(value)
+    if not text:
+        return None
+    normalized = text.casefold().strip(" \t\r\n\"'?.!,;:()[]{}")
+    if normalized in _NULLISH:
+        return None
+    if re.search(r"\b(?:null|none|undefined|unspecified)\b", normalized):
+        return None
+    if "not specified" in normalized:
+        return None
+    return text
+
+
+def _normalize_duplicate_search(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+
+    # Employee IDs are common user-facing references in IdentityAI. If a local
+    # model passes the entire question as the search argument, extract the ID
+    # instead of searching for the full sentence.
+    employee_id = re.search(r"\b[A-Za-z][A-Za-z0-9_-]*\d{3,}\b", text)
+    if employee_id:
+        return employee_id.group(0)
+
+    patterns = (
+        r"^\s*(?:is|does)\s+(.+?)\s+(?:is\s+)?(?:a\s+)?duplicate(?:\s+account)?\??$",
+        r"^\s*(?:find|show|search(?:\s+for)?)\s+(?:the\s+)?duplicates?\s+(?:for\s+)?(.+?)\??$",
+        r"^\s*duplicates?\s+(?:for\s+)?(.+?)\??$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" \t\r\n\"'?.!,;:")
+
+    return text.strip(" \t\r\n\"'?.!,;:")
 
 
 def _candidate_matches_reference(candidate: dict[str, Any], reference: str) -> bool:
@@ -62,7 +116,27 @@ class GroundedSearchDuplicateGroupsTool(SearchDuplicateGroupsTool):
     )
 
     def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
-        result = super().execute(db=db, arguments=arguments)
+        normalized = dict(arguments or {})
+        normalized["integration"] = _optional_scope(normalized.get("integration"))
+        normalized["application"] = _optional_scope(normalized.get("application"))
+        normalized["search"] = _normalize_duplicate_search(normalized.get("search"))
+
+        try:
+            normalized["minimum_confidence"] = float(
+                normalized.get("minimum_confidence") or 0
+            )
+        except (TypeError, ValueError):
+            normalized["minimum_confidence"] = 0
+
+        try:
+            normalized["limit"] = max(
+                1,
+                min(int(float(normalized.get("limit") or 20)), 50),
+            )
+        except (TypeError, ValueError):
+            normalized["limit"] = 20
+
+        result = super().execute(db=db, arguments=normalized)
         groups = result.get("groups") if isinstance(result, dict) else None
         if not isinstance(groups, list) or not groups:
             return result
@@ -164,8 +238,8 @@ class GroundedReviewOperationsTool(RudrixReviewOperationsTool):
         return GroundedSearchDuplicateGroupsTool().execute(
             db=db,
             arguments={
-                "integration": arguments.get("integration"),
-                "application": arguments.get("application"),
+                "integration": _optional_scope(arguments.get("integration")),
+                "application": _optional_scope(arguments.get("application")),
                 "minimum_confidence": 0,
                 "search": reference,
                 "limit": 20,
@@ -295,12 +369,7 @@ class GroundedCreateRemediationTicketTool(CreateRemediationTicketTool):
                 "description": "Requested remediation action.",
             },
         },
-        "required": [
-            "remediation_item_id",
-            "account_reference",
-            "target",
-            "action",
-        ],
+        "required": [],
         "additionalProperties": False,
     }
 
