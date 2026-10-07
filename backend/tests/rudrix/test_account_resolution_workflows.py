@@ -5,6 +5,8 @@ from app.ai.tools.account_resolution_tools import (
     GroundedReviewOperationsTool,
     GroundedSearchDuplicateGroupsTool,
     _candidate_matches_reference,
+    _normalize_duplicate_search,
+    _optional_scope,
 )
 
 
@@ -27,6 +29,20 @@ def test_registry_uses_grounded_duplicate_and_ticket_tools():
         registry.get("create_remediation_ticket"),
         GroundedCreateRemediationTicketTool,
     )
+
+
+def test_duplicate_search_extracts_employee_id_from_full_question():
+    assert _normalize_duplicate_search("is W00003 is a duplicate?") == "W00003"
+    assert _normalize_duplicate_search("Is W00003 a duplicate account?") == "W00003"
+    assert _normalize_duplicate_search("show duplicates for Aditya Sinha") == "Aditya Sinha"
+
+
+def test_duplicate_scope_ignores_model_null_placeholders():
+    assert _optional_scope(None) is None
+    assert _optional_scope("null") is None
+    assert _optional_scope("the null application") is None
+    assert _optional_scope("integration is unspecified") is None
+    assert _optional_scope("Active Directory") == "Active Directory"
 
 
 def test_candidate_reference_matches_employee_id_and_username():
@@ -88,8 +104,8 @@ def test_review_stats_with_employee_id_rechecks_duplicate_data(monkeypatch):
             "operation": "STATS",
             "candidate_id": "W00003",
             "account_reference": None,
-            "integration": None,
-            "application": None,
+            "integration": "the null integration",
+            "application": "application is unspecified",
         },
     )
 
@@ -139,6 +155,10 @@ def test_confirm_by_primary_reference_requires_selection_when_multiple_candidate
     assert result["requiresSelection"] is True
     assert result["count"] == 2
     assert {item["id"] for item in result["candidates"]} == {701, 702}
+
+
+def test_ticket_tool_does_not_force_internal_id_or_action_fields():
+    assert GroundedCreateRemediationTicketTool.parameters["required"] == []
 
 
 def test_ticket_by_employee_id_resolves_item_but_requires_target_and_action(monkeypatch):
