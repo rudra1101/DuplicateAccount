@@ -154,22 +154,55 @@ class GroundedReviewOperationsTool(RudrixReviewOperationsTool):
         },
     }
 
+    def _search_reference(
+        self,
+        *,
+        db: Session,
+        arguments: dict[str, Any],
+        reference: str,
+    ) -> dict[str, Any]:
+        return GroundedSearchDuplicateGroupsTool().execute(
+            db=db,
+            arguments={
+                "integration": arguments.get("integration"),
+                "application": arguments.get("application"),
+                "minimum_confidence": 0,
+                "search": reference,
+                "limit": 20,
+            },
+        )
+
     def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
         operation = _text(arguments.get("operation") or "STATS").upper()
+        raw_candidate = arguments.get("candidate_id")
+        candidate_text = _text(raw_candidate)
+        account_reference = _text(arguments.get("account_reference"))
+
+        # Local models sometimes route a read-only question such as
+        # "is W00003 a duplicate?" through review statistics and put the
+        # employee ID in candidate_id. Never coerce that identifier to an int;
+        # resolve it through duplicate search instead.
         if operation != "DECIDE":
+            reference = account_reference
+            if not reference and candidate_text and not candidate_text.isdigit():
+                reference = candidate_text
+            if reference:
+                return self._search_reference(
+                    db=db,
+                    arguments=arguments,
+                    reference=reference,
+                )
             return super().execute(db=db, arguments=arguments)
 
-        raw_candidate = arguments.get("candidate_id")
         if isinstance(raw_candidate, int) and raw_candidate > 0:
             return super().execute(db=db, arguments=arguments)
 
-        candidate_text = _text(raw_candidate)
         if candidate_text.isdigit():
             resolved = dict(arguments)
             resolved["candidate_id"] = int(candidate_text)
             return super().execute(db=db, arguments=resolved)
 
-        reference = _text(arguments.get("account_reference")) or candidate_text
+        reference = account_reference or candidate_text
         if not reference:
             return {
                 "changed": False,
@@ -180,15 +213,10 @@ class GroundedReviewOperationsTool(RudrixReviewOperationsTool):
                 ),
             }
 
-        search_result = GroundedSearchDuplicateGroupsTool().execute(
+        search_result = self._search_reference(
             db=db,
-            arguments={
-                "integration": arguments.get("integration"),
-                "application": arguments.get("application"),
-                "minimum_confidence": 0,
-                "search": reference,
-                "limit": 20,
-            },
+            arguments=arguments,
+            reference=reference,
         )
         groups = search_result.get("groups") or []
         if not groups:
