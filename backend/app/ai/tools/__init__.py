@@ -1,10 +1,15 @@
 from app.ai.tools.action_tools import (
-    CreateRemediationTicketTool,
     GenerateReportTool,
     NavigateAppTool,
 )
 from app.ai.tools.account_investigation_tools import (
     InvestigateAccountsTool,
+)
+from app.ai.tools.account_resolution_tools import (
+    GroundedCreateRemediationTicketTool,
+    GroundedDuplicateGroupDetailsTool,
+    GroundedReviewOperationsTool,
+    GroundedSearchDuplicateGroupsTool,
 )
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
@@ -22,9 +27,7 @@ from app.ai.tools.operations_tools import (
 from app.ai.tools.registry import AIToolRegistry
 from app.ai.tools.review_tools import (
     GetConfidenceBreakdownTool,
-    GetDuplicateGroupDetailsTool,
     GetDuplicateSummaryTool,
-    SearchDuplicateGroupsTool,
 )
 from app.ai.tools.training_tools import (
     GetTrainingLabelSummaryTool,
@@ -35,9 +38,6 @@ from app.ai.tools.knowledge_tools import (
 )
 from app.ai.tools.remediation_action_tools import (
     RudrixRemediationOperationsTool,
-)
-from app.ai.tools.workflow_action_tools import (
-    RudrixReviewOperationsTool,
 )
 
 
@@ -56,9 +56,9 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(GetExecutionDetailsTool())
 
     registry.register(GetDuplicateSummaryTool())
-    registry.register(SearchDuplicateGroupsTool())
-    registry.register(GetDuplicateGroupDetailsTool())
-    registry.register(RudrixReviewOperationsTool())
+    registry.register(GroundedSearchDuplicateGroupsTool())
+    registry.register(GroundedDuplicateGroupDetailsTool())
+    registry.register(GroundedReviewOperationsTool())
 
     registry.register(GetTrainingLabelSummaryTool())
     registry.register(GetConfidenceBreakdownTool())
@@ -67,7 +67,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
 
     registry.register(GenerateReportTool())
     registry.register(RudrixRemediationOperationsTool())
-    registry.register(CreateRemediationTicketTool())
+    registry.register(GroundedCreateRemediationTicketTool())
     registry.register(NavigateAppTool())
 
     return registry

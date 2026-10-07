@@ -1,3 +1,6 @@
+from app.ai.prompts.account_resolution_guidance import (
+    ACCOUNT_RESOLUTION_GUIDANCE,
+)
 from app.ai.prompts.identity_operations import (
     IDENTITY_OPERATIONS_INSTRUCTIONS as _BASE_IDENTITY_OPERATIONS_INSTRUCTIONS,
 )
@@ -9,6 +12,7 @@ from app.ai.prompts.remediation_response_guidance import (
 IDENTITY_OPERATIONS_INSTRUCTIONS = (
     _BASE_IDENTITY_OPERATIONS_INSTRUCTIONS
     + REMEDIATION_RESPONSE_GUIDANCE
+    + ACCOUNT_RESOLUTION_GUIDANCE
 )
 
 __all__ = [
