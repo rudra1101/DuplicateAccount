@@ -34,6 +34,13 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def parse_capability_plan(text: str, allowed_names: set[str]) -> CapabilityPlan:
+    """Parse an optional explicit planner response.
+
+    Kept as a reusable contract for future reasoning-model planning, MCP planners,
+    or offline evaluation. The production fast path currently uses native model
+    tool calling directly to avoid an extra blocking model request.
+    """
+
     payload = _extract_json_object(text)
     if payload is None:
         return CapabilityPlan(capabilities=())
@@ -65,56 +72,22 @@ def plan_capabilities(
     catalog: CapabilityCatalog,
     state: AgentState,
 ) -> CapabilityPlan:
-    """Use the model as a capability planner, not a sentence router.
+    """Expose the authorized capability surface to the native tool-calling agent.
 
-    The planner sees the RBAC-filtered capability catalog and grounded structured
-    conversation state. It chooses capabilities that may be needed to satisfy the
-    user's goal. Tool execution and authorization remain server-side.
+    Rudrix's fast runtime deliberately avoids a separate planner-model round trip.
+    For non-trivial requests it gives the model the complete RBAC-filtered capability
+    catalog and lets native tool calling choose and chain the required tools inside
+    the existing agent loop. This keeps the behavior agentic without doubling first
+    token latency. The unused arguments are part of the stable planner contract so a
+    reasoning planner or MCP-backed planner can be introduced later without changing
+    callers.
     """
 
-    capabilities = catalog.compact_for_planner()
-    allowed_names = {
+    del provider, model, user_message, state
+
+    names = tuple(
         str(item.get("name") or "")
-        for item in capabilities
+        for item in catalog.compact_for_planner()
         if item.get("name")
-    }
-
-    compact_capabilities = [
-        {
-            "name": item.get("name"),
-            "domain": item.get("domain"),
-            "kind": item.get("kind"),
-            "description": str(item.get("description") or "")[:260],
-        }
-        for item in capabilities
-    ]
-
-    planner_system = (
-        "You are the Rudrix capability planner for the IdentityAI product. "
-        "Choose the minimum set of available capabilities required to accomplish "
-        "the user's goal. You may choose multiple capabilities for multi-step work. "
-        "Use grounded conversation state to understand references such as this, it, "
-        "that account, the duplicate, those results, or the last execution. "
-        "For product facts or actions, prefer live capabilities over assumptions. "
-        "Use knowledge capabilities for documentation, policy, procedure, or how-to "
-        "questions. Never invent a capability. Return JSON only in this exact shape: "
-        '{"goal":"short goal","capabilities":["tool_name"],"needsClarification":false}. '
-        "Return an empty capabilities list only when the request is ordinary conversation "
-        "that does not require IdentityAI live data, product knowledge, navigation, or action."
     )
-
-    context = {
-        "groundedState": state.compact(),
-        "capabilities": compact_capabilities,
-        "userRequest": str(user_message or ""),
-    }
-
-    response = provider.chat(
-        model=model,
-        messages=[
-            {"role": "system", "content": planner_system},
-            {"role": "user", "content": json.dumps(context, default=str)},
-        ],
-        tools=[],
-    )
-    return parse_capability_plan(response.text, allowed_names)
+    return CapabilityPlan(capabilities=names)
