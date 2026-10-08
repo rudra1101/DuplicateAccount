@@ -299,10 +299,17 @@ def stream_chat(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    existing = None
     if payload.conversationId:
         existing = db.get(ChatConversationRecord, payload.conversationId)
         if existing is not None and existing.user_id != user.id:
             raise HTTPException(status_code=404, detail="Conversation not found.")
+
+    persisted_agent_state = (
+        existing.agent_state
+        if existing is not None and isinstance(existing.agent_state, dict)
+        else None
+    )
 
     conversation_id = payload.conversationId or str(uuid.uuid4())
     request = payload.model_copy(update={"conversationId": conversation_id})
@@ -316,6 +323,7 @@ def stream_chat(
 
     def generate():
         committed = False
+        agent_state = persisted_agent_state
 
         try:
             yield _event("start", conversationId=conversation_id)
@@ -339,6 +347,7 @@ def stream_chat(
                     run_identity_agent_stream_fast(
                         db=db,
                         request=request,
+                        persisted_state=persisted_agent_state,
                     )
                 )
 
@@ -369,6 +378,9 @@ def stream_chat(
 
                     if event_type == "done":
                         final_response = event.get("response")
+                        returned_state = event.get("agentState")
+                        if isinstance(returned_state, dict):
+                            agent_state = returned_state
 
                 if final_response is not None:
                     final_response = _repair_navigation_response(
@@ -404,6 +416,9 @@ def stream_chat(
                     conversation=conversation,
                     user_id=user.id,
                 )
+                if isinstance(agent_state, dict):
+                    conversation.agent_state = agent_state
+
             save_chat_message(
                 db,
                 conversation_id=conversation_id,
