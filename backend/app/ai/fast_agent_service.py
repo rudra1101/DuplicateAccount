@@ -14,6 +14,7 @@ from app.ai.agent_service import (
     extract_text_tool_calls,
 )
 from app.ai.config import get_ai_settings
+from app.ai.grounded_response_formatter import grounded_tool_message
 from app.ai.providers.factory import AIProviderFactory
 from app.ai.tools import create_ai_tool_registry
 from app.db_models.integration import IntegrationRecord
@@ -26,8 +27,11 @@ TERMINAL_ACTION_TOOLS = {
     "navigate_app",
 }
 
-# Keeping fewer historical messages materially reduces local-model prompt
-# evaluation time while preserving enough context for natural follow-ups.
+DETERMINISTIC_DATA_TOOLS = {
+    "investigate_accounts",
+    "search_duplicate_groups",
+}
+
 MAX_CONTEXT_MESSAGES = 12
 
 _REPORT_REFERENCES = (
@@ -103,11 +107,30 @@ def _terminal_action_message(
     return "\n\n".join(messages)
 
 
+def _deterministic_data_message(
+    tool_history: list[ToolInvocationResponse],
+    start_index: int,
+    names: set[str],
+) -> str:
+    if len(names) != 1:
+        return ""
+
+    tool_name = next(iter(names))
+    if tool_name not in DETERMINISTIC_DATA_TOOLS:
+        return ""
+
+    for invocation in tool_history[start_index:]:
+        if invocation.name != tool_name:
+            continue
+        message = grounded_tool_message(tool_name, invocation.result)
+        if message:
+            return message
+    return ""
+
+
 def _trim_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if len(messages) <= MAX_CONTEXT_MESSAGES + 1:
         return messages
-
-    # Always preserve the system prompt and the most recent conversation turns.
     return [messages[0], *messages[-MAX_CONTEXT_MESSAGES:]]
 
 
@@ -122,6 +145,37 @@ def _recent_followup_text(request) -> str:
     return "\n".join(
         str(message.content or "")
         for message in list(request.history or [])[-2:]
+    )
+
+
+def _is_explicit_duplicate_lookup(request) -> bool:
+    """Identify a read-only duplicate lookup from the current user turn only."""
+    current = " ".join(str(request.message or "").strip().lower().split())
+    if "duplicate" not in current:
+        return False
+
+    action_terms = (
+        "confirm",
+        "mark ",
+        "approve",
+        "reject",
+        "not duplicate",
+        "not a duplicate",
+        "create ticket",
+        "raise ticket",
+        "open ticket",
+        "remediate",
+        "disable",
+        "delete",
+    )
+    if any(term in current for term in action_terms):
+        return False
+
+    return bool(
+        re.search(
+            r"\b(?:is|does|has|have|show|find|check|search|duplicate)\b",
+            current,
+        )
     )
 
 
@@ -235,15 +289,6 @@ def _apply_report_followup_context(
     request,
     tool_calls: list[Any],
 ) -> None:
-    """Keep anaphoric report requests tied to the previous live-data scope.
-
-    Local models can reinterpret phrases such as "generate a report for those
-    accounts" as a fresh Account Inventory request even when the immediately
-    preceding answer was about duplicate accounts in one integration. This
-    guard only activates for explicitly referential report requests and only
-    fills/repairs scope from the immediately preceding user+assistant exchange.
-    """
-
     if not _is_referential_report_request(request):
         return
 
@@ -278,12 +323,16 @@ def _select_definitions(
     definitions: list[dict[str, Any]],
     request,
 ) -> list[dict[str, Any]]:
-    """Send only likely-relevant tools to the local model.
+    """Send only likely-relevant tools to the local model."""
 
-    Tool schemas consume prompt tokens and increase tool-selection latency.
-    Routing is deliberately broad: overlapping domains can expose several tools,
-    while a normal conversational/IAM explanation can run with no tool schema.
-    """
+    # A direct read-only duplicate question should not inherit account/orphan,
+    # review, remediation, or dashboard tools from previous conversation turns.
+    if _is_explicit_duplicate_lookup(request):
+        return [
+            definition
+            for definition in definitions
+            if str(definition.get("name") or "") == "search_duplicate_groups"
+        ]
 
     text = _routing_text(request)
     selected: set[str] = set()
@@ -291,21 +340,14 @@ def _select_definitions(
     def has(*terms: str) -> bool:
         return any(term in text for term in terms)
 
-    if has(
-        "report", "export", "csv", "download", "spreadsheet",
-    ):
+    if has("report", "export", "csv", "download", "spreadsheet"):
         selected.add("generate_report")
 
     if has(
         "ticket", "service desk", "servicedesk", "remediation",
         "remediate", "disable account", "delete account",
     ):
-        selected.update(
-            {
-                "search_remediation_items",
-                "create_remediation_ticket",
-            }
-        )
+        selected.update({"search_remediation_items", "create_remediation_ticket"})
 
     if has(
         "navigate", "take me", "go to", "open the", "open ",
@@ -327,15 +369,8 @@ def _select_definitions(
     ):
         selected.add("investigate_accounts")
 
-    if has(
-        "integration", "connector", "source connection",
-    ):
-        selected.update(
-            {
-                "list_integrations",
-                "get_integration_details",
-            }
-        )
+    if has("integration", "connector", "source connection"):
+        selected.update({"list_integrations", "get_integration_details"})
 
     if has(
         "execution", "job", "scan status", "latest scan", "run status",
@@ -350,9 +385,7 @@ def _select_definitions(
             }
         )
 
-    if has(
-        "duplicate", "confidence", "review", "candidate", "match",
-    ):
+    if has("duplicate", "confidence", "review", "candidate", "match"):
         selected.update(
             {
                 "get_duplicate_summary",
@@ -363,21 +396,14 @@ def _select_definitions(
             }
         )
 
-    if has(
-        "training label", "training data", "ml training", "model training",
-    ):
+    if has("training label", "training data", "ml training", "model training"):
         selected.add("get_training_label_summary")
 
     if has(
         "knowledge", "document", "policy", "procedure", "runbook",
         "standard", "manual", "documentation", "guidance",
     ):
-        selected.update(
-            {
-                "search_knowledge_base",
-                "list_knowledge_documents",
-            }
-        )
+        selected.update({"search_knowledge_base", "list_knowledge_documents"})
 
     if not selected:
         return []
@@ -394,20 +420,6 @@ def run_identity_agent_stream_fast(
     db: Session,
     request,
 ) -> Iterator[dict[str, Any]]:
-    """Single-pass Rudrix streaming with tool support.
-
-    The previous streaming flow performed one blocking model generation to
-    choose tools and then a second model generation for the answer. Ollama's
-    provider already supports streaming tool calls safely, so this path uses
-    that capability directly. Natural-language answers start streaming on the
-    first provider call, while tool calls remain hidden and are executed before
-    another iteration.
-
-    Action-only tools (report generation, ticket creation, navigation) return a
-    deterministic confirmation after execution, avoiding an unnecessary second
-    LLM round-trip entirely.
-    """
-
     settings = get_ai_settings()
     provider = AIProviderFactory.create(settings)
     registry = create_ai_tool_registry()
@@ -486,8 +498,6 @@ def run_identity_agent_stream_fast(
                 tool_calls=tool_calls,
             )
 
-            # A native/fallback tool call should not have emitted user-visible
-            # content. Keep the assistant tool-call turn for the next iteration.
             messages.append(provider_response.assistant_message)
 
             yield {
@@ -517,12 +527,18 @@ def run_identity_agent_stream_fast(
                     yield {"type": "delta", "text": action_message}
                     break
 
-            # A data lookup requires the model to synthesize the result, so run
-            # another streamed iteration with the tool messages now in context.
+            data_message = _deterministic_data_message(
+                tool_history,
+                history_start,
+                names,
+            )
+            if data_message:
+                final_message = data_message
+                yield {"type": "delta", "text": data_message}
+                break
+
             continue
 
-        # Natural-language response was already streamed when supported. For a
-        # provider without streaming support, emit the completed text once.
         final_message = (provider_response.text or "").strip()
         if not streamed_parts and final_message:
             yield {"type": "delta", "text": final_message}
@@ -531,18 +547,13 @@ def run_identity_agent_stream_fast(
             final_message = "No response was generated."
         break
     else:
-        final_message = (
-            "The assistant reached the maximum number of tool operations."
-        )
+        final_message = "The assistant reached the maximum number of tool operations."
         yield {"type": "delta", "text": final_message}
 
     yield {
         "type": "done",
         "response": ChatResponse(
-            conversationId=(
-                request.conversationId
-                or str(uuid.uuid4())
-            ),
+            conversationId=(request.conversationId or str(uuid.uuid4())),
             message=final_message,
             model=selected_model,
             toolsUsed=tool_history,
