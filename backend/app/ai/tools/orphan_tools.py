@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -103,6 +104,13 @@ class SearchOrphanAccountsTool(BaseAITool):
 class GroundedAccountInvestigationTool(InvestigateAccountsTool):
     """Preserve fast account lookup while allowing broad orphan-list requests."""
 
+    description = (
+        "Find a specific current account OR list/filter current orphan accounts. For a broad "
+        "orphan request, set orphan_only=true, keep query empty, and put the source name in "
+        "integration. For a specific orphan account, set orphan_only=true and put only the "
+        "username/email/employee ID/display name in query. Results use persisted correlation "
+        "evidence; never invent a correlation reason."
+    )
     parameters = {
         "type": "object",
         "properties": {
@@ -123,9 +131,35 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
         "additionalProperties": False,
     }
 
+    @staticmethod
+    def _reference_from_orphan_sentence(raw_query: str) -> str | None:
+        employee_id = re.search(r"\b[A-Za-z][A-Za-z0-9_-]*\d{3,}\b", raw_query)
+        if employee_id:
+            return employee_id.group(0)
+
+        email = re.search(r"\b[^\s@]+@[^\s@]+\.[^\s@]+\b", raw_query)
+        if email:
+            return email.group(0).strip(".,;:!?")
+
+        return None
+
+    @staticmethod
+    def _integration_from_orphan_sentence(raw_query: str) -> str | None:
+        match = re.search(
+            r"\b(?:from|in)\s+(.+?)\s*$",
+            raw_query,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        value = match.group(1).strip(" .?!,;:")
+        return value or None
+
     def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
         raw_query = str(arguments.get("query") or "").strip()
-        generic_orphan_query = raw_query.casefold().strip(" .?!") in {
+        query_lower = raw_query.casefold()
+        contains_orphan_language = "orphan" in query_lower or "uncorrelated" in query_lower
+        generic_orphan_query = query_lower.strip(" .?!") in {
             "orphan",
             "orphans",
             "orphan account",
@@ -134,7 +168,7 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
             "current orphan accounts",
         }
         orphan_mode = bool(arguments.get("orphan_only")) or generic_orphan_query or not raw_query
-        orphan_mode = orphan_mode or any(
+        orphan_mode = orphan_mode or contains_orphan_language or any(
             arguments.get(key) not in (None, "")
             for key in ("orphan_type", "reason", "last_days")
         )
@@ -142,14 +176,26 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
         if not orphan_mode:
             return super().execute(db=db, arguments=arguments)
 
+        integration = arguments.get("integration")
+        if not integration and contains_orphan_language:
+            integration = self._integration_from_orphan_sentence(raw_query)
+
+        search: str | None
+        if contains_orphan_language:
+            search = self._reference_from_orphan_sentence(raw_query)
+        elif generic_orphan_query:
+            search = None
+        else:
+            search = raw_query or None
+
         result = SearchOrphanAccountsTool().execute(
             db=db,
             arguments={
-                "integration": arguments.get("integration"),
+                "integration": integration,
                 "application": arguments.get("application"),
                 "orphan_type": arguments.get("orphan_type"),
                 "status": arguments.get("status"),
-                "search": None if generic_orphan_query else (raw_query or None),
+                "search": search,
                 "reason": arguments.get("reason"),
                 "last_days": arguments.get("last_days"),
                 "limit": arguments.get("limit") or 20,
