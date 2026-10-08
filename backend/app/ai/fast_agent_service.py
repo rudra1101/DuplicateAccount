@@ -154,6 +154,13 @@ def _is_explicit_duplicate_lookup(request) -> bool:
     if "duplicate" not in current:
         return False
 
+    # Reports/exports and aggregate analytics still need their normal tool set.
+    if any(
+        term in current
+        for term in ("report", "export", "csv", "download", "spreadsheet")
+    ):
+        return False
+
     action_terms = (
         "confirm",
         "mark ",
