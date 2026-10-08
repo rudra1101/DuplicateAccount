@@ -8,6 +8,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.ai.agent_core import (
+    CapabilityCatalog,
+    hydrate_state_from_history,
+    plan_capabilities,
+    reduce_tool_result,
+    render_state_for_planner,
+)
 from app.ai.agent_service import (
     _execute_tool_calls,
     build_messages,
@@ -57,6 +64,17 @@ _EXPLICIT_REPORT_SUBJECTS = (
     "execution",
     "executions",
 )
+
+_TRIVIAL_CONVERSATION = {
+    "hi",
+    "hello",
+    "hey",
+    "thanks",
+    "thank you",
+    "good morning",
+    "good afternoon",
+    "good evening",
+}
 
 
 def _tool_names(tool_calls: list[Any]) -> set[str]:
@@ -148,13 +166,17 @@ def _recent_followup_text(request) -> str:
     )
 
 
+def _is_trivial_conversation(request) -> bool:
+    current = " ".join(str(request.message or "").strip().lower().split())
+    return current.rstrip("!?.") in _TRIVIAL_CONVERSATION
+
+
 def _is_explicit_duplicate_lookup(request) -> bool:
     """Identify a read-only duplicate lookup from the current user turn only."""
     current = " ".join(str(request.message or "").strip().lower().split())
     if "duplicate" not in current:
         return False
 
-    # Reports/exports and aggregate analytics still need their normal tool set.
     if any(
         term in current
         for term in ("report", "export", "csv", "download", "spreadsheet")
@@ -330,10 +352,8 @@ def _select_definitions(
     definitions: list[dict[str, Any]],
     request,
 ) -> list[dict[str, Any]]:
-    """Send only likely-relevant tools to the local model."""
+    """Legacy fast selector retained only as a low-latency path/fallback."""
 
-    # A direct read-only duplicate question should not inherit account/orphan,
-    # review, remediation, or dashboard tools from previous conversation turns.
     if _is_explicit_duplicate_lookup(request):
         return [
             definition
@@ -422,6 +442,37 @@ def _select_definitions(
     ]
 
 
+def _is_fast_path_selection(
+    definitions: list[dict[str, Any]],
+    catalog: CapabilityCatalog,
+) -> bool:
+    names = {
+        str(definition.get("name") or "")
+        for definition in definitions
+        if definition.get("name")
+    }
+    if not names or len(names) != 1:
+        return False
+    fast_names = {
+        capability.name
+        for capability in catalog.capabilities()
+        if capability.fast_path
+    }
+    return names.issubset(fast_names)
+
+
+def _definitions_for_names(
+    definitions: list[dict[str, Any]],
+    names: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    selected = set(names)
+    return [
+        definition
+        for definition in definitions
+        if str(definition.get("name") or "") in selected
+    ]
+
+
 def run_identity_agent_stream_fast(
     *,
     db: Session,
@@ -430,6 +481,7 @@ def run_identity_agent_stream_fast(
     settings = get_ai_settings()
     provider = AIProviderFactory.create(settings)
     registry = create_ai_tool_registry()
+    catalog = CapabilityCatalog(registry)
 
     selected_model = (
         settings.reasoning_model
@@ -437,8 +489,45 @@ def run_identity_agent_stream_fast(
         else settings.fast_model
     )
 
+    state = hydrate_state_from_history(list(request.history or []))
     messages = _trim_messages(build_messages(request))
-    definitions = _select_definitions(registry.definitions(), request)
+    messages.insert(
+        1,
+        {
+            "role": "system",
+            "content": (
+                render_state_for_planner(state)
+                + " Use grounded entity IDs from this state for referential follow-ups. "
+                "Do not replace them with guesses from conversation prose."
+            ),
+        },
+    )
+
+    all_definitions = registry.definitions()
+    heuristic_definitions = _select_definitions(all_definitions, request)
+
+    if _is_trivial_conversation(request):
+        definitions: list[dict[str, Any]] = []
+    elif _is_fast_path_selection(heuristic_definitions, catalog):
+        definitions = heuristic_definitions
+    else:
+        yield {"type": "status", "message": "Planning your request..."}
+        try:
+            plan = plan_capabilities(
+                provider=provider,
+                model=selected_model,
+                user_message=request.message,
+                catalog=catalog,
+                state=state,
+            )
+            definitions = _definitions_for_names(all_definitions, plan.capabilities)
+        except Exception:
+            definitions = []
+
+        # Planner failure must degrade safely to the existing routing behavior.
+        if not definitions and heuristic_definitions:
+            definitions = heuristic_definitions
+
     allowed_tools = {definition["name"] for definition in definitions}
 
     tool_history: list[ToolInvocationResponse] = []
@@ -521,6 +610,23 @@ def run_identity_agent_stream_fast(
                 tool_history=tool_history,
                 chat_sources=chat_sources,
                 source_keys=source_keys,
+            )
+
+            for invocation in tool_history[history_start:]:
+                state = reduce_tool_result(
+                    state,
+                    tool_name=invocation.name,
+                    tool_result=invocation.result,
+                )
+
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        render_state_for_planner(state)
+                        + " Continue the current goal using these grounded entities."
+                    ),
+                }
             )
 
             names = _tool_names(tool_calls)
