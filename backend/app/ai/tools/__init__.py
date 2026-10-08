@@ -1,3 +1,9 @@
+from app.services.orphan_report_extension import register_orphan_report
+
+# Register the report type before importing action_tools because that module builds
+# its supported report-type enum at import time.
+register_orphan_report()
+
 from app.ai.tools.action_tools import (
     GenerateReportTool,
     NavigateAppTool,
@@ -29,6 +35,7 @@ from app.ai.tools.operations_tools import (
     GetOperationsSummaryTool,
     SearchOperationsTool,
 )
+from app.ai.tools.orphan_tools import SearchOrphanAccountsTool
 from app.ai.tools.registry import AIToolRegistry
 from app.ai.tools.review_tools import (
     GetConfidenceBreakdownTool,
@@ -54,6 +61,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(ListIntegrationsTool())
     registry.register(GetIntegrationDetailsTool())
     registry.register(InvestigateAccountsTool())
+    registry.register(SearchOrphanAccountsTool())
 
     registry.register(GetOperationsSummaryTool())
     registry.register(SearchOperationsTool())
