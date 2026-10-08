@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_permission
 from app.database.session import get_db
+from app.services.orphan_report_extension import register_orphan_report
+
+register_orphan_report()
+
 from app.services.report_service import (
     build_report,
     get_report_catalog,

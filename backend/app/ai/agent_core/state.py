@@ -32,6 +32,34 @@ def _entity(
     )
 
 
+def _store_orphan_context(updated: AgentState, data: dict[str, Any], tool_name: str) -> None:
+    report_filters = data.get("reportFilters")
+    updated.last_filters = {
+        "context": "orphan_accounts",
+        "reportType": str(data.get("reportType") or "orphan_accounts"),
+        "filters": dict(report_filters) if isinstance(report_filters, dict) else {},
+    }
+
+    items = data.get("items")
+    if isinstance(items, list) and len(items) == 1:
+        account = _dict(items[0])
+        updated.current_account = _entity(
+            EntityType.SOURCE_ACCOUNT,
+            id_value=account.get("sourceAccountId"),
+            label=account.get("displayName") or account.get("username"),
+            attributes=account,
+            source=tool_name,
+        )
+        if account.get("integrationId") is not None:
+            updated.current_integration = _entity(
+                EntityType.INTEGRATION,
+                id_value=account.get("integrationId"),
+                label=account.get("integrationName") or account.get("application"),
+                attributes={"application": account.get("application")},
+                source=tool_name,
+            )
+
+
 def reduce_tool_result(
     state: AgentState,
     *,
@@ -51,35 +79,41 @@ def reduce_tool_result(
     updated = state.model_copy(deep=True)
 
     if tool_name == "investigate_accounts":
-        items = data.get("items")
-        if isinstance(items, list) and len(items) == 1:
-            account = _dict(items[0])
-            updated.current_account = _entity(
-                EntityType.SOURCE_ACCOUNT,
-                id_value=account.get("sourceAccountId"),
-                label=account.get("displayName") or account.get("username"),
-                attributes={
-                    "integrationId": account.get("integrationId"),
-                    "integrationName": account.get("integrationName"),
-                    "application": account.get("application"),
-                    "nativeIdentity": account.get("nativeIdentity"),
-                    "username": account.get("username"),
-                    "displayName": account.get("displayName"),
-                    "email": account.get("email"),
-                    "employeeId": account.get("employeeId"),
-                    "orphaned": account.get("orphaned"),
-                    "orphanType": account.get("orphanType"),
-                },
-                source=tool_name,
-            )
-            if account.get("integrationId") is not None:
-                updated.current_integration = _entity(
-                    EntityType.INTEGRATION,
-                    id_value=account.get("integrationId"),
-                    label=account.get("integrationName") or account.get("application"),
-                    attributes={"application": account.get("application")},
+        if data.get("queryMode") == "orphan_search":
+            _store_orphan_context(updated, data, tool_name)
+        else:
+            items = data.get("items")
+            if isinstance(items, list) and len(items) == 1:
+                account = _dict(items[0])
+                updated.current_account = _entity(
+                    EntityType.SOURCE_ACCOUNT,
+                    id_value=account.get("sourceAccountId"),
+                    label=account.get("displayName") or account.get("username"),
+                    attributes={
+                        "integrationId": account.get("integrationId"),
+                        "integrationName": account.get("integrationName"),
+                        "application": account.get("application"),
+                        "nativeIdentity": account.get("nativeIdentity"),
+                        "username": account.get("username"),
+                        "displayName": account.get("displayName"),
+                        "email": account.get("email"),
+                        "employeeId": account.get("employeeId"),
+                        "orphaned": account.get("orphaned"),
+                        "orphanType": account.get("orphanType"),
+                    },
                     source=tool_name,
                 )
+                if account.get("integrationId") is not None:
+                    updated.current_integration = _entity(
+                        EntityType.INTEGRATION,
+                        id_value=account.get("integrationId"),
+                        label=account.get("integrationName") or account.get("application"),
+                        attributes={"application": account.get("application")},
+                        source=tool_name,
+                    )
+
+    elif tool_name == "search_orphan_accounts":
+        _store_orphan_context(updated, data, tool_name)
 
     elif tool_name in {"search_duplicate_groups", "get_duplicate_group_details"}:
         groups = data.get("groups")
@@ -124,6 +158,18 @@ def reduce_tool_result(
                     },
                     source=tool_name,
                 )
+
+    elif tool_name == "generate_report":
+        report_type = str(data.get("reportType") or "").strip()
+        client_action = _dict(data.get("clientAction"))
+        filters = client_action.get("filters")
+        if report_type:
+            updated.last_filters = {
+                "context": report_type,
+                "reportType": report_type,
+                "filters": dict(filters) if isinstance(filters, dict) else {},
+                "downloadUrl": data.get("downloadUrl"),
+            }
 
     elif tool_name == "search_remediation_items":
         items = data.get("items") or data.get("results")
