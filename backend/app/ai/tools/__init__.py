@@ -9,7 +9,9 @@ from app.ai.tools.account_resolution_tools import (
     GroundedCreateRemediationTicketTool,
     GroundedDuplicateGroupDetailsTool,
     GroundedReviewOperationsTool,
-    GroundedSearchDuplicateGroupsTool,
+)
+from app.ai.tools.duplicate_reference_tools import (
+    CompleteDuplicateReferenceSearchTool,
 )
 from app.ai.tools.dashboard_tools import (
     GetDashboardSummaryTool,
@@ -56,7 +58,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(GetExecutionDetailsTool())
 
     registry.register(GetDuplicateSummaryTool())
-    registry.register(GroundedSearchDuplicateGroupsTool())
+    registry.register(CompleteDuplicateReferenceSearchTool())
     registry.register(GroundedDuplicateGroupDetailsTool())
     registry.register(GroundedReviewOperationsTool())
 

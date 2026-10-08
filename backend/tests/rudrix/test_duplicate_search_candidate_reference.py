@@ -9,7 +9,7 @@ from app.db_models.duplicate_candidate import DuplicateCandidateRecord
 from app.db_models.duplicate_group import DuplicateGroupRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.scan import ScanRecord
-from app.ai.tools.account_resolution_tools import GroundedSearchDuplicateGroupsTool
+from app.ai.tools.duplicate_reference_tools import CompleteDuplicateReferenceSearchTool
 
 
 def test_duplicate_search_matches_employee_id_on_candidate_account():
@@ -21,7 +21,11 @@ def test_duplicate_search_matches_employee_id_on_candidate_account():
         db.add(integration)
         db.flush()
 
-        scan = ScanRecord(integration_id=integration.id, status="COMPLETED")
+        scan = ScanRecord(
+            integration_id=integration.id,
+            filename="candidate-reference-test.csv",
+            status="COMPLETED",
+        )
         db.add(scan)
         db.flush()
 
@@ -70,7 +74,7 @@ def test_duplicate_search_matches_employee_id_on_candidate_account():
         db.add(candidate)
         db.commit()
 
-        result = GroundedSearchDuplicateGroupsTool().execute(
+        result = CompleteDuplicateReferenceSearchTool().execute(
             db=db,
             arguments={
                 "integration": None,
