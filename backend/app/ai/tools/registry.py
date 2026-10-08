@@ -18,6 +18,7 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "list_integrations": "integration.view",
     "get_integration_details": "integration.view",
     "investigate_accounts": "integration.view",
+    "search_orphan_accounts": "integration.view",
     "get_operations_summary": "operations.view",
     "search_operations": "operations.view",
     "get_latest_execution": "operations.view",
