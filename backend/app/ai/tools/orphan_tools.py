@@ -5,6 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.ai.tools.account_investigation_tools import InvestigateAccountsTool
 from app.ai.tools.base import BaseAITool
 from app.services.orphan_account_service import ORPHAN_TYPES, list_orphan_accounts
 
@@ -74,8 +75,6 @@ class SearchOrphanAccountsTool(BaseAITool):
         if application:
             report_filters["application"] = application
         if orphan_type:
-            # The shared report API already exposes `status`; for orphan reports this
-            # value is interpreted as orphan type when it matches a known type.
             report_filters["status"] = orphan_type
         elif status:
             report_filters["status"] = status
@@ -99,3 +98,61 @@ class SearchOrphanAccountsTool(BaseAITool):
                 else "No current orphan accounts matched those filters."
             ),
         }
+
+
+class GroundedAccountInvestigationTool(InvestigateAccountsTool):
+    """Preserve fast account lookup while allowing broad orphan-list requests."""
+
+    parameters = {
+        "type": "object",
+        "properties": {
+            "query": {"type": ["string", "null"]},
+            "application": {"type": ["string", "null"]},
+            "integration": {"type": ["string", "null"]},
+            "orphan_only": {"type": ["boolean", "null"]},
+            "orphan_type": {
+                "type": ["string", "null"],
+                "enum": [*sorted(ORPHAN_TYPES), None],
+            },
+            "status": {"type": ["string", "null"]},
+            "reason": {"type": ["string", "null"]},
+            "last_days": {"type": ["integer", "null"], "minimum": 1, "maximum": 3650},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+        },
+        "required": [],
+        "additionalProperties": False,
+    }
+
+    def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
+        raw_query = str(arguments.get("query") or "").strip()
+        generic_orphan_query = raw_query.casefold().strip(" .?!") in {
+            "orphan",
+            "orphans",
+            "orphan account",
+            "orphan accounts",
+            "all orphan accounts",
+            "current orphan accounts",
+        }
+        orphan_mode = bool(arguments.get("orphan_only")) or generic_orphan_query or not raw_query
+        orphan_mode = orphan_mode or any(
+            arguments.get(key) not in (None, "")
+            for key in ("orphan_type", "reason", "last_days")
+        )
+
+        if not orphan_mode:
+            return super().execute(db=db, arguments=arguments)
+
+        result = SearchOrphanAccountsTool().execute(
+            db=db,
+            arguments={
+                "integration": arguments.get("integration"),
+                "application": arguments.get("application"),
+                "orphan_type": arguments.get("orphan_type"),
+                "status": arguments.get("status"),
+                "search": None if generic_orphan_query else (raw_query or None),
+                "reason": arguments.get("reason"),
+                "last_days": arguments.get("last_days"),
+                "limit": arguments.get("limit") or 20,
+            },
+        )
+        return {**result, "queryMode": "orphan_search"}
