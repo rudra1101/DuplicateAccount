@@ -26,6 +26,7 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "search_duplicate_groups": "duplicate.view",
     "get_duplicate_group_details": "duplicate.view",
     "get_review_statistics": "duplicate.view",
+    "review_duplicate_candidate": "duplicate.review",
     "get_confidence_breakdown": "duplicate.view",
     "get_training_label_summary": "ml.view",
     "search_knowledge_base": "knowledge.view",
