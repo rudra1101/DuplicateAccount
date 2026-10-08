@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.ai.agent_core.models import AgentEntity, AgentState, EntityType
+from app.ai.agent_core.models import AgentEntity, AgentState, EntityType, PendingAction
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -143,10 +143,25 @@ def reduce_tool_result(
             updated.current_remediation_item = _entity(
                 EntityType.REMEDIATION_ITEM,
                 id_value=item_id,
-                label=data.get("ticketNumber") or data.get("status"),
+                label=data.get("ticketNumber") or data.get("ticketId") or data.get("status"),
                 attributes=data,
                 source=tool_name,
             )
+
+        if data.get("requiresInput") and item_id is not None:
+            missing_fields: list[str] = []
+            if not data.get("target"):
+                missing_fields.append("target")
+            if not data.get("action"):
+                missing_fields.append("action")
+            updated.pending_action = PendingAction(
+                capability="create_remediation_ticket",
+                arguments={"remediation_item_id": item_id},
+                requires_confirmation=False,
+                missing_fields=missing_fields or ["target", "action"],
+            )
+        elif data.get("ticketId") or data.get("ticketNumber") or data.get("created") is True:
+            updated.pending_action = None
 
     elif tool_name in {"get_integration_details", "list_integrations"}:
         integration = data
