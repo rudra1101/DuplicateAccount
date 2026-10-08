@@ -16,6 +16,7 @@ from app.ai.agent_core import (
     reduce_tool_result,
     render_state_for_planner,
 )
+from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_service import (
     _execute_tool_calls,
     build_messages,
@@ -33,6 +34,7 @@ TERMINAL_ACTION_TOOLS = {
     "generate_report",
     "create_remediation_ticket",
     "navigate_app",
+    "review_duplicate_candidate",
 }
 
 DETERMINISTIC_DATA_TOOLS = {
@@ -420,6 +422,7 @@ def _select_definitions(
                 "search_duplicate_groups",
                 "get_duplicate_group_details",
                 "get_review_statistics",
+                "review_duplicate_candidate",
                 "get_confidence_breakdown",
             }
         )
@@ -508,6 +511,69 @@ def run_identity_agent_stream_fast(
         persisted_state=persisted_state,
         history=list(request.history or []),
     )
+
+    grounded_action = resolve_grounded_action(request.message, state)
+    if grounded_action is not None:
+        authorized_tools = {
+            str(definition.get("name") or "")
+            for definition in registry.definitions()
+        }
+        if grounded_action.tool_name not in authorized_tools:
+            final_message = (
+                "You do not have permission to submit duplicate review decisions. "
+                "The required permission is `duplicate.review`."
+            )
+            yield {"type": "delta", "text": final_message}
+            yield {
+                "type": "done",
+                "response": ChatResponse(
+                    conversationId=(request.conversationId or str(uuid.uuid4())),
+                    message=final_message,
+                    model="rudrix-action",
+                    toolsUsed=[],
+                    sources=[],
+                ),
+                "agentState": state.model_dump(exclude_none=True),
+            }
+            return
+
+        yield {"type": "status", "message": "Applying duplicate review decision..."}
+        try:
+            data = registry.execute(
+                name=grounded_action.tool_name,
+                db=db,
+                arguments=grounded_action.arguments,
+            )
+            result = {"success": True, "data": data}
+            final_message = str(data.get("message") or "Duplicate review decision saved.")
+        except Exception as exc:
+            result = {"success": False, "error": str(exc)}
+            final_message = str(exc) or "Unable to save the duplicate review decision."
+
+        invocation = ToolInvocationResponse(
+            name=grounded_action.tool_name,
+            arguments=grounded_action.arguments,
+            result=result,
+        )
+        state = reduce_tool_result(
+            state,
+            tool_name=grounded_action.tool_name,
+            tool_result=result,
+        )
+        yield {"type": "delta", "text": final_message}
+        yield {
+            "type": "done",
+            "response": ChatResponse(
+                conversationId=(request.conversationId or str(uuid.uuid4())),
+                message=final_message,
+                model="rudrix-action",
+                toolsUsed=[invocation],
+                sources=[],
+            ),
+            "agentState": state.model_dump(exclude_none=True),
+        }
+        return
+
     messages = _trim_messages(build_messages(request))
     messages.insert(
         1,
