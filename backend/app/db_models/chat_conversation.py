@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
 )
 from sqlalchemy.orm import (
@@ -45,6 +46,13 @@ class ChatConversationRecord(Base):
         String(255),
         nullable=False,
         default="New Conversation",
+    )
+
+    # Grounded Rudrix domain context. This is intentionally structured state,
+    # not raw model prose, so referential follow-ups survive refresh/reload.
+    agent_state: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
