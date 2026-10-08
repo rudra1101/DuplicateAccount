@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.agent_core import (
+    AgentState,
     CapabilityCatalog,
     hydrate_state_from_history,
     plan_capabilities,
@@ -473,10 +474,24 @@ def _definitions_for_names(
     ]
 
 
+def _initial_agent_state(
+    *,
+    persisted_state: dict[str, Any] | None,
+    history: list[Any],
+) -> AgentState:
+    if isinstance(persisted_state, dict) and persisted_state:
+        try:
+            return AgentState.model_validate(persisted_state)
+        except Exception:
+            pass
+    return hydrate_state_from_history(history)
+
+
 def run_identity_agent_stream_fast(
     *,
     db: Session,
     request,
+    persisted_state: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
     settings = get_ai_settings()
     provider = AIProviderFactory.create(settings)
@@ -489,7 +504,10 @@ def run_identity_agent_stream_fast(
         else settings.fast_model
     )
 
-    state = hydrate_state_from_history(list(request.history or []))
+    state = _initial_agent_state(
+        persisted_state=persisted_state,
+        history=list(request.history or []),
+    )
     messages = _trim_messages(build_messages(request))
     messages.insert(
         1,
@@ -524,7 +542,6 @@ def run_identity_agent_stream_fast(
         except Exception:
             definitions = []
 
-        # Planner failure must degrade safely to the existing routing behavior.
         if not definitions and heuristic_definitions:
             definitions = heuristic_definitions
 
@@ -672,4 +689,5 @@ def run_identity_agent_stream_fast(
             toolsUsed=tool_history,
             sources=chat_sources,
         ),
+        "agentState": state.model_dump(exclude_none=True),
     }
