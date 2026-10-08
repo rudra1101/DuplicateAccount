@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.ai.agent_core.models import AgentEntity, AgentState
@@ -122,6 +123,40 @@ def _resolve_remediation_start(text: str, state: AgentState) -> GroundedAction |
     )
 
 
+def _resolve_report_action(text: str, state: AgentState) -> GroundedAction | None:
+    context = state.last_filters if isinstance(state.last_filters, dict) else {}
+    report_type = str(context.get("reportType") or "").strip()
+    raw_filters = context.get("filters")
+    filters: dict[str, object] = dict(raw_filters) if isinstance(raw_filters, dict) else {}
+    if not report_type:
+        return None
+
+    report_intent = bool(
+        re.search(r"\b(?:report|export|download|csv|spreadsheet)\b", text)
+    )
+    date_refinement = re.search(
+        r"\b(?:last|past|previous)\s+(\d{1,4})\s+days?\b",
+        text,
+    )
+
+    if date_refinement:
+        days = max(1, min(int(date_refinement.group(1)), 3650))
+        filters["dateFrom"] = (
+            datetime.now(UTC).date() - timedelta(days=days)
+        ).isoformat()
+
+    if report_intent or date_refinement:
+        return GroundedAction(
+            tool_name="generate_report",
+            arguments={
+                "report_type": report_type,
+                "filters": filters,
+            },
+        )
+
+    return None
+
+
 def _resolve_duplicate_review(text: str, state: AgentState) -> GroundedAction | None:
     candidate = state.current_duplicate_candidate
     if candidate is None or candidate.id is None:
@@ -159,12 +194,11 @@ def _resolve_duplicate_review(text: str, state: AgentState) -> GroundedAction | 
 
 
 def resolve_grounded_action(message: str, state: AgentState) -> GroundedAction | None:
-    """Resolve an unambiguous write action from grounded conversation state.
+    """Resolve an unambiguous action from grounded conversation state.
 
-    Open-ended requests still go through the agent planner. Explicit decisions about a
-    uniquely grounded entity are executed without another model round trip. This also
-    carries multi-turn remediation intent through structured pending action state so
-    users never need to know internal remediation IDs.
+    Open-ended requests still go through the agent planner. Explicit decisions and
+    referential report follow-ups use structured state directly, avoiding another
+    model round trip and preventing invented identifiers or filters.
     """
 
     text = _normalized(message)
@@ -178,5 +212,9 @@ def resolve_grounded_action(message: str, state: AgentState) -> GroundedAction |
     remediation_start = _resolve_remediation_start(text, state)
     if remediation_start is not None:
         return remediation_start
+
+    report_action = _resolve_report_action(text, state)
+    if report_action is not None:
+        return report_action
 
     return _resolve_duplicate_review(text, state)
