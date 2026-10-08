@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db_models.identity import IdentityRecord
@@ -47,6 +47,31 @@ def _identity_summary(identity: IdentityRecord | None) -> dict[str, Any] | None:
         "employeeId": identity.employee_id,
         "employmentStatus": identity.employment_status,
     }
+
+
+def _row_search_text(row: Any) -> str:
+    orphan, account, integration = row
+    evidence = dict(orphan.evidence or {})
+    attempts = evidence.get("correlationAttempts") or []
+    return " ".join(
+        str(value or "")
+        for value in (
+            account.native_identity,
+            account.username,
+            account.email,
+            account.employee_id,
+            account.display_name,
+            account.application,
+            integration.name,
+            orphan.orphan_type,
+            orphan.status,
+            orphan.correlation_method,
+            evidence.get("reason"),
+            evidence.get("policyName"),
+            evidence.get("strategy"),
+            attempts,
+        )
+    ).casefold()
 
 
 def list_orphan_accounts(
@@ -97,18 +122,6 @@ def list_orphan_accounts(
     if status:
         conditions.append(OrphanStateRecord.status == status.strip().upper())
 
-    if search:
-        term = _contains(search)
-        conditions.append(
-            or_(
-                SourceAccountRecord.native_identity.ilike(term),
-                SourceAccountRecord.username.ilike(term),
-                SourceAccountRecord.email.ilike(term),
-                SourceAccountRecord.employee_id.ilike(term),
-                SourceAccountRecord.display_name.ilike(term),
-            )
-        )
-
     start = _date_start(date_from)
     end = _date_end(date_to)
     if start is not None:
@@ -124,6 +137,10 @@ def list_orphan_accounts(
     )
 
     rows = list(db.execute(statement).all())
+
+    if search:
+        search_needle = search.casefold().strip()
+        rows = [row for row in rows if search_needle in _row_search_text(row)]
 
     if reason:
         reason_needle = reason.casefold().strip()
