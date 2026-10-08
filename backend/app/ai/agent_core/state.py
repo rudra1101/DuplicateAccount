@@ -81,6 +81,33 @@ def reduce_tool_result(
                     source=tool_name,
                 )
 
+    elif tool_name == "search_orphan_accounts":
+        items = data.get("items")
+        report_filters = data.get("reportFilters")
+        updated.last_filters = {
+            "context": "orphan_accounts",
+            "reportType": str(data.get("reportType") or "orphan_accounts"),
+            "filters": dict(report_filters) if isinstance(report_filters, dict) else {},
+        }
+
+        if isinstance(items, list) and len(items) == 1:
+            account = _dict(items[0])
+            updated.current_account = _entity(
+                EntityType.SOURCE_ACCOUNT,
+                id_value=account.get("sourceAccountId"),
+                label=account.get("displayName") or account.get("username"),
+                attributes=account,
+                source=tool_name,
+            )
+            if account.get("integrationId") is not None:
+                updated.current_integration = _entity(
+                    EntityType.INTEGRATION,
+                    id_value=account.get("integrationId"),
+                    label=account.get("integrationName") or account.get("application"),
+                    attributes={"application": account.get("application")},
+                    source=tool_name,
+                )
+
     elif tool_name in {"search_duplicate_groups", "get_duplicate_group_details"}:
         groups = data.get("groups")
         if groups is None and data.get("found"):
@@ -124,6 +151,18 @@ def reduce_tool_result(
                     },
                     source=tool_name,
                 )
+
+    elif tool_name == "generate_report":
+        report_type = str(data.get("reportType") or "").strip()
+        client_action = _dict(data.get("clientAction"))
+        filters = client_action.get("filters")
+        if report_type:
+            updated.last_filters = {
+                "context": report_type,
+                "reportType": report_type,
+                "filters": dict(filters) if isinstance(filters, dict) else {},
+                "downloadUrl": data.get("downloadUrl"),
+            }
 
     elif tool_name == "search_remediation_items":
         items = data.get("items") or data.get("results")
