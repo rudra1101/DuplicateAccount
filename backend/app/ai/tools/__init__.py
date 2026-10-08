@@ -8,9 +8,6 @@ from app.ai.tools.action_tools import (
     GenerateReportTool,
     NavigateAppTool,
 )
-from app.ai.tools.account_investigation_tools import (
-    InvestigateAccountsTool,
-)
 from app.ai.tools.account_resolution_tools import (
     GroundedCreateRemediationTicketTool,
     GroundedDuplicateGroupDetailsTool,
@@ -35,7 +32,10 @@ from app.ai.tools.operations_tools import (
     GetOperationsSummaryTool,
     SearchOperationsTool,
 )
-from app.ai.tools.orphan_tools import SearchOrphanAccountsTool
+from app.ai.tools.orphan_tools import (
+    GroundedAccountInvestigationTool,
+    SearchOrphanAccountsTool,
+)
 from app.ai.tools.registry import AIToolRegistry
 from app.ai.tools.review_tools import (
     GetConfidenceBreakdownTool,
@@ -60,7 +60,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
 
     registry.register(ListIntegrationsTool())
     registry.register(GetIntegrationDetailsTool())
-    registry.register(InvestigateAccountsTool())
+    registry.register(GroundedAccountInvestigationTool())
     registry.register(SearchOrphanAccountsTool())
 
     registry.register(GetOperationsSummaryTool())
