@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    JSON,
     DateTime,
     ForeignKey,
     Integer,
@@ -45,6 +46,15 @@ class ChatConversationRecord(Base):
         String(255),
         nullable=False,
         default="New Conversation",
+    )
+
+    # Grounded Rudrix Agent Core state. This stores only structured entities and
+    # action context derived from successful IdentityAI tool results; model prose
+    # is never persisted as authoritative agent state.
+    agent_state: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
     )
 
     created_at: Mapped[datetime] = mapped_column(
