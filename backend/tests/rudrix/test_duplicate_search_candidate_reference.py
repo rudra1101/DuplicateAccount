@@ -21,7 +21,11 @@ def test_duplicate_search_matches_employee_id_on_candidate_account():
         db.add(integration)
         db.flush()
 
-        scan = ScanRecord(integration_id=integration.id, status="COMPLETED")
+        scan = ScanRecord(
+            integration_id=integration.id,
+            filename="candidate-reference-test.csv",
+            status="COMPLETED",
+        )
         db.add(scan)
         db.flush()
 
