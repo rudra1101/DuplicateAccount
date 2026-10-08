@@ -11,6 +11,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "list_integrations": {"domain": "integration", "kind": CapabilityKind.READ},
     "get_integration_details": {"domain": "integration", "kind": CapabilityKind.READ},
     "investigate_accounts": {"domain": "account", "kind": CapabilityKind.READ, "fast_path": True},
+    "search_orphan_accounts": {"domain": "orphan", "kind": CapabilityKind.READ, "fast_path": True},
     "get_operations_summary": {"domain": "operations", "kind": CapabilityKind.READ},
     "search_operations": {"domain": "operations", "kind": CapabilityKind.READ},
     "get_latest_execution": {"domain": "operations", "kind": CapabilityKind.READ},
