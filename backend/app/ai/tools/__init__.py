@@ -10,6 +10,9 @@ from app.ai.tools.account_resolution_tools import (
     GroundedDuplicateGroupDetailsTool,
     GroundedReviewOperationsTool,
 )
+from app.ai.tools.duplicate_action_tools import (
+    ReviewDuplicateCandidateTool,
+)
 from app.ai.tools.duplicate_reference_tools import (
     CompleteDuplicateReferenceSearchTool,
 )
@@ -61,6 +64,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(CompleteDuplicateReferenceSearchTool())
     registry.register(GroundedDuplicateGroupDetailsTool())
     registry.register(GroundedReviewOperationsTool())
+    registry.register(ReviewDuplicateCandidateTool())
 
     registry.register(GetTrainingLabelSummaryTool())
     registry.register(GetConfidenceBreakdownTool())

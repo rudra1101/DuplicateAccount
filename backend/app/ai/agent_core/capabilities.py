@@ -19,6 +19,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "search_duplicate_groups": {"domain": "duplicate", "kind": CapabilityKind.READ, "fast_path": True},
     "get_duplicate_group_details": {"domain": "duplicate", "kind": CapabilityKind.READ},
     "get_review_statistics": {"domain": "duplicate", "kind": CapabilityKind.READ},
+    "review_duplicate_candidate": {"domain": "duplicate", "kind": CapabilityKind.WRITE},
     "get_confidence_breakdown": {"domain": "duplicate", "kind": CapabilityKind.READ},
     "get_training_label_summary": {"domain": "ml", "kind": CapabilityKind.READ},
     "search_knowledge_base": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
