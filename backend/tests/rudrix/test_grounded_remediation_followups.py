@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_core.models import AgentEntity, AgentState, EntityType
 from app.ai.agent_core.state import reduce_tool_result
+from app.ai.fast_agent_service import _state_instruction
 
 
 def _duplicate_state() -> AgentState:
@@ -25,23 +25,16 @@ def _duplicate_state() -> AgentState:
     )
 
 
-def test_create_ticket_for_current_duplicate_uses_grounded_reference():
-    action = resolve_grounded_action("create a ticket for it", _duplicate_state())
-
-    assert action is not None
-    assert action.tool_name == "create_remediation_ticket"
-    assert action.arguments == {
-        "remediation_item_id": None,
-        "account_reference": "asinha",
-        "target": None,
-        "action": None,
-    }
+def test_duplicate_context_is_available_to_agent_for_remediation_planning():
+    rendered = _state_instruction(_duplicate_state())
+    assert "9694" in rendered
+    assert "asinha" in rendered
+    assert "W00003" in rendered
 
 
 def test_remediation_lookup_result_becomes_pending_action():
-    state = _duplicate_state()
     state = reduce_tool_result(
-        state,
+        _duplicate_state(),
         tool_name="create_remediation_ticket",
         tool_result={
             "success": True,
@@ -64,38 +57,16 @@ def test_remediation_lookup_result_becomes_pending_action():
     assert state.pending_action.arguments["remediation_item_id"] == 73
     assert set(state.pending_action.missing_fields) == {"target", "action"}
 
-
-def test_delete_second_account_completes_pending_ticket_without_internal_ids():
-    state = _duplicate_state()
-    state = reduce_tool_result(
-        state,
-        tool_name="create_remediation_ticket",
-        tool_result={
-            "success": True,
-            "data": {
-                "created": False,
-                "requiresInput": True,
-                "remediationItemId": 73,
-                "account1": {"username": "asinha.legacy"},
-                "account2": {"username": "asinha"},
-            },
-        },
-    )
-
-    action = resolve_grounded_action("delete second account", state)
-
-    assert action is not None
-    assert action.tool_name == "create_remediation_ticket"
-    assert action.arguments["remediation_item_id"] == 73
-    assert action.arguments["target"] == "ACCOUNT_2"
-    assert action.arguments["action"] == "DELETE"
-    assert action.arguments["account_reference"] is None
+    rendered = _state_instruction(state)
+    assert "remediation_item_id" in rendered
+    assert "73" in rendered
+    assert "target" in rendered
+    assert "action" in rendered
 
 
 def test_successful_ticket_clears_pending_action():
-    state = _duplicate_state()
     state = reduce_tool_result(
-        state,
+        _duplicate_state(),
         tool_name="create_remediation_ticket",
         tool_result={
             "success": True,

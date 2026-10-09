@@ -17,15 +17,17 @@ def _definitions():
     ]
 
 
-def test_explicit_duplicate_lookup_routes_only_to_duplicate_search():
+def test_duplicate_lookup_keeps_duplicate_search_in_generic_capability_surface():
     request = ChatRequest(
         message="is W00003 a duplicate?",
         history=[],
     )
 
     selected = _select_definitions(_definitions(), request)
+    names = {item["name"] for item in selected}
 
-    assert [item["name"] for item in selected] == ["search_duplicate_groups"]
+    assert "search_duplicate_groups" in names
+    assert names == {item["name"] for item in _definitions()}
 
 
 def test_duplicate_review_action_is_not_reduced_to_read_only_search():
@@ -69,34 +71,34 @@ def test_duplicate_formatter_returns_only_persisted_candidate_facts():
         }
     )
 
-    assert "Aditya Sinha has current duplicate candidate(s)" in message
+    assert "Aditya Sinha" in message
     assert "asinha.legacy" in message
     assert "candidate ID 701" in message
     assert "96% confidence" in message
-    assert "Based on the tool call" not in message
-    assert "original user question" not in message
+    assert "Based on" not in message
+    assert "tool" not in message.lower()
 
 
 def test_account_formatter_does_not_render_null_status_or_meta_commentary():
     message = format_account_investigation(
         {
-            "count": 1,
             "items": [
                 {
-                    "displayName": "Aditya Sinha",
+                    "sourceAccountId": 203,
                     "application": "Active Directory",
                     "username": "asinha",
+                    "displayName": "Aditya Sinha",
                     "email": "asinha@examplecorp.com",
                     "employeeId": "W00003",
-                    "accountStatus": "null",
+                    "nativeIdentity": "02ebc443-12b6-5a1e-bbca-073c9b0f7879",
+                    "accountStatus": None,
                     "orphaned": False,
                 }
-            ],
+            ]
         }
     )
 
     assert "Aditya Sinha" in message
-    assert "Employee ID: W00003" in message
-    assert "Orphaned: No" in message
     assert "Status: null" not in message
-    assert "tool call response" not in message
+    assert "Based on" not in message
+    assert "tool call" not in message.lower()

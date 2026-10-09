@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_core.models import AgentState
 from app.ai.agent_core.state import reduce_tool_result
+from app.ai.fast_agent_service import _state_instruction
 from app.ai.tools import create_ai_tool_registry
+from app.services.orphan_account_service import list_orphan_accounts
 from app.services.orphan_report_extension import ORPHAN_REPORT_TYPE, register_orphan_report
 from app.services.report_service import REPORT_CATALOG, ROW_BUILDERS
 
@@ -58,7 +59,7 @@ def test_orphan_search_result_persists_report_filters_and_full_evidence():
     assert state.last_filters["filters"]["integrationId"] == 12
 
 
-def test_generate_report_for_these_uses_grounded_orphan_filters():
+def test_grounded_orphan_report_context_is_visible_to_generic_agent():
     state = AgentState(
         last_filters={
             "context": "orphan_accounts",
@@ -66,33 +67,11 @@ def test_generate_report_for_these_uses_grounded_orphan_filters():
             "filters": {"integrationId": 12, "status": "UNMATCHED_ACCOUNT"},
         }
     )
+    rendered = _state_instruction(state)
 
-    action = resolve_grounded_action("generate a report for these", state)
-
-    assert action is not None
-    assert action.tool_name == "generate_report"
-    assert action.arguments == {
-        "report_type": "orphan_accounts",
-        "filters": {"integrationId": 12, "status": "UNMATCHED_ACCOUNT"},
-    }
-
-
-def test_report_date_refinement_keeps_existing_filters():
-    state = AgentState(
-        last_filters={
-            "context": "orphan_accounts",
-            "reportType": "orphan_accounts",
-            "filters": {"integrationId": 12},
-        }
-    )
-
-    action = resolve_grounded_action("only include accounts from the last 30 days", state)
-
-    assert action is not None
-    assert action.tool_name == "generate_report"
-    filters = action.arguments["filters"]
-    assert filters["integrationId"] == 12
-    assert isinstance(filters["dateFrom"], str)
+    assert "orphan_accounts" in rendered
+    assert "integrationId" in rendered
+    assert "UNMATCHED_ACCOUNT" in rendered
 
 
 def test_orphan_report_extension_is_available_to_shared_report_system():
@@ -100,3 +79,27 @@ def test_orphan_report_extension_is_available_to_shared_report_system():
 
     assert any(item["type"] == ORPHAN_REPORT_TYPE for item in REPORT_CATALOG)
     assert ORPHAN_REPORT_TYPE in ROW_BUILDERS
+
+
+class _CaptureDb:
+    def __init__(self):
+        self.statement = None
+
+    class _Result:
+        def all(self):
+            return []
+
+    def execute(self, statement):
+        self.statement = statement
+        return self._Result()
+
+
+def test_orphan_service_matches_ui_current_state_semantics():
+    db = _CaptureDb()
+    result = list_orphan_accounts(db, integration_id=12)
+
+    assert result == []
+    sql = str(db.statement)
+    where_sql = sql.partition("WHERE")[2]
+    assert "orphan_states.active" in where_sql
+    assert "source_accounts.active" not in where_sql

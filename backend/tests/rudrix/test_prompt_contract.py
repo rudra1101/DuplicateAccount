@@ -11,67 +11,46 @@ def test_prompt_identifies_assistant_as_rudrix():
     assert "rudrix" in normalized_prompt()
 
 
-def test_prompt_routes_system_duplicate_count_to_dashboard_summary():
+def test_prompt_is_goal_driven_not_phrase_routed():
     prompt = normalized_prompt()
-    assert "get_dashboard_summary" in prompt
-    assert "duplicate accounts" in prompt
-    assert "summary.duplicateaccounts" in prompt
+    assert "user's goal" in prompt
+    assert "hard-coded phrases" in prompt
+    assert "tool schemas and descriptions define what identityai can do" in prompt
 
 
-def test_prompt_routes_integration_questions_to_integration_tools():
+def test_prompt_requires_live_tools_for_live_product_state():
     prompt = normalized_prompt()
-    assert "list_integrations" in prompt
-    assert "get_integration_details" in prompt
+    assert "use live identityai tools" in prompt
+    assert "current product data" in prompt
+    assert "successful tool results as authoritative" in prompt
 
 
-def test_prompt_routes_scoped_duplicate_counts_to_duplicate_summary():
+def test_prompt_has_rag_and_hybrid_rules_without_naming_specific_tools():
     prompt = normalized_prompt()
-    assert "get_duplicate_summary" in prompt
-    assert "active directory" in prompt
-    assert "adp" in prompt
+    assert "knowledge/rag tools" in prompt
+    assert "combine live tools and knowledge tools" in prompt
+    assert "uploaded documentation" in prompt
 
 
-def test_prompt_keeps_candidate_confidence_separate_from_group_confidence():
+def test_prompt_requires_grounded_state_reuse():
     prompt = normalized_prompt()
-    assert "get_confidence_breakdown" in prompt
-    assert "duplicate candidate account" in prompt
-    assert "search_duplicate_groups" in prompt
-    assert "highest-confidence" in prompt or "highest confidence" in prompt
+    assert "grounded structured conversation state" in prompt
+    assert "internal ids" in prompt
+    assert "unambiguous" in prompt
 
 
-def test_prompt_preserves_gt_vs_gte_semantics():
+def test_prompt_requires_multi_tool_agent_loop():
     prompt = normalized_prompt()
-    assert 'operator = "gt"' in prompt or 'operator="gt"' in prompt
-    assert 'operator = "gte"' in prompt or 'operator="gte"' in prompt
+    assert "multiple tools in one turn" in prompt
+    assert "after each tool result" in prompt
+    assert "another tool is required" in prompt
 
 
-def test_prompt_preserves_follow_up_threshold_context():
+def test_prompt_enforces_rbac_and_action_safety():
     prompt = normalized_prompt()
-    assert "follow-up" in prompt or "follow up" in prompt
-    assert "application-wise" in prompt or "application wise" in prompt
-
-
-def test_prompt_routes_review_and_operations_questions():
-    prompt = normalized_prompt()
-    assert "get_review_statistics" in prompt
-    assert "get_operations_summary" in prompt
-    assert "get_latest_execution" in prompt
-    assert "search_operations" in prompt
-    assert "get_execution_details" in prompt
-
-
-def test_prompt_has_rag_and_hybrid_rules():
-    prompt = normalized_prompt()
-    assert "search_knowledge_base" in prompt
-    assert "list_knowledge_documents" in prompt
-    assert "current system data" in prompt
-    assert "policy guidance" in prompt
-    assert "group 1462" in prompt
-
-
-def test_prompt_forbids_using_knowledge_for_live_metrics():
-    prompt = normalized_prompt()
-    assert "do not use the knowledge base for live identityai metrics" in prompt
+    assert "respect rbac" in prompt
+    assert "state-changing or external actions require explicit user intent" in prompt
+    assert "destructive actions" in prompt
 
 
 def test_prompt_forbids_internal_tool_and_json_leakage():
@@ -81,11 +60,18 @@ def test_prompt_forbids_internal_tool_and_json_leakage():
     assert "return only the final user-facing answer" in prompt
 
 
-def test_prompt_requires_authoritative_candidate_account_total():
+def test_prompt_does_not_hardcode_domain_tool_names():
     prompt = normalized_prompt()
-    assert "totalmatchingaccounts" in prompt
-    assert "authoritative total" in prompt
-    assert "do not use duplicategrouprecord.highest_confidence" in prompt
+    for tool_name in (
+        "get_dashboard_summary",
+        "search_duplicate_groups",
+        "investigate_accounts",
+        "search_orphan_accounts",
+        "generate_report",
+        "create_remediation_ticket",
+        "search_knowledge_base",
+    ):
+        assert tool_name not in prompt
 
 
 def test_prompt_does_not_hardcode_a_live_duplicate_count():
@@ -94,7 +80,4 @@ def test_prompt_does_not_hardcode_a_live_duplicate_count():
         IDENTITY_OPERATIONS_INSTRUCTIONS,
         flags=re.IGNORECASE,
     )
-    assert match is None, (
-        "Remove hard-coded live duplicate counts from the system prompt. "
-        "Use a placeholder such as <count> instead."
-    )
+    assert match is None
