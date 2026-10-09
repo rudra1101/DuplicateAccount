@@ -20,14 +20,17 @@ def _selected_names(message: str, history=None) -> set[str]:
     return {str(item.get("name") or "") for item in selected}
 
 
-def test_account_capability_is_available_for_non_trivial_agent_turns():
+def test_account_capability_is_retrieved_for_account_lookup():
     assert "investigate_accounts" in _selected_names("Find account jsmith")
-    # The generic agent sees the authorized catalog; it is the model's job to
-    # choose whether this capability is relevant for a particular request.
-    assert "investigate_accounts" in _selected_names("Explain the principle of least privilege")
 
 
-def test_followup_keeps_authorized_account_and_orphan_capabilities_available():
+def test_general_iam_question_uses_knowledge_grounding_not_account_lookup():
+    names = _selected_names("Explain the principle of least privilege")
+    assert "search_identityai_product_knowledge" in names
+    assert "search_knowledge_base" in names
+
+
+def test_followup_keeps_account_and_orphan_capabilities_relevant():
     history = [
         ChatHistoryMessage(
             role="assistant",
