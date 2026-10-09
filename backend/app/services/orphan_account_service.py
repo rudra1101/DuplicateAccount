@@ -88,10 +88,12 @@ def list_orphan_accounts(
     date_to: str | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Return current orphan accounts using the same persisted orphan state as the UI.
+    """Return the same current orphan-state inventory exposed by the UI.
 
-    The query is deliberately service-level so Rudrix and report generation share one
-    source of truth rather than implementing separate orphan semantics.
+    `/orphans?integrationId=...&latestOnly=true` defines a current orphan as an
+    active `OrphanStateRecord`. It intentionally does not apply an additional
+    `SourceAccountRecord.active` condition. Keeping that exact semantic here prevents
+    Rudrix and the UI from disagreeing about the same integration's orphan count.
     """
 
     statement = (
@@ -104,10 +106,7 @@ def list_orphan_accounts(
             IntegrationRecord,
             IntegrationRecord.id == OrphanStateRecord.integration_id,
         )
-        .where(
-            OrphanStateRecord.active.is_(True),
-            SourceAccountRecord.active.is_(True),
-        )
+        .where(OrphanStateRecord.active.is_(True))
     )
 
     conditions = []
