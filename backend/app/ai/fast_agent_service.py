@@ -1,72 +1,30 @@
 from __future__ import annotations
 
-import re
 import uuid
 from collections.abc import Iterator
 from typing import Any
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai.agent_core import (
     AgentState,
     CapabilityCatalog,
     hydrate_state_from_history,
-    plan_capabilities,
     reduce_tool_result,
     render_state_for_planner,
 )
-from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_service import (
     _execute_tool_calls,
     build_messages,
     extract_text_tool_calls,
 )
 from app.ai.config import get_ai_settings
-from app.ai.grounded_response_formatter import grounded_tool_message
 from app.ai.providers.factory import AIProviderFactory
 from app.ai.tools import create_ai_tool_registry
-from app.db_models.integration import IntegrationRecord
 from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
 
 
-TERMINAL_ACTION_TOOLS = {
-    "generate_report",
-    "create_remediation_ticket",
-    "navigate_app",
-    "review_duplicate_candidate",
-}
-
-DETERMINISTIC_DATA_TOOLS = {
-    "investigate_accounts",
-    "search_duplicate_groups",
-}
-
 MAX_CONTEXT_MESSAGES = 12
-
-_REPORT_REFERENCES = (
-    "those",
-    "these",
-    "them",
-    "same",
-    "that data",
-    "this data",
-    "those accounts",
-    "these accounts",
-    "those results",
-    "these results",
-)
-
-_EXPLICIT_REPORT_SUBJECTS = (
-    "account inventory",
-    "duplicate candidate",
-    "duplicate candidates",
-    "review decision",
-    "review decisions",
-    "remediation",
-    "execution",
-    "executions",
-)
 
 _TRIVIAL_CONVERSATION = {
     "hi",
@@ -80,93 +38,10 @@ _TRIVIAL_CONVERSATION = {
 }
 
 
-def _tool_names(tool_calls: list[Any]) -> set[str]:
-    names: set[str] = set()
-    for call in tool_calls:
-        if isinstance(call, dict):
-            name = call.get("name")
-        else:
-            name = getattr(call, "name", None)
-        if isinstance(name, str) and name:
-            names.add(name)
-    return names
-
-
-def _tool_call_parts(call: Any) -> tuple[str | None, dict[str, Any] | None]:
-    if isinstance(call, dict):
-        name = call.get("name")
-        arguments = call.get("arguments")
-    else:
-        name = getattr(call, "name", None)
-        arguments = getattr(call, "arguments", None)
-
-    if not isinstance(name, str):
-        name = None
-    if not isinstance(arguments, dict):
-        arguments = None
-
-    return name, arguments
-
-
-def _terminal_action_message(
-    tool_history: list[ToolInvocationResponse],
-    start_index: int,
-) -> str:
-    messages: list[str] = []
-
-    for invocation in tool_history[start_index:]:
-        result = invocation.result
-        if not isinstance(result, dict) or not result.get("success"):
-            continue
-        data = result.get("data")
-        if not isinstance(data, dict):
-            continue
-        message = str(data.get("message") or "").strip()
-        if message:
-            messages.append(message)
-
-    return "\n\n".join(messages)
-
-
-def _deterministic_data_message(
-    tool_history: list[ToolInvocationResponse],
-    start_index: int,
-    names: set[str],
-) -> str:
-    if len(names) != 1:
-        return ""
-
-    tool_name = next(iter(names))
-    if tool_name not in DETERMINISTIC_DATA_TOOLS:
-        return ""
-
-    for invocation in tool_history[start_index:]:
-        if invocation.name != tool_name:
-            continue
-        message = grounded_tool_message(tool_name, invocation.result)
-        if message:
-            return message
-    return ""
-
-
 def _trim_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if len(messages) <= MAX_CONTEXT_MESSAGES + 1:
         return messages
     return [messages[0], *messages[-MAX_CONTEXT_MESSAGES:]]
-
-
-def _routing_text(request) -> str:
-    pieces = [str(request.message or "")]
-    for message in list(request.history or [])[-4:]:
-        pieces.append(str(message.content or ""))
-    return " ".join(pieces).lower()
-
-
-def _recent_followup_text(request) -> str:
-    return "\n".join(
-        str(message.content or "")
-        for message in list(request.history or [])[-2:]
-    )
 
 
 def _is_trivial_conversation(request) -> bool:
@@ -174,282 +49,27 @@ def _is_trivial_conversation(request) -> bool:
     return current.rstrip("!?.") in _TRIVIAL_CONVERSATION
 
 
-def _is_explicit_duplicate_lookup(request) -> bool:
-    """Identify a read-only duplicate lookup from the current user turn only."""
-    current = " ".join(str(request.message or "").strip().lower().split())
-    if "duplicate" not in current:
-        return False
-
-    if any(
-        term in current
-        for term in ("report", "export", "csv", "download", "spreadsheet")
-    ):
-        return False
-
-    action_terms = (
-        "confirm",
-        "mark ",
-        "approve",
-        "reject",
-        "not duplicate",
-        "not a duplicate",
-        "create ticket",
-        "raise ticket",
-        "open ticket",
-        "remediate",
-        "disable",
-        "delete",
-    )
-    if any(term in current for term in action_terms):
-        return False
-
-    return bool(
-        re.search(
-            r"\b(?:is|does|has|have|show|find|check|search|duplicate)\b",
-            current,
-        )
-    )
-
-
-def _is_referential_report_request(request) -> bool:
-    current = str(request.message or "").strip().lower()
-    if not current:
-        return False
-
-    report_intent = any(
-        term in current
-        for term in ("report", "export", "csv", "download", "spreadsheet")
-    )
-    if not report_intent:
-        return False
-
-    if any(subject in current for subject in _EXPLICIT_REPORT_SUBJECTS):
-        return False
-
-    return any(reference in current for reference in _REPORT_REFERENCES)
-
-
-def _infer_followup_report_type(context: str) -> str | None:
-    text = context.lower()
-
-    if "duplicate" in text or "confidence" in text:
-        return "duplicate_candidates"
-    if "remediation" in text or "remediat" in text:
-        return "remediation"
-    if "review decision" in text or "reviewed" in text or "reviewer" in text:
-        return "review_decisions"
-    if "execution" in text or "job" in text or "scan run" in text:
-        return "executions"
-    if "account inventory" in text:
-        return "accounts"
-
-    return None
-
-
-def _extract_followup_integration_name(context: str) -> str | None:
-    patterns = (
-        r"\bthe\s+(.+?)\s+integration\s+(?:has|have|contains|shows)\b",
-        r"\bintegration\s+['\"]?([^'\"\n.,]+)['\"]?\s+(?:has|have|contains|shows)\b",
-    )
-
-    for pattern in patterns:
-        match = re.search(pattern, context, flags=re.IGNORECASE)
-        if not match:
-            continue
-        value = match.group(1).strip(" :,-")
-        if value:
-            return value
-
-    return None
-
-
-def _extract_followup_confidence(context: str) -> float | None:
-    patterns = (
-        r"(?:above|over|more than|greater than)\s*(\d+(?:\.\d+)?)\s*%",
-        r"(?:at least|minimum|>=)\s*(\d+(?:\.\d+)?)\s*%",
-        r"(\d+(?:\.\d+)?)\s*%\s*(?:confidence|or higher|and above)",
-    )
-
-    for pattern in patterns:
-        match = re.search(pattern, context, flags=re.IGNORECASE)
-        if not match:
-            continue
-        try:
-            value = float(match.group(1))
-        except (TypeError, ValueError):
-            continue
-        if 0 <= value <= 100:
-            return value
-
-    return None
-
-
-def _resolve_integration_id(db: Session, name: str) -> int | None:
-    normalized = name.strip().lower()
-    aliases = {
-        "ad": "active directory",
-        "azure ad": "entra",
-        "azure active directory": "entra",
-        "snow": "servicenow",
-        "service now": "servicenow",
-    }
-    normalized = aliases.get(normalized, normalized)
-
-    exact = db.scalars(
-        select(IntegrationRecord)
-        .where(func.lower(IntegrationRecord.name) == normalized)
-        .limit(1)
-    ).first()
-    if exact is not None:
-        return int(exact.id)
-
-    partial = db.scalars(
-        select(IntegrationRecord)
-        .where(func.lower(IntegrationRecord.name).like(f"%{normalized}%"))
-        .order_by(IntegrationRecord.name.asc())
-        .limit(1)
-    ).first()
-    if partial is not None:
-        return int(partial.id)
-
-    return None
-
-
-def _apply_report_followup_context(
-    *,
-    db: Session,
-    request,
-    tool_calls: list[Any],
-) -> None:
-    if not _is_referential_report_request(request):
-        return
-
-    context = _recent_followup_text(request)
-    inferred_report_type = _infer_followup_report_type(context)
-    integration_name = _extract_followup_integration_name(context)
-    confidence = _extract_followup_confidence(context)
-
-    for call in tool_calls:
-        name, arguments = _tool_call_parts(call)
-        if name != "generate_report" or arguments is None:
-            continue
-
-        if inferred_report_type:
-            arguments["report_type"] = inferred_report_type
-
-        raw_filters = arguments.get("filters")
-        if not isinstance(raw_filters, dict):
-            raw_filters = {}
-            arguments["filters"] = raw_filters
-
-        if integration_name and not raw_filters.get("integrationId"):
-            integration_id = _resolve_integration_id(db, integration_name)
-            if integration_id is not None:
-                raw_filters["integrationId"] = integration_id
-
-        if confidence is not None and raw_filters.get("minimumConfidence") is None:
-            raw_filters["minimumConfidence"] = confidence
-
-
 def _select_definitions(
     definitions: list[dict[str, Any]],
     request,
 ) -> list[dict[str, Any]]:
-    """Legacy fast selector retained only as a low-latency path/fallback."""
+    """Return the complete authorized capability surface for agent turns.
 
-    if _is_explicit_duplicate_lookup(request):
-        return [
-            definition
-            for definition in definitions
-            if str(definition.get("name") or "") == "search_duplicate_groups"
-        ]
+    This intentionally does not inspect domain keywords. Tool selection belongs to
+    the model operating over tool schemas and grounded conversation state.
+    """
 
-    text = _routing_text(request)
-    selected: set[str] = set()
-
-    def has(*terms: str) -> bool:
-        return any(term in text for term in terms)
-
-    if has("report", "export", "csv", "download", "spreadsheet"):
-        selected.add("generate_report")
-
-    if has(
-        "ticket", "service desk", "servicedesk", "remediation",
-        "remediate", "disable account", "delete account",
-    ):
-        selected.update({"search_remediation_items", "create_remediation_ticket"})
-
-    if has(
-        "navigate", "take me", "go to", "open the", "open ",
-        "show page", "page for", "screen",
-    ):
-        selected.add("navigate_app")
-
-    if has(
-        "dashboard", "overall", "system summary", "total accounts",
-        "total applications", "how many accounts", "how many applications",
-        "how many duplicate", "most duplicates", "high confidence matches",
-    ):
-        selected.add("get_dashboard_summary")
-
-    if has(
-        "find ", "locate ", "search account", "account lookup",
-        "orphan", "uncorrelated", "correlation", "correlat",
-        "why is this account", "why is the account",
-    ):
-        selected.add("investigate_accounts")
-
-    if has("integration", "connector", "source connection"):
-        selected.update({"list_integrations", "get_integration_details"})
-
-    if has(
-        "execution", "job", "scan status", "latest scan", "run status",
-        "running", "failed run", "failed execution", "operations",
-    ):
-        selected.update(
-            {
-                "get_operations_summary",
-                "search_operations",
-                "get_latest_execution",
-                "get_execution_details",
-            }
-        )
-
-    if has("duplicate", "confidence", "review", "candidate", "match"):
-        selected.update(
-            {
-                "get_duplicate_summary",
-                "search_duplicate_groups",
-                "get_duplicate_group_details",
-                "get_review_statistics",
-                "review_duplicate_candidate",
-                "get_confidence_breakdown",
-            }
-        )
-
-    if has("training label", "training data", "ml training", "model training"):
-        selected.add("get_training_label_summary")
-
-    if has(
-        "knowledge", "document", "policy", "procedure", "runbook",
-        "standard", "manual", "documentation", "guidance",
-    ):
-        selected.update({"search_knowledge_base", "list_knowledge_documents"})
-
-    if not selected:
+    if _is_trivial_conversation(request):
         return []
-
-    return [
-        definition
-        for definition in definitions
-        if str(definition.get("name") or "") in selected
-    ]
+    return definitions
 
 
 def _is_fast_path_selection(
     definitions: list[dict[str, Any]],
     catalog: CapabilityCatalog,
 ) -> bool:
+    """Compatibility helper retained for tests/metrics, not runtime routing."""
+
     names = {
         str(definition.get("name") or "")
         for definition in definitions
@@ -465,18 +85,6 @@ def _is_fast_path_selection(
     return names.issubset(fast_names)
 
 
-def _definitions_for_names(
-    definitions: list[dict[str, Any]],
-    names: tuple[str, ...],
-) -> list[dict[str, Any]]:
-    selected = set(names)
-    return [
-        definition
-        for definition in definitions
-        if str(definition.get("name") or "") in selected
-    ]
-
-
 def _initial_agent_state(
     *,
     persisted_state: dict[str, Any] | None,
@@ -490,12 +98,41 @@ def _initial_agent_state(
     return hydrate_state_from_history(history)
 
 
+def _state_instruction(state: AgentState) -> str:
+    return (
+        render_state_for_planner(state)
+        + " This state is authoritative because it was produced by successful tools. "
+        "Resolve human references from it when unambiguous. Do not ask for an internal "
+        "ID that is already present here. Decide the next tool from the exposed tool "
+        "schemas, or answer when the user's goal is complete."
+    )
+
+
+def _tool_names(tool_calls: list[Any]) -> set[str]:
+    names: set[str] = set()
+    for call in tool_calls:
+        if isinstance(call, dict):
+            name = call.get("name")
+        else:
+            name = getattr(call, "name", None)
+        if isinstance(name, str) and name:
+            names.add(name)
+    return names
+
+
 def run_identity_agent_stream_fast(
     *,
     db: Session,
     request,
     persisted_state: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
+    """Run Rudrix as one generic tool-using agent loop.
+
+    There is no domain keyword router here. Every non-trivial turn receives the full
+    RBAC-filtered IdentityAI capability surface. The model chooses and chains tools,
+    while backend tools remain authoritative for facts, permissions, and side effects.
+    """
+
     settings = get_ai_settings()
     provider = AIProviderFactory.create(settings)
     registry = create_ai_tool_registry()
@@ -512,106 +149,22 @@ def run_identity_agent_stream_fast(
         history=list(request.history or []),
     )
 
-    grounded_action = resolve_grounded_action(request.message, state)
-    if grounded_action is not None:
-        authorized_tools = {
-            str(definition.get("name") or "")
-            for definition in registry.definitions()
-        }
-        if grounded_action.tool_name not in authorized_tools:
-            final_message = (
-                "You do not have permission to submit duplicate review decisions. "
-                "The required permission is `duplicate.review`."
-            )
-            yield {"type": "delta", "text": final_message}
-            yield {
-                "type": "done",
-                "response": ChatResponse(
-                    conversationId=(request.conversationId or str(uuid.uuid4())),
-                    message=final_message,
-                    model="rudrix-action",
-                    toolsUsed=[],
-                    sources=[],
-                ),
-                "agentState": state.model_dump(exclude_none=True),
-            }
-            return
-
-        yield {"type": "status", "message": "Applying duplicate review decision..."}
-        try:
-            data = registry.execute(
-                name=grounded_action.tool_name,
-                db=db,
-                arguments=grounded_action.arguments,
-            )
-            result = {"success": True, "data": data}
-            final_message = str(data.get("message") or "Duplicate review decision saved.")
-        except Exception as exc:
-            result = {"success": False, "error": str(exc)}
-            final_message = str(exc) or "Unable to save the duplicate review decision."
-
-        invocation = ToolInvocationResponse(
-            name=grounded_action.tool_name,
-            arguments=grounded_action.arguments,
-            result=result,
-        )
-        state = reduce_tool_result(
-            state,
-            tool_name=grounded_action.tool_name,
-            tool_result=result,
-        )
-        yield {"type": "delta", "text": final_message}
-        yield {
-            "type": "done",
-            "response": ChatResponse(
-                conversationId=(request.conversationId or str(uuid.uuid4())),
-                message=final_message,
-                model="rudrix-action",
-                toolsUsed=[invocation],
-                sources=[],
-            ),
-            "agentState": state.model_dump(exclude_none=True),
-        }
-        return
-
     messages = _trim_messages(build_messages(request))
     messages.insert(
         1,
         {
             "role": "system",
-            "content": (
-                render_state_for_planner(state)
-                + " Use grounded entity IDs from this state for referential follow-ups. "
-                "Do not replace them with guesses from conversation prose."
-            ),
+            "content": _state_instruction(state),
         },
     )
 
     all_definitions = registry.definitions()
-    heuristic_definitions = _select_definitions(all_definitions, request)
-
-    if _is_trivial_conversation(request):
-        definitions: list[dict[str, Any]] = []
-    elif _is_fast_path_selection(heuristic_definitions, catalog):
-        definitions = heuristic_definitions
-    else:
-        yield {"type": "status", "message": "Planning your request..."}
-        try:
-            plan = plan_capabilities(
-                provider=provider,
-                model=selected_model,
-                user_message=request.message,
-                catalog=catalog,
-                state=state,
-            )
-            definitions = _definitions_for_names(all_definitions, plan.capabilities)
-        except Exception:
-            definitions = []
-
-        if not definitions and heuristic_definitions:
-            definitions = heuristic_definitions
-
-    allowed_tools = {definition["name"] for definition in definitions}
+    definitions = _select_definitions(all_definitions, request)
+    allowed_tools = {
+        str(definition.get("name") or "")
+        for definition in definitions
+        if definition.get("name")
+    }
 
     tool_history: list[ToolInvocationResponse] = []
     chat_sources: list[ChatSource] = []
@@ -621,14 +174,15 @@ def run_identity_agent_stream_fast(
     stream_method = getattr(provider, "stream_chat", None)
 
     for iteration in range(settings.max_tool_iterations):
-        yield {
-            "type": "status",
-            "message": (
-                "Analyzing your request..."
-                if iteration == 0
-                else "Reviewing connected data..."
-            ),
-        }
+        if definitions:
+            yield {
+                "type": "status",
+                "message": (
+                    "Working on your request..."
+                    if iteration == 0
+                    else "Continuing with IdentityAI data..."
+                ),
+            }
 
         provider_response = None
         streamed_parts: list[str] = []
@@ -640,14 +194,13 @@ def run_identity_agent_stream_fast(
                 tools=definitions,
             ):
                 event_type = provider_event.get("type")
-
                 if event_type == "delta":
                     text = str(provider_event.get("text") or "")
                     if text:
+                        # Buffer intermediate model prose. If this turn produces a tool
+                        # call, the prose is planning chatter and must not leak to users.
                         streamed_parts.append(text)
-                        yield {"type": "delta", "text": text}
                     continue
-
                 if event_type == "result":
                     provider_response = provider_event.get("response")
         else:
@@ -661,7 +214,6 @@ def run_identity_agent_stream_fast(
             raise RuntimeError("AI provider did not return a final response.")
 
         tool_calls = list(provider_response.tool_calls or [])
-
         if not tool_calls and allowed_tools:
             fallback_calls = extract_text_tool_calls(
                 provider_response.text,
@@ -671,18 +223,8 @@ def run_identity_agent_stream_fast(
                 tool_calls = fallback_calls
 
         if tool_calls:
-            _apply_report_followup_context(
-                db=db,
-                request=request,
-                tool_calls=tool_calls,
-            )
-
             messages.append(provider_response.assistant_message)
-
-            yield {
-                "type": "status",
-                "message": "Working with IdentityAI data...",
-            }
+            yield {"type": "status", "message": "Using IdentityAI capabilities..."}
 
             history_start = len(tool_history)
             _execute_tool_calls(
@@ -705,42 +247,18 @@ def run_identity_agent_stream_fast(
             messages.append(
                 {
                     "role": "system",
-                    "content": (
-                        render_state_for_planner(state)
-                        + " Continue the current goal using these grounded entities."
-                    ),
+                    "content": _state_instruction(state),
                 }
             )
-
-            names = _tool_names(tool_calls)
-            if names and names.issubset(TERMINAL_ACTION_TOOLS):
-                action_message = _terminal_action_message(
-                    tool_history,
-                    history_start,
-                )
-                if action_message:
-                    final_message = action_message
-                    yield {"type": "delta", "text": action_message}
-                    break
-
-            data_message = _deterministic_data_message(
-                tool_history,
-                history_start,
-                names,
-            )
-            if data_message:
-                final_message = data_message
-                yield {"type": "delta", "text": data_message}
-                break
-
             continue
 
         final_message = (provider_response.text or "").strip()
-        if not streamed_parts and final_message:
-            yield {"type": "delta", "text": final_message}
-
+        if not final_message and streamed_parts:
+            final_message = "".join(streamed_parts).strip()
         if not final_message:
             final_message = "No response was generated."
+
+        yield {"type": "delta", "text": final_message}
         break
     else:
         final_message = "The assistant reached the maximum number of tool operations."
