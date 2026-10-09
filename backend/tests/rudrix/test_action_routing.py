@@ -16,15 +16,33 @@ def _selected_names(message: str) -> set[str]:
     }
 
 
-def test_non_trivial_turn_exposes_complete_authorized_capability_surface():
-    expected = {
-        item["name"]
-        for item in create_ai_tool_registry().definitions()
-    }
+def test_orphan_request_retrieves_orphan_capability_and_grounding_fallbacks():
+    names = _selected_names("Show orphan accounts from Active Directory")
 
-    assert _selected_names("Show orphan accounts from Active Directory") == expected
-    assert _selected_names("Generate a duplicate report above 95%") == expected
-    assert _selected_names("Create a remediation ticket for this account") == expected
+    assert "search_orphan_accounts" in names
+    assert "search_identityai_product_knowledge" in names
+    assert "search_knowledge_base" in names
+    assert len(names) < len(create_ai_tool_registry().definitions())
+
+
+def test_report_request_retrieves_report_capability():
+    names = _selected_names("Generate a duplicate report above 95%")
+
+    assert "generate_report" in names
+    assert "search_duplicate_groups" in names or "get_duplicate_summary" in names
+
+
+def test_remediation_request_retrieves_remediation_capabilities():
+    names = _selected_names("Create a remediation ticket for this account")
+
+    assert "create_remediation_ticket" in names
+    assert "search_remediation_items" in names
+
+
+def test_product_question_always_has_builtin_product_knowledge():
+    names = _selected_names("How does IdentityAI work?")
+
+    assert "search_identityai_product_knowledge" in names
 
 
 def test_trivial_conversation_does_not_send_tool_schema_overhead():
@@ -90,3 +108,4 @@ def test_action_tools_are_hidden_by_rbac():
     assert "create_remediation_ticket" not in names
     assert "search_remediation_items" not in names
     assert "navigate_app" in names
+    assert "search_identityai_product_knowledge" in names
