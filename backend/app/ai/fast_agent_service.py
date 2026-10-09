@@ -44,6 +44,16 @@ _ALWAYS_AVAILABLE_GROUNDING = {
     "search_knowledge_base",
 }
 
+_UNAVAILABLE_MARKERS = (
+    "could not be retrieved",
+    "couldn't be retrieved",
+    "unable to retrieve",
+    "cannot retrieve",
+    "can't retrieve",
+    "data is unavailable",
+    "data unavailable",
+)
+
 
 def _trim_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if len(messages) <= MAX_CONTEXT_MESSAGES + 1:
@@ -156,7 +166,6 @@ def _safe_failure_reason(invocation: ToolInvocationResponse) -> str:
         return raw[:240]
     if "connect" in lowered or "timeout" in lowered or "unavailable" in lowered:
         return "a required IdentityAI dependency was unavailable"
-    # Do not expose SQL, stack traces, paths, or other internal exception details.
     return "an internal IdentityAI data operation failed"
 
 
@@ -179,6 +188,62 @@ def _grounded_failure_message(tool_history: list[ToolInvocationResponse]) -> str
         "I couldn't retrieve the requested current IdentityAI data because "
         f"{reason}. No result was treated as an empty data set."
     )
+
+
+def _structured_success_message(tool_history: list[ToolInvocationResponse]) -> str | None:
+    """Build a safe generic fallback from the latest successful capability result."""
+
+    for invocation in reversed(tool_history):
+        result = invocation.result if isinstance(invocation.result, dict) else {}
+        if not result.get("success"):
+            continue
+        data = result.get("data")
+        if not isinstance(data, dict):
+            continue
+
+        message = str(data.get("message") or "").strip()
+        items = data.get("items")
+        if not isinstance(items, list) or not items:
+            return message or None
+
+        lines = [message] if message else [f"Found {len(items)} matching record(s)."]
+        for item in items[:10]:
+            if not isinstance(item, dict):
+                continue
+            label = (
+                item.get("displayName")
+                or item.get("username")
+                or item.get("nativeIdentity")
+                or item.get("employeeId")
+                or item.get("sourceAccountId")
+                or item.get("id")
+                or "Record"
+            )
+            details: list[str] = []
+            for key, display in (
+                ("application", "application"),
+                ("integrationName", "source"),
+                ("employeeId", "employee ID"),
+                ("orphanType", "orphan type"),
+                ("reason", "reason"),
+                ("status", "status"),
+            ):
+                value = item.get(key)
+                if value not in (None, ""):
+                    details.append(f"{display}: {value}")
+            suffix = f" — {', '.join(details)}" if details else ""
+            lines.append(f"- **{label}**{suffix}")
+
+        if len(items) > 10:
+            lines.append(f"- …and {len(items) - 10} more matching record(s).")
+        return "\n".join(lines)
+
+    return None
+
+
+def _looks_unavailable(message: str) -> bool:
+    lowered = str(message or "").casefold()
+    return any(marker in lowered for marker in _UNAVAILABLE_MARKERS)
 
 
 def run_identity_agent_stream_fast(
@@ -313,9 +378,6 @@ def run_identity_agent_stream_fast(
             )
             continue
 
-        # A substantive IdentityAI answer should not be based only on the model's
-        # memory. If the first model pass skipped tools entirely, give it one generic
-        # grounding retry. This is intentionally domain-agnostic.
         if definitions and not tool_history and not grounding_retry_used:
             grounding_retry_used = True
             messages.append(provider_response.assistant_message)
@@ -342,13 +404,18 @@ def run_identity_agent_stream_fast(
         failure_message = _grounded_failure_message(tool_history)
         if failure_message is not None:
             final_message = failure_message
+        elif _looks_unavailable(final_message):
+            grounded_success = _structured_success_message(tool_history)
+            if grounded_success:
+                final_message = grounded_success
 
         yield {"type": "delta", "text": final_message}
         break
     else:
         failure_message = _grounded_failure_message(tool_history)
         final_message = failure_message or (
-            "The request needs more IdentityAI operations than the current agent limit allows."
+            _structured_success_message(tool_history)
+            or "The request needs more IdentityAI operations than the current agent limit allows."
         )
         yield {"type": "delta", "text": final_message}
 
