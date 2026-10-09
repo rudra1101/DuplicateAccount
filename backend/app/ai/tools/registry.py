@@ -32,6 +32,9 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "get_training_label_summary": "ml.view",
     "search_knowledge_base": "knowledge.view",
     "list_knowledge_documents": "knowledge.view",
+    # Built-in product knowledge describes IdentityAI itself and only exposes
+    # capabilities already filtered by this registry's RBAC context.
+    "search_identityai_product_knowledge": AUTHENTICATED_TOOL,
     "generate_report": "report.view",
     "search_remediation_items": "remediation.view",
     "create_remediation_ticket": "remediation.manage",
