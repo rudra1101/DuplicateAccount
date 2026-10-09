@@ -167,6 +167,7 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
     class FailureProvider:
         def __init__(self):
             self.calls = 0
+            self.plan_calls = 0
 
         def stream_chat(self, *, model, messages, tools):
             self.calls += 1
@@ -195,7 +196,20 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
             yield {"type": "result", "response": response}
 
         def chat(self, *, model, messages, tools):
-            raise AssertionError("Forced planner should not run after the primary tool call")
+            self.plan_calls += 1
+            assert len(tools) == 1
+            assert tools[0].get("name") == "search_orphan_accounts"
+            return ProviderResponse(
+                text="",
+                assistant_message={"role": "assistant", "content": ""},
+                tool_calls=[
+                    ProviderToolCall(
+                        name="search_orphan_accounts",
+                        arguments={"integration": "Active Directory"},
+                    )
+                ],
+                model=model,
+            )
 
     class FailureRegistry(_FakeRegistry):
         def execute(self, *, name, db, arguments):
@@ -210,7 +224,7 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
         lambda: SimpleNamespace(
             fast_model="fast-model",
             reasoning_model="reasoning-model",
-            max_tool_iterations=3,
+            max_tool_iterations=4,
         ),
     )
     monkeypatch.setattr(fast_agent.AIProviderFactory, "create", lambda settings: provider)
@@ -224,5 +238,6 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
     )
     done = next(event for event in events if event["type"] == "done")
 
+    assert provider.plan_calls == 1
     assert "No result was treated as an empty data set" in done["response"].message
     assert "No orphan accounts were found" not in done["response"].message
