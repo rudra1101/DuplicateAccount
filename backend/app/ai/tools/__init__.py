@@ -36,6 +36,9 @@ from app.ai.tools.orphan_tools import (
     GroundedAccountInvestigationTool,
     SearchOrphanAccountsTool,
 )
+from app.ai.tools.product_knowledge_tools import (
+    SearchIdentityAIProductKnowledgeTool,
+)
 from app.ai.tools.registry import AIToolRegistry
 from app.ai.tools.review_tools import (
     GetConfidenceBreakdownTool,
@@ -78,6 +81,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(GetConfidenceBreakdownTool())
     registry.register(SearchKnowledgeBaseTool())
     registry.register(ListKnowledgeDocumentsTool())
+    registry.register(SearchIdentityAIProductKnowledgeTool())
 
     registry.register(GenerateReportTool())
     registry.register(RudrixRemediationOperationsTool())

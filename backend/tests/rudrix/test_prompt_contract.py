@@ -15,21 +15,29 @@ def test_prompt_is_goal_driven_not_phrase_routed():
     prompt = normalized_prompt()
     assert "user's goal" in prompt
     assert "hard-coded phrases" in prompt
-    assert "tool schemas and descriptions define what identityai can do" in prompt
+    assert "capability schemas" in prompt
 
 
-def test_prompt_requires_live_tools_for_live_product_state():
+def test_prompt_requires_grounding_for_substantive_identityai_answers():
     prompt = normalized_prompt()
-    assert "use live identityai tools" in prompt
-    assert "current product data" in prompt
-    assert "successful tool results as authoritative" in prompt
+    assert "every substantive identityai answer must be grounded" in prompt
+    assert "live identityai capabilities" in prompt
+    assert "built-in identityai product knowledge" in prompt
+    assert "uploaded knowledge/rag" in prompt
 
 
-def test_prompt_has_rag_and_hybrid_rules_without_naming_specific_tools():
+def test_prompt_requires_live_capabilities_for_live_product_state():
     prompt = normalized_prompt()
-    assert "knowledge/rag tools" in prompt
-    assert "combine live tools and knowledge tools" in prompt
-    assert "uploaded documentation" in prompt
+    assert "current records" in prompt
+    assert "never answer current-state questions from model memory alone" in prompt
+    assert "successful capability results as authoritative" in prompt
+
+
+def test_prompt_has_product_rag_and_hybrid_rules_without_naming_specific_tools():
+    prompt = normalized_prompt()
+    assert "built-in identityai product knowledge" in prompt
+    assert "organization-specific policies" in prompt
+    assert "combine product knowledge, uploaded knowledge, and live capabilities" in prompt
 
 
 def test_prompt_requires_grounded_state_reuse():
@@ -39,11 +47,11 @@ def test_prompt_requires_grounded_state_reuse():
     assert "unambiguous" in prompt
 
 
-def test_prompt_requires_multi_tool_agent_loop():
+def test_prompt_requires_agentic_multi_step_behavior():
     prompt = normalized_prompt()
-    assert "multiple tools in one turn" in prompt
-    assert "after each tool result" in prompt
-    assert "another tool is required" in prompt
+    assert "use another appropriate capability" in prompt
+    assert "continue across multiple steps" in prompt
+    assert "available search/resolution capability" in prompt
 
 
 def test_prompt_enforces_rbac_and_action_safety():
@@ -53,10 +61,17 @@ def test_prompt_enforces_rbac_and_action_safety():
     assert "destructive actions" in prompt
 
 
-def test_prompt_forbids_internal_tool_and_json_leakage():
+def test_prompt_distinguishes_failure_from_empty_data():
+    prompt = normalized_prompt()
+    assert "a failed data operation is not an empty result" in prompt
+    assert "do not claim that data is unavailable until an appropriate capability has actually been attempted" in prompt
+    assert "0 results" in prompt
+
+
+def test_prompt_forbids_internal_capability_and_json_leakage():
     prompt = normalized_prompt()
     assert "raw json" in prompt
-    assert "tool names" in prompt or "internal tool names" in prompt
+    assert "tool names" in prompt or "internal" in prompt
     assert "return only the final user-facing answer" in prompt
 
 

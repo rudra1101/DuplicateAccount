@@ -25,6 +25,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "get_training_label_summary": {"domain": "ml", "kind": CapabilityKind.READ},
     "search_knowledge_base": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
     "list_knowledge_documents": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
+    "search_identityai_product_knowledge": {"domain": "product", "kind": CapabilityKind.KNOWLEDGE, "fast_path": True},
     "generate_report": {"domain": "report", "kind": CapabilityKind.WRITE},
     "search_remediation_items": {"domain": "remediation", "kind": CapabilityKind.READ},
     "create_remediation_ticket": {"domain": "remediation", "kind": CapabilityKind.WRITE},

@@ -13,6 +13,7 @@ from app.ai.agent_core import (
     reduce_tool_result,
     render_state_for_planner,
 )
+from app.ai.agent_core.capability_retriever import CapabilityRetriever
 from app.ai.agent_service import (
     _execute_tool_calls,
     build_messages,
@@ -25,6 +26,7 @@ from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
 
 
 MAX_CONTEXT_MESSAGES = 12
+MAX_SELECTED_CAPABILITIES = 8
 
 _TRIVIAL_CONVERSATION = {
     "hi",
@@ -36,6 +38,21 @@ _TRIVIAL_CONVERSATION = {
     "good afternoon",
     "good evening",
 }
+
+_ALWAYS_AVAILABLE_GROUNDING = {
+    "search_identityai_product_knowledge",
+    "search_knowledge_base",
+}
+
+_UNAVAILABLE_MARKERS = (
+    "could not be retrieved",
+    "couldn't be retrieved",
+    "unable to retrieve",
+    "cannot retrieve",
+    "can't retrieve",
+    "data is unavailable",
+    "data unavailable",
+)
 
 
 def _trim_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -49,19 +66,45 @@ def _is_trivial_conversation(request) -> bool:
     return current.rstrip("!?.") in _TRIVIAL_CONVERSATION
 
 
+def _selection_query(request, state: AgentState | None = None) -> str:
+    """Build retrieval context without encoding domain-specific phrases."""
+
+    parts = [str(request.message or "")]
+    history = list(request.history or [])[-4:]
+    for item in history:
+        content = getattr(item, "content", None)
+        if content:
+            parts.append(str(content))
+    if state is not None:
+        parts.append(render_state_for_planner(state))
+    return "\n".join(part for part in parts if part).strip()
+
+
 def _select_definitions(
     definitions: list[dict[str, Any]],
     request,
+    state: AgentState | None = None,
 ) -> list[dict[str, Any]]:
-    """Return the complete authorized capability surface for agent turns.
+    """Retrieve a compact authorized capability set from tool contracts.
 
-    This intentionally does not inspect domain keywords. Tool selection belongs to
-    the model operating over tool schemas and grounded conversation state.
+    This is not phrase routing. New capabilities become discoverable through their
+    name, description and JSON schema. Keeping the tool surface compact is important
+    for reliable native tool calling on local models such as llama3.1:8b.
     """
 
     if _is_trivial_conversation(request):
         return []
-    return definitions
+
+    retriever = CapabilityRetriever(definitions)
+    available_names = {
+        str(item.get("name") or "") for item in definitions if item.get("name")
+    }
+    always_include = _ALWAYS_AVAILABLE_GROUNDING & available_names
+    return retriever.select(
+        _selection_query(request, state),
+        limit=MAX_SELECTED_CAPABILITIES,
+        always_include=always_include,
+    )
 
 
 def _is_fast_path_selection(
@@ -103,21 +146,104 @@ def _state_instruction(state: AgentState) -> str:
         render_state_for_planner(state)
         + " This state is authoritative because it was produced by successful tools. "
         "Resolve human references from it when unambiguous. Do not ask for an internal "
-        "ID that is already present here. Decide the next tool from the exposed tool "
+        "ID that is already present here. Decide the next capability from the exposed "
         "schemas, or answer when the user's goal is complete."
     )
 
 
-def _tool_names(tool_calls: list[Any]) -> set[str]:
-    names: set[str] = set()
-    for call in tool_calls:
-        if isinstance(call, dict):
-            name = call.get("name")
-        else:
-            name = getattr(call, "name", None)
-        if isinstance(name, str) and name:
-            names.add(name)
-    return names
+def _safe_failure_reason(invocation: ToolInvocationResponse) -> str:
+    result = invocation.result if isinstance(invocation.result, dict) else {}
+    raw = str(result.get("error") or "").strip()
+    lowered = raw.casefold()
+
+    if not raw:
+        return "the requested IdentityAI capability failed without an error detail"
+    if "access denied" in lowered or "permission" in lowered:
+        return "the current user does not have permission for that operation"
+    if "not found" in lowered:
+        return raw[:240]
+    if "unsupported" in lowered or "invalid" in lowered or "required" in lowered:
+        return raw[:240]
+    if "connect" in lowered or "timeout" in lowered or "unavailable" in lowered:
+        return "a required IdentityAI dependency was unavailable"
+    return "an internal IdentityAI data operation failed"
+
+
+def _grounded_failure_message(tool_history: list[ToolInvocationResponse]) -> str | None:
+    failures = [
+        item
+        for item in tool_history
+        if isinstance(item.result, dict) and not item.result.get("success")
+    ]
+    successes = [
+        item
+        for item in tool_history
+        if isinstance(item.result, dict) and item.result.get("success")
+    ]
+    if not failures or successes:
+        return None
+
+    reason = _safe_failure_reason(failures[-1])
+    return (
+        "I couldn't retrieve the requested current IdentityAI data because "
+        f"{reason}. No result was treated as an empty data set."
+    )
+
+
+def _structured_success_message(tool_history: list[ToolInvocationResponse]) -> str | None:
+    """Build a safe generic fallback from the latest successful capability result."""
+
+    for invocation in reversed(tool_history):
+        result = invocation.result if isinstance(invocation.result, dict) else {}
+        if not result.get("success"):
+            continue
+        data = result.get("data")
+        if not isinstance(data, dict):
+            continue
+
+        message = str(data.get("message") or "").strip()
+        items = data.get("items")
+        if not isinstance(items, list) or not items:
+            return message or None
+
+        lines = [message] if message else [f"Found {len(items)} matching record(s)."]
+        for item in items[:10]:
+            if not isinstance(item, dict):
+                continue
+            label = (
+                item.get("displayName")
+                or item.get("username")
+                or item.get("nativeIdentity")
+                or item.get("employeeId")
+                or item.get("sourceAccountId")
+                or item.get("id")
+                or "Record"
+            )
+            details: list[str] = []
+            for key, display in (
+                ("application", "application"),
+                ("integrationName", "source"),
+                ("employeeId", "employee ID"),
+                ("orphanType", "orphan type"),
+                ("reason", "reason"),
+                ("status", "status"),
+            ):
+                value = item.get(key)
+                if value not in (None, ""):
+                    details.append(f"{display}: {value}")
+            suffix = f" — {', '.join(details)}" if details else ""
+            lines.append(f"- **{label}**{suffix}")
+
+        if len(items) > 10:
+            lines.append(f"- …and {len(items) - 10} more matching record(s).")
+        return "\n".join(lines)
+
+    return None
+
+
+def _looks_unavailable(message: str) -> bool:
+    lowered = str(message or "").casefold()
+    return any(marker in lowered for marker in _UNAVAILABLE_MARKERS)
 
 
 def run_identity_agent_stream_fast(
@@ -126,11 +252,12 @@ def run_identity_agent_stream_fast(
     request,
     persisted_state: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Run Rudrix as one generic tool-using agent loop.
+    """Run Rudrix as a retrieval-grounded IdentityAI agent.
 
-    There is no domain keyword router here. Every non-trivial turn receives the full
-    RBAC-filtered IdentityAI capability surface. The model chooses and chains tools,
-    while backend tools remain authoritative for facts, permissions, and side effects.
+    Every substantive turn is grounded in either live IdentityAI capabilities,
+    built-in product knowledge, or uploaded RAG knowledge. Tool retrieval is generic
+    over capability contracts, and the model can chain multiple capabilities until
+    the user's goal is complete.
     """
 
     settings = get_ai_settings()
@@ -159,7 +286,7 @@ def run_identity_agent_stream_fast(
     )
 
     all_definitions = registry.definitions()
-    definitions = _select_definitions(all_definitions, request)
+    definitions = _select_definitions(all_definitions, request, state)
     allowed_tools = {
         str(definition.get("name") or "")
         for definition in definitions
@@ -170,6 +297,7 @@ def run_identity_agent_stream_fast(
     chat_sources: list[ChatSource] = []
     source_keys: set[tuple[int, int | None]] = set()
     final_message = ""
+    grounding_retry_used = False
 
     stream_method = getattr(provider, "stream_chat", None)
 
@@ -178,9 +306,9 @@ def run_identity_agent_stream_fast(
             yield {
                 "type": "status",
                 "message": (
-                    "Working on your request..."
+                    "Understanding your IdentityAI request..."
                     if iteration == 0
-                    else "Continuing with IdentityAI data..."
+                    else "Continuing with grounded IdentityAI data..."
                 ),
             }
 
@@ -197,8 +325,6 @@ def run_identity_agent_stream_fast(
                 if event_type == "delta":
                     text = str(provider_event.get("text") or "")
                     if text:
-                        # Buffer intermediate model prose. If this turn produces a tool
-                        # call, the prose is planning chatter and must not leak to users.
                         streamed_parts.append(text)
                     continue
                 if event_type == "result":
@@ -252,16 +378,45 @@ def run_identity_agent_stream_fast(
             )
             continue
 
+        if definitions and not tool_history and not grounding_retry_used:
+            grounding_retry_used = True
+            messages.append(provider_response.assistant_message)
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "Ground this substantive IdentityAI request before answering. "
+                        "Use live capabilities for current state/actions, built-in product "
+                        "knowledge for IdentityAI behavior/capabilities, or uploaded knowledge "
+                        "for organization-specific documentation. Do not claim data is "
+                        "unavailable until an appropriate capability has actually been tried."
+                    ),
+                }
+            )
+            continue
+
         final_message = (provider_response.text or "").strip()
         if not final_message and streamed_parts:
             final_message = "".join(streamed_parts).strip()
         if not final_message:
             final_message = "No response was generated."
 
+        failure_message = _grounded_failure_message(tool_history)
+        if failure_message is not None:
+            final_message = failure_message
+        elif _looks_unavailable(final_message):
+            grounded_success = _structured_success_message(tool_history)
+            if grounded_success:
+                final_message = grounded_success
+
         yield {"type": "delta", "text": final_message}
         break
     else:
-        final_message = "The assistant reached the maximum number of tool operations."
+        failure_message = _grounded_failure_message(tool_history)
+        final_message = failure_message or (
+            _structured_success_message(tool_history)
+            or "The request needs more IdentityAI operations than the current agent limit allows."
+        )
         yield {"type": "delta", "text": final_message}
 
     yield {
