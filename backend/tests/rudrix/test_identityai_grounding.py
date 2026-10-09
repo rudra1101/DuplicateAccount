@@ -15,16 +15,29 @@ class _FakeProvider:
         self.stream_calls += 1
         names = {item.get("name") for item in tools}
         assert "search_orphan_accounts" in names
+        assert "search_identityai_product_knowledge" in names
 
         if self.stream_calls == 1:
             response = ProviderResponse(
+                text="",
+                assistant_message={"role": "assistant", "content": ""},
+                tool_calls=[
+                    ProviderToolCall(
+                        name="search_identityai_product_knowledge",
+                        arguments={"query": "orphan accounts"},
+                    )
+                ],
+                model=model,
+            )
+        elif self.stream_calls == 2:
+            response = ProviderResponse(
                 text=(
                     "I'm Rudrix, your AI copilot for IdentityAI. "
-                    "How can I assist you today? What's your goal for today?"
+                    "What would you like to accomplish?"
                 ),
                 assistant_message={
                     "role": "assistant",
-                    "content": "How can I assist you today? What's your goal for today?",
+                    "content": "What would you like to accomplish?",
                 },
                 tool_calls=[],
                 model=model,
@@ -33,11 +46,11 @@ class _FakeProvider:
             response = ProviderResponse(
                 text=(
                     "I'm Rudrix, your AI copilot for IdentityAI. "
-                    "How can I assist you today?"
+                    "What's your goal today?"
                 ),
                 assistant_message={
                     "role": "assistant",
-                    "content": "How can I assist you today?",
+                    "content": "What's your goal today?",
                 },
                 tool_calls=[],
                 model=model,
@@ -47,7 +60,8 @@ class _FakeProvider:
 
     def chat(self, *, model, messages, tools):
         self.plan_calls += 1
-        assert any(item.get("name") == "search_orphan_accounts" for item in tools)
+        assert len(tools) == 1
+        assert tools[0].get("name") == "search_orphan_accounts"
         return ProviderResponse(
             text="",
             assistant_message={"role": "assistant", "content": ""},
@@ -66,7 +80,10 @@ class _FakeRegistry:
         return [
             {
                 "name": "search_orphan_accounts",
-                "description": "Search current orphan accounts by integration or application.",
+                "description": (
+                    "Search current orphan accounts by integration or application. "
+                    "Use for current orphan account records and filters."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -75,10 +92,25 @@ class _FakeRegistry:
                     },
                     "required": [],
                 },
-            }
+            },
+            {
+                "name": "search_identityai_product_knowledge",
+                "description": "Explain IdentityAI product behavior and features.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}},
+                    "required": ["query"],
+                },
+            },
         ]
 
     def execute(self, *, name, db, arguments):
+        if name == "search_identityai_product_knowledge":
+            return {
+                "message": "Orphan accounts are accounts without a valid identity correlation.",
+                "items": [],
+            }
+
         assert name == "search_orphan_accounts"
         assert arguments["integration"] == "Active Directory"
         return {
@@ -91,7 +123,7 @@ class _FakeRegistry:
         }
 
 
-def test_agent_forces_grounding_instead_of_accepting_generic_greeting(monkeypatch):
+def test_agent_requires_primary_grounding_after_unrelated_success(monkeypatch):
     import app.ai.fast_agent_service as fast_agent
 
     provider = _FakeProvider()
@@ -101,7 +133,7 @@ def test_agent_forces_grounding_instead_of_accepting_generic_greeting(monkeypatc
         lambda: SimpleNamespace(
             fast_model="fast-model",
             reasoning_model="reasoning-model",
-            max_tool_iterations=4,
+            max_tool_iterations=5,
         ),
     )
     monkeypatch.setattr(fast_agent.AIProviderFactory, "create", lambda settings: provider)
@@ -117,12 +149,16 @@ def test_agent_forces_grounding_instead_of_accepting_generic_greeting(monkeypatc
     done = next(event for event in events if event["type"] == "done")
     response = done["response"]
 
-    assert provider.stream_calls == 2
+    assert provider.stream_calls == 3
     assert provider.plan_calls == 1
-    assert "How can I assist you today" not in response.message
+    assert "What would you like to accomplish" not in response.message
+    assert "What's your goal today" not in response.message
     assert response.message.startswith("Found 2 current orphan account(s).")
-    assert response.toolsUsed[0].name == "search_orphan_accounts"
-    assert response.toolsUsed[0].result["success"] is True
+    assert [item.name for item in response.toolsUsed] == [
+        "search_identityai_product_knowledge",
+        "search_orphan_accounts",
+    ]
+    assert response.toolsUsed[-1].result["success"] is True
 
 
 def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypatch):
@@ -131,6 +167,7 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
     class FailureProvider:
         def __init__(self):
             self.calls = 0
+            self.plan_calls = 0
 
         def stream_chat(self, *, model, messages, tools):
             self.calls += 1
@@ -159,11 +196,26 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
             yield {"type": "result", "response": response}
 
         def chat(self, *, model, messages, tools):
-            raise AssertionError("Forced planner should not run after a native tool call")
+            self.plan_calls += 1
+            assert len(tools) == 1
+            assert tools[0].get("name") == "search_orphan_accounts"
+            return ProviderResponse(
+                text="",
+                assistant_message={"role": "assistant", "content": ""},
+                tool_calls=[
+                    ProviderToolCall(
+                        name="search_orphan_accounts",
+                        arguments={"integration": "Active Directory"},
+                    )
+                ],
+                model=model,
+            )
 
     class FailureRegistry(_FakeRegistry):
         def execute(self, *, name, db, arguments):
-            raise RuntimeError("database connection unavailable")
+            if name == "search_orphan_accounts":
+                raise RuntimeError("database connection unavailable")
+            return super().execute(name=name, db=db, arguments=arguments)
 
     provider = FailureProvider()
     monkeypatch.setattr(
@@ -172,7 +224,7 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
         lambda: SimpleNamespace(
             fast_model="fast-model",
             reasoning_model="reasoning-model",
-            max_tool_iterations=3,
+            max_tool_iterations=4,
         ),
     )
     monkeypatch.setattr(fast_agent.AIProviderFactory, "create", lambda settings: provider)
@@ -186,5 +238,6 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
     )
     done = next(event for event in events if event["type"] == "done")
 
+    assert provider.plan_calls == 1
     assert "No result was treated as an empty data set" in done["response"].message
     assert "No orphan accounts were found" not in done["response"].message

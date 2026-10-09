@@ -16,6 +16,7 @@ from app.ai.agent_core import (
 from app.ai.agent_core.capability_retriever import CapabilityRetriever
 from app.ai.agent_core.forced_grounding import (
     force_grounding_tool_calls,
+    primary_grounding_definition,
     safe_grounding_definitions,
 )
 from app.ai.agent_service import (
@@ -64,7 +65,10 @@ _NON_ANSWER_MARKERS = (
     "feel free to ask a question",
     "what's your goal for today",
     "what is your goal for today",
+    "what's your goal today",
+    "what is your goal today",
     "what would you like to do next",
+    "what would you like to accomplish",
     "please provide a clear goal or question",
 )
 
@@ -329,6 +333,15 @@ def run_identity_agent_stream_fast(
         definitions,
         catalog.capabilities(),
     )
+    primary_definition = primary_grounding_definition(
+        forced_definitions,
+        str(request.message or ""),
+    )
+    primary_grounding_name = (
+        str(primary_definition.get("name") or "")
+        if isinstance(primary_definition, dict)
+        else ""
+    )
 
     tool_history: list[ToolInvocationResponse] = []
     chat_sources: list[ChatSource] = []
@@ -385,12 +398,19 @@ def run_identity_agent_stream_fast(
             if fallback_calls:
                 tool_calls = fallback_calls
 
+        primary_already_grounded = bool(primary_grounding_name) and any(
+            invocation.name == primary_grounding_name
+            and isinstance(invocation.result, dict)
+            and invocation.result.get("success")
+            for invocation in tool_history
+        )
+
         if (
             not tool_calls
             and definitions
-            and not tool_history
             and not forced_grounding_used
             and forced_definitions
+            and not primary_already_grounded
         ):
             forced_grounding_used = True
             tool_calls = force_grounding_tool_calls(
