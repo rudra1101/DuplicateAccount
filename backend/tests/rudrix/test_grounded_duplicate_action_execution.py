@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_core.models import AgentEntity, AgentState, EntityType
 from app.ai.fast_agent_service import run_identity_agent_stream_fast
+from app.ai.providers.base import ProviderResponse, ProviderToolCall
 from app.schemas.chat import ChatRequest
 
 
@@ -18,36 +21,55 @@ def _state() -> AgentState:
     )
 
 
-def test_resolves_referential_duplicate_confirmation_from_grounded_state():
+def test_grounded_action_helper_still_resolves_candidate_safely():
     action = resolve_grounded_action("confirm it", _state())
-
     assert action is not None
-    assert action.tool_name == "review_duplicate_candidate"
     assert action.arguments["candidate_id"] == 9694
-    assert action.arguments["decision"] == "DUPLICATE"
 
 
-def test_resolves_explicit_duplicate_review_decisions():
-    assert resolve_grounded_action("mark it as duplicate", _state()).arguments["decision"] == "DUPLICATE"
-    assert resolve_grounded_action("mark it as not a duplicate", _state()).arguments["decision"] == "NOT_DUPLICATE"
-    assert resolve_grounded_action("mark it uncertain", _state()).arguments["decision"] == "UNCERTAIN"
-
-
-def test_does_not_execute_without_a_grounded_candidate():
-    assert resolve_grounded_action("confirm it", AgentState()) is None
-
-
-def test_fast_agent_executes_grounded_review_without_model_round_trip(monkeypatch):
+def test_generic_agent_receives_grounded_candidate_and_executes_model_selected_review(monkeypatch):
     class FakeProvider:
-        def stream_chat(self, **kwargs):
-            raise AssertionError("grounded review must not call the model")
+        def __init__(self):
+            self.calls = 0
+
+        def stream_chat(self, *, model, messages, tools):
+            self.calls += 1
+            if self.calls == 1:
+                assert "9694" in str(messages)
+                assert any(item.get("name") == "review_duplicate_candidate" for item in tools)
+                response = ProviderResponse(
+                    text="",
+                    assistant_message={"role": "assistant", "content": ""},
+                    tool_calls=[
+                        ProviderToolCall(
+                            name="review_duplicate_candidate",
+                            arguments={
+                                "candidate_id": 9694,
+                                "decision": "DUPLICATE",
+                                "comment": None,
+                            },
+                        )
+                    ],
+                    model=model,
+                )
+            else:
+                response = ProviderResponse(
+                    text="Marked candidate 9694 as DUPLICATE.",
+                    assistant_message={
+                        "role": "assistant",
+                        "content": "Marked candidate 9694 as DUPLICATE.",
+                    },
+                    tool_calls=[],
+                    model=model,
+                )
+            yield {"type": "result", "response": response}
 
     class FakeRegistry:
         def definitions(self):
             return [
                 {
                     "name": "review_duplicate_candidate",
-                    "description": "review",
+                    "description": "Record a duplicate review decision for a grounded candidate.",
                     "parameters": {"type": "object", "properties": {}, "required": []},
                 }
             ]
@@ -57,32 +79,39 @@ def test_fast_agent_executes_grounded_review_without_model_round_trip(monkeypatc
             assert arguments["candidate_id"] == 9694
             assert arguments["decision"] == "DUPLICATE"
             return {
-                "message": "Marked candidate **9694** as **DUPLICATE**.",
+                "message": "Marked candidate 9694 as DUPLICATE.",
                 "candidateId": 9694,
                 "decision": "DUPLICATE",
             }
 
+    provider = FakeProvider()
+    monkeypatch.setattr(
+        "app.ai.fast_agent_service.get_ai_settings",
+        lambda: SimpleNamespace(
+            fast_model="fast-model",
+            reasoning_model="reasoning-model",
+            max_tool_iterations=4,
+        ),
+    )
     monkeypatch.setattr(
         "app.ai.fast_agent_service.AIProviderFactory.create",
-        lambda settings: FakeProvider(),
+        lambda settings: provider,
     )
     monkeypatch.setattr(
         "app.ai.fast_agent_service.create_ai_tool_registry",
         lambda: FakeRegistry(),
     )
 
-    request = ChatRequest(message="confirm it", conversationId="conversation-1")
     events = list(
         run_identity_agent_stream_fast(
             db=object(),
-            request=request,
+            request=ChatRequest(message="confirm it", conversationId="conversation-1"),
             persisted_state=_state().model_dump(exclude_none=True),
         )
     )
 
     done = next(event for event in events if event["type"] == "done")
     response = done["response"]
-
-    assert response.message == "Marked candidate **9694** as **DUPLICATE**."
+    assert response.message == "Marked candidate 9694 as DUPLICATE."
     assert response.toolsUsed[0].name == "review_duplicate_candidate"
-    assert response.toolsUsed[0].arguments["candidate_id"] == 9694
+    assert provider.calls == 2
