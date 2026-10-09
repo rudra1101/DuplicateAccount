@@ -26,7 +26,7 @@ def safe_grounding_definitions(
     ]
 
 
-def _primary_grounding_definition(
+def primary_grounding_definition(
     definitions: list[dict[str, Any]],
     user_message: str,
 ) -> dict[str, Any] | None:
@@ -58,7 +58,7 @@ def force_grounding_tool_calls(
     because several safe grounding tools were exposed at once.
     """
 
-    selected = _primary_grounding_definition(definitions, user_message)
+    selected = primary_grounding_definition(definitions, user_message)
     if selected is None:
         return []
 
