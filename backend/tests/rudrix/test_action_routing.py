@@ -4,14 +4,11 @@ from app.ai.authorization import reset_rudrix_permissions, set_rudrix_permission
 from app.ai.fast_agent_service import _select_definitions, _trim_messages
 from app.ai.tools import create_ai_tool_registry
 from app.ai.tools.action_tools import NavigateAppTool
-from app.schemas.chat import ChatHistoryMessage, ChatRequest
+from app.schemas.chat import ChatRequest
 
 
-def _selected_names(message: str, history: list[ChatHistoryMessage] | None = None) -> set[str]:
-    request = ChatRequest(
-        message=message,
-        history=history or [],
-    )
+def _selected_names(message: str) -> set[str]:
+    request = ChatRequest(message=message, history=[])
     definitions = create_ai_tool_registry().definitions()
     return {
         item["name"]
@@ -19,35 +16,19 @@ def _selected_names(message: str, history: list[ChatHistoryMessage] | None = Non
     }
 
 
-def test_report_request_routes_to_report_tool():
-    names = _selected_names("Generate a duplicate candidates report above 95% confidence")
-    assert "generate_report" in names
-    assert "get_confidence_breakdown" in names
+def test_non_trivial_turn_exposes_complete_authorized_capability_surface():
+    expected = {
+        item["name"]
+        for item in create_ai_tool_registry().definitions()
+    }
+
+    assert _selected_names("Show orphan accounts from Active Directory") == expected
+    assert _selected_names("Generate a duplicate report above 95%") == expected
+    assert _selected_names("Create a remediation ticket for this account") == expected
 
 
-def test_ticket_request_routes_to_search_and_create_tools():
-    names = _selected_names("Create a disable ticket for this remediation item")
-    assert "search_remediation_items" in names
-    assert "create_remediation_ticket" in names
-
-
-def test_navigation_request_routes_to_navigation_tool():
-    names = _selected_names("Take me to the remediation page")
-    assert "navigate_app" in names
-
-
-def test_plain_explanation_avoids_tool_schema_overhead():
-    names = _selected_names("Explain deterministic versus probabilistic identity resolution")
-    assert names == set()
-
-
-def test_follow_up_context_preserves_domain_tool_routing():
-    history = [
-        ChatHistoryMessage(role="user", content="Show duplicate accounts above 90% confidence"),
-        ChatHistoryMessage(role="assistant", content="There are matching accounts."),
-    ]
-    names = _selected_names("Give me the application-wise breakdown", history)
-    assert "get_confidence_breakdown" in names
+def test_trivial_conversation_does_not_send_tool_schema_overhead():
+    assert _selected_names("hello") == set()
 
 
 def test_message_trimming_keeps_system_and_recent_context():
