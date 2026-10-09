@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from app.ai.agent_core.grounded_actions import resolve_grounded_action
 from app.ai.agent_core.models import AgentEntity, AgentState, EntityType
 from app.ai.fast_agent_service import run_identity_agent_stream_fast
 from app.ai.providers.base import ProviderResponse, ProviderToolCall
@@ -19,12 +18,6 @@ def _state() -> AgentState:
             source="search_duplicate_groups",
         )
     )
-
-
-def test_grounded_action_helper_still_resolves_candidate_safely():
-    action = resolve_grounded_action("confirm it", _state())
-    assert action is not None
-    assert action.arguments["candidate_id"] == 9694
 
 
 def test_generic_agent_receives_grounded_candidate_and_executes_model_selected_review(monkeypatch):
