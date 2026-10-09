@@ -4,6 +4,7 @@ from app.ai.agent_core.models import AgentState
 from app.ai.agent_core.state import reduce_tool_result
 from app.ai.fast_agent_service import _state_instruction
 from app.ai.tools import create_ai_tool_registry
+from app.ai.tools.orphan_tools import SearchOrphanAccountsTool
 from app.services.orphan_account_service import list_orphan_accounts
 from app.services.orphan_report_extension import ORPHAN_REPORT_TYPE, register_orphan_report
 from app.services.report_service import REPORT_CATALOG, ROW_BUILDERS
@@ -103,3 +104,41 @@ def test_orphan_service_matches_ui_current_state_semantics():
     where_sql = sql.partition("WHERE")[2]
     assert "orphan_states.active" in where_sql
     assert "source_accounts.active" not in where_sql
+
+
+def test_human_source_reference_matches_name_connector_or_application():
+    db = _CaptureDb()
+    result = list_orphan_accounts(db, integration_name="Active Directory")
+
+    assert result == []
+    sql = str(db.statement)
+    where_sql = sql.partition("WHERE")[2].lower()
+    assert "integrations.name" in where_sql
+    assert "integrations.connector_type" in where_sql
+    assert "source_accounts.application" in where_sql
+    assert " or " in where_sql
+
+
+def test_duplicate_human_source_fields_do_not_overconstrain_orphan_search(monkeypatch):
+    captured = {}
+
+    def fake_list_orphans(_db, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        "app.ai.tools.orphan_tools.list_orphan_accounts",
+        fake_list_orphans,
+    )
+
+    result = SearchOrphanAccountsTool().execute(
+        db=object(),
+        arguments={
+            "integration": "Active Directory",
+            "application": "active_directory",
+        },
+    )
+
+    assert result["count"] == 0
+    assert captured["integration_name"] == "Active Directory"
+    assert captured["application"] is None

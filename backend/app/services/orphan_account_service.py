@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db_models.identity import IdentityRecord
@@ -35,6 +35,10 @@ def _contains(value: str) -> str:
     return f"%{value.strip()}%"
 
 
+def _human_source_reference(value: str) -> str:
+    return " ".join(value.strip().replace("_", " ").replace("-", " ").split())
+
+
 def _identity_summary(identity: IdentityRecord | None) -> dict[str, Any] | None:
     if identity is None:
         return None
@@ -63,6 +67,7 @@ def _row_search_text(row: Any) -> str:
             account.display_name,
             account.application,
             integration.name,
+            integration.connector_type,
             orphan.orphan_type,
             orphan.status,
             orphan.correlation_method,
@@ -91,9 +96,10 @@ def list_orphan_accounts(
     """Return the same current orphan-state inventory exposed by the UI.
 
     `/orphans?integrationId=...&latestOnly=true` defines a current orphan as an
-    active `OrphanStateRecord`. It intentionally does not apply an additional
-    `SourceAccountRecord.active` condition. Keeping that exact semantic here prevents
-    Rudrix and the UI from disagreeing about the same integration's orphan count.
+    active `OrphanStateRecord`. Human-facing source references are resolved across
+    the integration display name, connector type, and account application so Rudrix
+    can understand references such as "Active Directory" even when the configured
+    integration itself has a custom display name.
     """
 
     statement = (
@@ -113,7 +119,19 @@ def list_orphan_accounts(
     if integration_id is not None:
         conditions.append(OrphanStateRecord.integration_id == int(integration_id))
     if integration_name:
-        conditions.append(IntegrationRecord.name.ilike(_contains(integration_name)))
+        source_reference = _human_source_reference(integration_name)
+        normalized_connector = func.replace(
+            func.replace(IntegrationRecord.connector_type, "_", " "),
+            "-",
+            " ",
+        )
+        conditions.append(
+            or_(
+                IntegrationRecord.name.ilike(_contains(integration_name)),
+                normalized_connector.ilike(_contains(source_reference)),
+                SourceAccountRecord.application.ilike(_contains(integration_name)),
+            )
+        )
     if application:
         conditions.append(SourceAccountRecord.application.ilike(_contains(application)))
     if orphan_type:
@@ -180,6 +198,7 @@ def list_orphan_accounts(
                 "sourceAccountId": account.id,
                 "integrationId": orphan.integration_id,
                 "integrationName": integration.name,
+                "connectorType": integration.connector_type,
                 "application": account.application,
                 "nativeIdentity": account.native_identity,
                 "username": account.username,

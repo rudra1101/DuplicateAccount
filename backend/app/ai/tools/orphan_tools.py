@@ -11,13 +11,20 @@ from app.ai.tools.base import BaseAITool
 from app.services.orphan_account_service import ORPHAN_TYPES, list_orphan_accounts
 
 
+def _normalized_source_reference(value: str | None) -> str:
+    return " ".join(
+        str(value or "").strip().replace("_", " ").replace("-", " ").casefold().split()
+    )
+
+
 class SearchOrphanAccountsTool(BaseAITool):
     name = "search_orphan_accounts"
     description = (
-        "Search CURRENT orphan accounts using live IdentityAI orphan state. Use for requests "
-        "such as 'show orphan accounts from Active Directory', 'show terminated identity "
-        "orphans', 'why did correlation fail', or orphan-account filtering. Results include "
-        "persisted correlation reason, policy, attempts, and matched identity when available."
+        "Search CURRENT orphan accounts using live IdentityAI orphan state. The source can be "
+        "identified by configured integration name, connector type, or account application. "
+        "Use for requests such as 'show orphan accounts from Active Directory', 'show "
+        "terminated identity orphans', 'why did correlation fail', or orphan-account filtering. "
+        "Results include persisted correlation reason, policy, attempts, and matched identity."
     )
     parameters = {
         "type": "object",
@@ -43,6 +50,17 @@ class SearchOrphanAccountsTool(BaseAITool):
     def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
         integration = str(arguments.get("integration") or "").strip() or None
         application = str(arguments.get("application") or "").strip() or None
+
+        # Small models sometimes put the same human source reference into both fields.
+        # Treat that as one source reference instead of AND-ing two independent filters.
+        if (
+            integration
+            and application
+            and _normalized_source_reference(integration)
+            == _normalized_source_reference(application)
+        ):
+            application = None
+
         orphan_type = str(arguments.get("orphan_type") or "").strip().upper() or None
         status = str(arguments.get("status") or "").strip().upper() or None
         search = str(arguments.get("search") or "").strip() or None
@@ -106,10 +124,10 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
 
     description = (
         "Find a specific current account OR list/filter current orphan accounts. For a broad "
-        "orphan request, set orphan_only=true, keep query empty, and put the source name in "
-        "integration. For a specific orphan account, set orphan_only=true and put only the "
-        "username/email/employee ID/display name in query. Results use persisted correlation "
-        "evidence; never invent a correlation reason."
+        "orphan request, set orphan_only=true, keep query empty, and put the human source "
+        "reference in integration. For a specific orphan account, set orphan_only=true and put "
+        "only the username/email/employee ID/display name in query. Results use persisted "
+        "correlation evidence; never invent a correlation reason."
     )
     parameters = {
         "type": "object",
