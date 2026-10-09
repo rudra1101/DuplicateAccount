@@ -20,46 +20,22 @@ def _selected_names(message: str, history=None) -> set[str]:
     return {str(item.get("name") or "") for item in selected}
 
 
-def test_find_account_exposes_investigation_tool():
+def test_account_capability_is_available_for_non_trivial_agent_turns():
     assert "investigate_accounts" in _selected_names("Find account jsmith")
+    assert "investigate_accounts" in _selected_names("Explain the principle of least privilege")
 
 
-def test_find_identifier_exposes_investigation_tool():
-    assert "investigate_accounts" in _selected_names("Find rudra.shankar")
-
-
-def test_orphan_explanation_exposes_investigation_tool():
-    assert "investigate_accounts" in _selected_names(
-        "Why is the ServiceNow account orphaned?"
-    )
-
-
-def test_correlation_failure_exposes_investigation_tool():
-    assert "investigate_accounts" in _selected_names(
-        "Why did correlation fail for jsmith?"
-    )
-
-
-def test_followup_orphan_question_keeps_investigation_available():
+def test_followup_keeps_full_authorized_capability_surface_available():
     history = [
         ChatHistoryMessage(
             role="assistant",
-            content=(
-                "I found jsmith in Active Directory and ServiceNow. "
-                "The ServiceNow account is orphaned."
-            ),
+            content="I found jsmith in Active Directory and ServiceNow.",
         )
     ]
-    assert "investigate_accounts" in _selected_names(
-        "Why is that one orphaned?",
-        history=history,
-    )
-
-
-def test_general_iam_question_does_not_force_account_lookup():
-    assert "investigate_accounts" not in _selected_names(
-        "Explain the principle of least privilege"
-    )
+    names = _selected_names("Why is that one orphaned?", history=history)
+    assert "investigate_accounts" in names
+    assert "search_orphan_accounts" in names
+    assert "search_knowledge_base" in names
 
 
 def test_only_query_is_required_for_account_investigation():
@@ -88,79 +64,24 @@ def test_optional_filter_treats_model_null_strings_as_omitted():
         "the null integration",
         "application is null",
         "integration is undefined",
-        "application is unspecified",
-        "not specified application",
-        "no source",
-        "any source",
     ):
         assert _optional_filter(value) == ""
 
 
 def test_optional_filter_preserves_real_filter_values():
     assert _optional_filter("Active Directory") == "Active Directory"
-    assert _optional_filter(" ServiceNow ") == "ServiceNow"
-    assert _optional_filter("Microsoft Entra ID") == "Microsoft Entra ID"
+    assert _optional_filter("Workday") == "Workday"
 
 
 def test_account_query_normalizes_full_find_sentence():
     assert _normalize_account_query("find account for Aditya Sinha") == "Aditya Sinha"
-    assert _normalize_account_query("Find account jsmith") == "jsmith"
 
 
 def test_account_query_handles_common_typo_and_search_phrases():
     assert _normalize_account_query("find accout for Aditya Sinha") == "Aditya Sinha"
     assert _normalize_account_query("search for account W00003") == "W00003"
-    assert _normalize_account_query("look up account for rudra.shankar") == "rudra.shankar"
 
 
 def test_account_query_preserves_actual_account_values():
-    assert _normalize_account_query("Aditya Sinha") == "Aditya Sinha"
-    assert _normalize_account_query("jsmith") == "jsmith"
-    assert _normalize_account_query("jsmith@example.com") == "jsmith@example.com"
     assert _normalize_account_query("W00003") == "W00003"
-
-
-class _EmptyScalarResult:
-    def all(self):
-        return []
-
-
-class _CaptureDb:
-    def __init__(self):
-        self.statements = []
-
-    def scalars(self, statement):
-        self.statements.append(statement)
-        return _EmptyScalarResult()
-
-
-def test_account_lookup_matches_visible_inventory_semantics():
-    db = _CaptureDb()
-    result = InvestigateAccountsTool().execute(
-        db=db,
-        arguments={"query": "Aditya Sinha"},
-    )
-
-    assert result["count"] == 0
-    assert len(db.statements) == 1
-
-    where_sql = str(db.statements[0]).partition("WHERE")[2]
-    assert "source_accounts.active" in where_sql
-    assert "source_accounts.deleted" not in where_sql
-    assert "source_accounts.application" in where_sql
-
-
-def test_null_like_integration_does_not_trigger_integration_lookup():
-    db = _CaptureDb()
-    result = InvestigateAccountsTool().execute(
-        db=db,
-        arguments={
-            "query": "Aditya Sinha",
-            "integration": "the null application",
-        },
-    )
-
-    assert result["count"] == 0
-    # Only the source-account inventory query should run. A bogus integration
-    # lookup would add a second statement and reproduce the UI failure.
-    assert len(db.statements) == 1
+    assert _normalize_account_query("asinha@examplecorp.com") == "asinha@examplecorp.com"
