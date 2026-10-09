@@ -8,47 +8,57 @@ from app.schemas.chat import ChatRequest
 
 class _FakeProvider:
     def __init__(self) -> None:
-        self.calls = 0
+        self.stream_calls = 0
+        self.plan_calls = 0
 
     def stream_chat(self, *, model, messages, tools):
-        self.calls += 1
+        self.stream_calls += 1
         names = {item.get("name") for item in tools}
         assert "search_orphan_accounts" in names
 
-        if self.calls == 1:
+        if self.stream_calls == 1:
             response = ProviderResponse(
-                text="The current data could not be retrieved.",
+                text=(
+                    "I'm Rudrix, your AI copilot for IdentityAI. "
+                    "How can I assist you today? What's your goal for today?"
+                ),
                 assistant_message={
                     "role": "assistant",
-                    "content": "The current data could not be retrieved.",
+                    "content": "How can I assist you today? What's your goal for today?",
                 },
                 tool_calls=[],
                 model=model,
             )
-        elif self.calls == 2:
-            response = ProviderResponse(
-                text="",
-                assistant_message={"role": "assistant", "content": ""},
-                tool_calls=[
-                    ProviderToolCall(
-                        name="search_orphan_accounts",
-                        arguments={"integration": "Active Directory", "limit": 20},
-                    )
-                ],
-                model=model,
-            )
         else:
             response = ProviderResponse(
-                text="Found 2 current orphan accounts in Active Directory.",
+                text=(
+                    "I'm Rudrix, your AI copilot for IdentityAI. "
+                    "How can I assist you today?"
+                ),
                 assistant_message={
                     "role": "assistant",
-                    "content": "Found 2 current orphan accounts in Active Directory.",
+                    "content": "How can I assist you today?",
                 },
                 tool_calls=[],
                 model=model,
             )
 
         yield {"type": "result", "response": response}
+
+    def chat(self, *, model, messages, tools):
+        self.plan_calls += 1
+        assert any(item.get("name") == "search_orphan_accounts" for item in tools)
+        return ProviderResponse(
+            text="",
+            assistant_message={"role": "assistant", "content": ""},
+            tool_calls=[
+                ProviderToolCall(
+                    name="search_orphan_accounts",
+                    arguments={"integration": "Active Directory", "limit": 20},
+                )
+            ],
+            model=model,
+        )
 
 
 class _FakeRegistry:
@@ -74,14 +84,14 @@ class _FakeRegistry:
         return {
             "count": 2,
             "items": [
-                {"sourceAccountId": 1, "username": "orphan.one"},
-                {"sourceAccountId": 2, "username": "orphan.two"},
+                {"sourceAccountId": 1, "username": "orphan.one", "application": "Active Directory"},
+                {"sourceAccountId": 2, "username": "orphan.two", "application": "Active Directory"},
             ],
             "message": "Found 2 current orphan account(s).",
         }
 
 
-def test_agent_does_not_accept_ungrounded_data_unavailable_answer(monkeypatch):
+def test_agent_forces_grounding_instead_of_accepting_generic_greeting(monkeypatch):
     import app.ai.fast_agent_service as fast_agent
 
     provider = _FakeProvider()
@@ -94,16 +104,8 @@ def test_agent_does_not_accept_ungrounded_data_unavailable_answer(monkeypatch):
             max_tool_iterations=4,
         ),
     )
-    monkeypatch.setattr(
-        fast_agent.AIProviderFactory,
-        "create",
-        lambda settings: provider,
-    )
-    monkeypatch.setattr(
-        fast_agent,
-        "create_ai_tool_registry",
-        lambda: _FakeRegistry(),
-    )
+    monkeypatch.setattr(fast_agent.AIProviderFactory, "create", lambda settings: provider)
+    monkeypatch.setattr(fast_agent, "create_ai_tool_registry", lambda: _FakeRegistry())
 
     events = list(
         fast_agent.run_identity_agent_stream_fast(
@@ -115,8 +117,10 @@ def test_agent_does_not_accept_ungrounded_data_unavailable_answer(monkeypatch):
     done = next(event for event in events if event["type"] == "done")
     response = done["response"]
 
-    assert provider.calls == 3
-    assert response.message == "Found 2 current orphan accounts in Active Directory."
+    assert provider.stream_calls == 2
+    assert provider.plan_calls == 1
+    assert "How can I assist you today" not in response.message
+    assert response.message.startswith("Found 2 current orphan account(s).")
     assert response.toolsUsed[0].name == "search_orphan_accounts"
     assert response.toolsUsed[0].result["success"] is True
 
@@ -153,6 +157,9 @@ def test_all_failed_live_tools_return_grounded_failure_not_zero_results(monkeypa
                     model=model,
                 )
             yield {"type": "result", "response": response}
+
+        def chat(self, *, model, messages, tools):
+            raise AssertionError("Forced planner should not run after a native tool call")
 
     class FailureRegistry(_FakeRegistry):
         def execute(self, *, name, db, arguments):

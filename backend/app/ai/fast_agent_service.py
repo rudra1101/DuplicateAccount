@@ -14,6 +14,10 @@ from app.ai.agent_core import (
     render_state_for_planner,
 )
 from app.ai.agent_core.capability_retriever import CapabilityRetriever
+from app.ai.agent_core.forced_grounding import (
+    force_grounding_tool_calls,
+    safe_grounding_definitions,
+)
 from app.ai.agent_service import (
     _execute_tool_calls,
     build_messages,
@@ -52,6 +56,16 @@ _UNAVAILABLE_MARKERS = (
     "can't retrieve",
     "data is unavailable",
     "data unavailable",
+)
+
+_NON_ANSWER_MARKERS = (
+    "how can i assist you today",
+    "how can i help you today",
+    "feel free to ask a question",
+    "what's your goal for today",
+    "what is your goal for today",
+    "what would you like to do next",
+    "please provide a clear goal or question",
 )
 
 _INTERNAL_STATE_LEAK_MARKERS = (
@@ -103,12 +117,7 @@ def _select_definitions(
     request,
     state: AgentState | None = None,
 ) -> list[dict[str, Any]]:
-    """Retrieve a compact authorized capability set from tool contracts.
-
-    This is not phrase routing. New capabilities become discoverable through their
-    name, description and JSON schema. Keeping the tool surface compact is important
-    for reliable native tool calling on local models such as llama3.1:8b.
-    """
+    """Retrieve a compact authorized capability set from tool contracts."""
 
     if _is_trivial_conversation(request):
         return []
@@ -266,6 +275,11 @@ def _looks_unavailable(message: str) -> bool:
     return any(marker in lowered for marker in _UNAVAILABLE_MARKERS)
 
 
+def _looks_like_non_answer(message: str) -> bool:
+    lowered = str(message or "").casefold()
+    return any(marker in lowered for marker in _NON_ANSWER_MARKERS)
+
+
 def _looks_like_internal_state_leak(message: str) -> bool:
     lowered = str(message or "").casefold()
     return any(marker in lowered for marker in _INTERNAL_STATE_LEAK_MARKERS)
@@ -277,13 +291,7 @@ def run_identity_agent_stream_fast(
     request,
     persisted_state: dict[str, Any] | None = None,
 ) -> Iterator[dict[str, Any]]:
-    """Run Rudrix as a retrieval-grounded IdentityAI agent.
-
-    Every substantive turn is grounded in either live IdentityAI capabilities,
-    built-in product knowledge, or uploaded RAG knowledge. Tool retrieval is generic
-    over capability contracts, and the model can chain multiple capabilities until
-    the user's goal is complete.
-    """
+    """Run Rudrix as a retrieval-grounded IdentityAI agent."""
 
     settings = get_ai_settings()
     provider = AIProviderFactory.create(settings)
@@ -317,12 +325,16 @@ def run_identity_agent_stream_fast(
         for definition in definitions
         if definition.get("name")
     }
+    forced_definitions = safe_grounding_definitions(
+        definitions,
+        catalog.capabilities(),
+    )
 
     tool_history: list[ToolInvocationResponse] = []
     chat_sources: list[ChatSource] = []
     source_keys: set[tuple[int, int | None]] = set()
     final_message = ""
-    grounding_retry_used = False
+    forced_grounding_used = False
 
     stream_method = getattr(provider, "stream_chat", None)
 
@@ -373,6 +385,22 @@ def run_identity_agent_stream_fast(
             if fallback_calls:
                 tool_calls = fallback_calls
 
+        if (
+            not tool_calls
+            and definitions
+            and not tool_history
+            and not forced_grounding_used
+            and forced_definitions
+        ):
+            forced_grounding_used = True
+            tool_calls = force_grounding_tool_calls(
+                provider=provider,
+                model=selected_model,
+                user_message=str(request.message or ""),
+                grounded_state=render_state_for_planner(state),
+                definitions=forced_definitions,
+            )
+
         if tool_calls:
             messages.append(provider_response.assistant_message)
             yield {"type": "status", "message": "Using IdentityAI capabilities..."}
@@ -403,23 +431,14 @@ def run_identity_agent_stream_fast(
             )
             continue
 
-        if definitions and not tool_history and not grounding_retry_used:
-            grounding_retry_used = True
-            messages.append(provider_response.assistant_message)
-            messages.append(
-                {
-                    "role": "system",
-                    "content": (
-                        "Ground this substantive IdentityAI request before answering. "
-                        "Use live capabilities for current state/actions, built-in product "
-                        "knowledge for IdentityAI behavior/capabilities, or uploaded knowledge "
-                        "for organization-specific documentation. Do not claim data is "
-                        "unavailable until an appropriate capability has actually been tried. "
-                        "Never reveal private runtime context or structured agent state."
-                    ),
-                }
+        if definitions and not tool_history:
+            final_message = (
+                "I couldn't ground that IdentityAI request in an authorized product "
+                "capability, so I won't guess. Please retry after checking the AI provider "
+                "or capability availability."
             )
-            continue
+            yield {"type": "delta", "text": final_message}
+            break
 
         final_message = (provider_response.text or "").strip()
         if not final_message and streamed_parts:
@@ -430,7 +449,11 @@ def run_identity_agent_stream_fast(
         failure_message = _grounded_failure_message(tool_history)
         if failure_message is not None:
             final_message = failure_message
-        elif _looks_unavailable(final_message) or _looks_like_internal_state_leak(final_message):
+        elif (
+            _looks_unavailable(final_message)
+            or _looks_like_internal_state_leak(final_message)
+            or _looks_like_non_answer(final_message)
+        ):
             grounded_success = _structured_success_message(tool_history)
             if grounded_success:
                 final_message = grounded_success
