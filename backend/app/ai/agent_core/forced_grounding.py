@@ -8,6 +8,7 @@ from app.ai.agent_service import extract_text_tool_calls
 
 
 SAFE_GROUNDING_KINDS = {CapabilityKind.READ, CapabilityKind.KNOWLEDGE}
+MIN_PRIMARY_GROUNDING_SCORE = 0.22
 
 
 def safe_grounding_definitions(
@@ -30,16 +31,15 @@ def primary_grounding_definition(
     definitions: list[dict[str, Any]],
     user_message: str,
 ) -> dict[str, Any] | None:
-    """Choose the best safe capability from its contract, not from prompt routing."""
+    """Choose a sufficiently relevant safe capability from its contract."""
 
     if not definitions:
         return None
 
-    selected = CapabilityRetriever(definitions).select(
-        str(user_message or ""),
-        limit=1,
-    )
-    return selected[0] if selected else None
+    ranked = CapabilityRetriever(definitions).rank(str(user_message or ""))
+    if not ranked or ranked[0].score < MIN_PRIMARY_GROUNDING_SCORE:
+        return None
+    return ranked[0].definition
 
 
 def force_grounding_tool_calls(
