@@ -100,5 +100,6 @@ def test_orphan_service_matches_ui_current_state_semantics():
 
     assert result == []
     sql = str(db.statement)
-    assert "orphan_states.active" in sql
-    assert "source_accounts.active" not in sql
+    where_sql = sql.partition("WHERE")[2]
+    assert "orphan_states.active" in where_sql
+    assert "source_accounts.active" not in where_sql
