@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 import uuid
 from typing import Any
 
@@ -9,7 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.ai.fast_agent_service import run_identity_agent_stream_fast
 from app.ai.authorization import (
     permissions_for_user,
     reset_rudrix_actor,
@@ -17,17 +15,17 @@ from app.ai.authorization import (
     set_rudrix_actor,
     set_rudrix_permissions,
 )
+from app.ai.fast_agent_service import run_identity_agent_stream_fast
 from app.auth import get_current_user
 from app.database.session import get_db
-from app.observability import logger
 from app.db_models.chat_conversation import ChatConversationRecord
-from app.schemas.chat import ChatRequest, ChatResponse, ToolInvocationResponse
+from app.observability import logger
+from app.schemas.chat import ChatRequest
 from app.services.chat_history_service import (
     get_or_create_chat_conversation,
     save_chat_message,
 )
 from app.services.chat_ownership_service import assign_new_conversation_owner
-from app.services.service_desk_service import create_ticket
 
 
 router = APIRouter(
@@ -36,108 +34,9 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)],
 )
 
-_CONFIRMATION_WORDS = {
-    "confirm",
-    "confirmed",
-    "yes",
-    "yes confirm",
-    "yes, confirm",
-    "proceed",
-    "go ahead",
-    "do it",
-}
-
-_NAVIGATION_DESTINATIONS: tuple[tuple[str, tuple[str, ...], str, str], ...] = (
-    ("ml_evaluation", ("ml evaluation", "reviewer analytics"), "/account-intelligence/ml-evaluation", "ML Evaluation"),
-    ("ml_training", ("ml training", "training dashboard"), "/account-intelligence/ml-training", "ML Training"),
-    ("integrations", ("integrations", "integration page", "connectors", "connector page"), "/account-intelligence/integrations", "Integrations"),
-    ("remediation", ("remediation", "remediation queue"), "/account-intelligence/remediation", "Remediation"),
-    ("duplicates", ("duplicate detection", "duplicates", "duplicate page"), "/account-intelligence/duplicates", "Duplicate Detection"),
-    ("review", ("review accounts", "review queue", "review page", "reviews"), "/account-intelligence/review", "Review Accounts"),
-    ("reports", ("reports", "report page", "reporting"), "/account-intelligence/reports", "Reports"),
-    ("upload", ("upload accounts", "upload page", "upload"), "/account-intelligence/upload", "Upload Accounts"),
-    ("accounts", ("account inventory", "accounts page", "accounts"), "/account-intelligence/accounts", "Accounts"),
-    ("settings", ("settings", "settings page"), "/account-intelligence/settings", "Settings"),
-    ("operations", ("operations", "operations page"), "/operations", "Operations"),
-    ("knowledge", ("knowledge base", "knowledge page", "knowledge"), "/knowledge", "Knowledge Base"),
-    ("users", ("user management", "users page", "users"), "/platform-admin/users", "Users"),
-    ("roles", ("role management", "roles page", "roles"), "/platform-admin/roles", "Roles"),
-    ("branding", ("branding", "branding settings"), "/platform-admin/branding", "Branding"),
-    ("admin", ("administration", "platform admin", "admin page"), "/platform-admin", "Administration"),
-    ("home", ("home page", "home"), "/home", "Home"),
-    ("dashboard", ("dashboard", "dashboard page"), "/account-intelligence/dashboard", "Dashboard"),
-)
-
 
 def _event(event_type: str, **payload: Any) -> str:
     return json.dumps({"type": event_type, **payload}, default=str) + "\n"
-
-
-def _requested_navigation_destination(message: str) -> tuple[str, str, str] | None:
-    text = " ".join(str(message or "").strip().lower().split())
-    if not text:
-        return None
-
-    navigation_intent = any(
-        phrase in text
-        for phrase in (
-            "open ",
-            "go to ",
-            "take me to ",
-            "navigate to ",
-            "show me ",
-            "show the ",
-        )
-    )
-    if not navigation_intent:
-        return None
-
-    for destination, aliases, route, label in _NAVIGATION_DESTINATIONS:
-        if any(alias in text for alias in aliases):
-            return destination, route, label
-
-    return None
-
-
-def _repair_navigation_response(final_response: ChatResponse, user_message: str) -> ChatResponse:
-    requested = _requested_navigation_destination(user_message)
-    if requested is None:
-        return final_response
-
-    navigation_tool = next(
-        (
-            tool
-            for tool in final_response.toolsUsed
-            if tool.name == "navigate_app"
-            and isinstance(tool.result, dict)
-            and tool.result.get("success") is True
-        ),
-        None,
-    )
-    if navigation_tool is None:
-        return final_response
-
-    destination, route, label = requested
-    data = navigation_tool.result.get("data")
-    if not isinstance(data, dict):
-        data = {}
-        navigation_tool.result["data"] = data
-
-    data.update(
-        {
-            "message": f"[Open **{label}**]({route})",
-            "destination": destination,
-            "route": route,
-            "clientAction": {
-                "type": "NAVIGATE",
-                "label": f"Open {label}",
-                "route": route,
-                "autoExecute": True,
-            },
-        }
-    )
-    final_response.message = str(data["message"])
-    return final_response
 
 
 def _safe_stream_error_message(exc: Exception) -> str:
@@ -172,125 +71,6 @@ def _next_authorized_event(iterator, permissions: frozenset[str], actor: str):
     finally:
         reset_rudrix_actor(actor_token)
         reset_rudrix_permissions(permission_token)
-
-
-def _ticket_confirmation_arguments(payload: ChatRequest) -> dict[str, Any] | None:
-    current = " ".join(str(payload.message or "").strip().lower().split())
-    if current not in _CONFIRMATION_WORDS:
-        return None
-
-    history = list(payload.history or [])
-    if not history:
-        return None
-
-    previous_assistant = next(
-        (
-            str(message.content or "")
-            for message in reversed(history)
-            if str(message.role or "").lower() == "assistant"
-        ),
-        "",
-    )
-    if not previous_assistant:
-        return None
-
-    assistant_lower = previous_assistant.lower()
-    if "confirm" not in assistant_lower or "ticket" not in assistant_lower:
-        return None
-
-    item_match = re.search(
-        r"remediation\s+item(?:\s+id)?\s*[:#]?\s*(\d+)",
-        previous_assistant,
-        flags=re.IGNORECASE,
-    )
-    if not item_match:
-        return None
-
-    target_match = re.search(
-        r"(?:delete|deleting|disable|disabling)[^\n.]{0,120}?account\s*([12])\b",
-        previous_assistant,
-        flags=re.IGNORECASE,
-    )
-    if not target_match:
-        target_match = re.search(
-            r"target(?:\s+account)?\s*[:#]?\s*account\s*([12])\b",
-            previous_assistant,
-            flags=re.IGNORECASE,
-        )
-    if not target_match:
-        return None
-
-    action_match = re.search(
-        r"\b(delete|deleting|disable|disabling)\b",
-        previous_assistant,
-        flags=re.IGNORECASE,
-    )
-    if not action_match:
-        return None
-
-    raw_action = action_match.group(1).lower()
-    action = "DELETE" if raw_action.startswith("delet") else "DISABLE"
-    target = "ACCOUNT_1" if target_match.group(1) == "1" else "ACCOUNT_2"
-
-    return {
-        "remediation_item_id": int(item_match.group(1)),
-        "target": target,
-        "action": action,
-    }
-
-
-def _ticket_confirmation_response(
-    *,
-    db: Session,
-    payload: ChatRequest,
-    conversation_id: str,
-    permissions: frozenset[str],
-    actor: str,
-) -> ChatResponse | None:
-    arguments = _ticket_confirmation_arguments(payload)
-    if arguments is None:
-        return None
-
-    if "*" not in permissions and "remediation.manage" not in permissions:
-        return ChatResponse(
-            conversationId=conversation_id,
-            message=(
-                "You do not have permission to create remediation tickets. "
-                "The required permission is `remediation.manage`."
-            ),
-            model="rudrix-action",
-        )
-
-    result = create_ticket(
-        db,
-        item_id=int(arguments["remediation_item_id"]),
-        target=str(arguments["target"]),
-        action=str(arguments["action"]),
-        requested_by=actor,
-    )
-
-    ticket_id = result.get("ticketId") or "created ticket"
-    target_key = result.get("targetAccountKey") or arguments["target"]
-    ticket_url = result.get("ticketUrl")
-    message = (
-        f"Created Service Desk ticket **{ticket_id}** to "
-        f"**{str(arguments['action']).lower()}** account `{target_key}`."
-    )
-    if ticket_url:
-        message += f" [Open ticket]({ticket_url})"
-
-    return ChatResponse(
-        conversationId=conversation_id,
-        message=message,
-        model="rudrix-action",
-        toolsUsed=[
-            ToolInvocationResponse(
-                name="create_remediation_ticket",
-                arguments=arguments,
-                result={"success": True, "data": result},
-            )
-        ],
-    )
 
 
 @router.post("/stream")
@@ -328,79 +108,41 @@ def stream_chat(
         try:
             yield _event("start", conversationId=conversation_id)
 
-            final_response = _ticket_confirmation_response(
-                db=db,
-                payload=payload,
-                conversation_id=conversation_id,
-                permissions=user_permissions,
-                actor=actor,
+            final_response = None
+            agent_events = iter(
+                run_identity_agent_stream_fast(
+                    db=db,
+                    request=request,
+                    persisted_state=persisted_agent_state,
+                )
             )
 
-            navigation_requested = _requested_navigation_destination(payload.message) is not None
-            streamed_deltas: list[str] = []
-
-            if final_response is not None:
-                yield _event("status", message="Creating Service Desk ticket...")
-                yield _event("delta", text=final_response.message)
-            else:
-                agent_events = iter(
-                    run_identity_agent_stream_fast(
-                        db=db,
-                        request=request,
-                        persisted_state=persisted_agent_state,
+            while True:
+                try:
+                    event = _next_authorized_event(
+                        agent_events,
+                        user_permissions,
+                        actor,
                     )
-                )
+                except StopIteration:
+                    break
 
-                while True:
-                    try:
-                        event = _next_authorized_event(
-                            agent_events,
-                            user_permissions,
-                            actor,
-                        )
-                    except StopIteration:
-                        break
+                event_type = event.get("type")
+                if event_type == "status":
+                    yield _event("status", message=event.get("message", ""))
+                    continue
 
-                    event_type = event.get("type")
+                if event_type == "delta":
+                    text = str(event.get("text") or "")
+                    if text:
+                        yield _event("delta", text=text)
+                    continue
 
-                    if event_type == "status":
-                        yield _event("status", message=event.get("message", ""))
-                        continue
-
-                    if event_type == "delta":
-                        text = str(event.get("text") or "")
-                        if text:
-                            if navigation_requested:
-                                streamed_deltas.append(text)
-                            else:
-                                yield _event("delta", text=text)
-                        continue
-
-                    if event_type == "done":
-                        final_response = event.get("response")
-                        returned_state = event.get("agentState")
-                        if isinstance(returned_state, dict):
-                            agent_state = returned_state
-
-                if final_response is not None:
-                    final_response = _repair_navigation_response(
-                        final_response,
-                        payload.message,
-                    )
-
-                    navigation_used = any(
-                        tool.name == "navigate_app"
-                        and isinstance(tool.result, dict)
-                        and tool.result.get("success") is True
-                        for tool in final_response.toolsUsed
-                    )
-
-                    if navigation_requested:
-                        if navigation_used:
-                            yield _event("delta", text=final_response.message)
-                        else:
-                            for text in streamed_deltas:
-                                yield _event("delta", text=text)
+                if event_type == "done":
+                    final_response = event.get("response")
+                    returned_state = event.get("agentState")
+                    if isinstance(returned_state, dict):
+                        agent_state = returned_state
 
             if final_response is None:
                 raise RuntimeError("Rudrix streaming finished without a final response.")
