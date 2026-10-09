@@ -23,7 +23,7 @@ def test_find_accout_typo_is_normalized():
     assert "investigate_accounts" in _selected_names(request)
 
 
-def test_explicit_named_lookup_drops_stale_remediation_history():
+def test_explicit_named_lookup_drops_stale_remediation_history_without_narrowing_catalog():
     request = ChatRequest(
         message="ind account for Aditya Sinha",
         history=[
@@ -36,7 +36,9 @@ def test_explicit_named_lookup_drops_stale_remediation_history():
 
     assert request.message == "find account for Aditya Sinha"
     assert request.history == []
-    assert _selected_names(request) == {"investigate_accounts"}
+    names = _selected_names(request)
+    assert "investigate_accounts" in names
+    assert "search_duplicate_groups" in names
 
 
 def test_referential_lookup_keeps_history():
