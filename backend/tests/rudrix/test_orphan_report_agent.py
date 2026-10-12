@@ -28,7 +28,7 @@ def test_orphan_search_result_persists_report_filters_and_full_evidence():
             "data": {
                 "queryMode": "orphan_search",
                 "reportType": "orphan_accounts",
-                "reportFilters": {"integrationId": 12, "status": "UNMATCHED_ACCOUNT"},
+                "reportFilters": {"integrationId": 12, "orphanType": "UNMATCHED_ACCOUNT"},
                 "items": [
                     {
                         "sourceAccountId": 203,
@@ -58,6 +58,7 @@ def test_orphan_search_result_persists_report_filters_and_full_evidence():
     assert state.current_integration.id == 12
     assert state.last_filters["reportType"] == "orphan_accounts"
     assert state.last_filters["filters"]["integrationId"] == 12
+    assert state.last_filters["filters"]["orphanType"] == "UNMATCHED_ACCOUNT"
 
 
 def test_grounded_orphan_report_context_is_visible_to_generic_agent():
@@ -65,7 +66,7 @@ def test_grounded_orphan_report_context_is_visible_to_generic_agent():
         last_filters={
             "context": "orphan_accounts",
             "reportType": "orphan_accounts",
-            "filters": {"integrationId": 12, "status": "UNMATCHED_ACCOUNT"},
+            "filters": {"integrationId": 12, "orphanType": "UNMATCHED_ACCOUNT"},
         }
     )
     rendered = _state_instruction(state)
@@ -78,7 +79,9 @@ def test_grounded_orphan_report_context_is_visible_to_generic_agent():
 def test_orphan_report_extension_is_available_to_shared_report_system():
     register_orphan_report()
 
-    assert any(item["type"] == ORPHAN_REPORT_TYPE for item in REPORT_CATALOG)
+    catalog_item = next(item for item in REPORT_CATALOG if item["type"] == ORPHAN_REPORT_TYPE)
+    assert "orphanType" in catalog_item["filters"]
+    assert "status" in catalog_item["filters"]
     assert ORPHAN_REPORT_TYPE in ROW_BUILDERS
 
 
@@ -142,3 +145,54 @@ def test_duplicate_human_source_fields_do_not_overconstrain_orphan_search(monkey
     assert result["count"] == 0
     assert captured["integration_name"] == "Active Directory"
     assert captured["application"] is None
+
+
+def test_known_orphan_type_sent_as_status_is_not_applied_to_workflow_status():
+    db = _CaptureDb()
+    result = list_orphan_accounts(
+        db,
+        integration_name="Active Directory",
+        status="UNMATCHED_ACCOUNT",
+    )
+
+    assert result == []
+    where_sql = str(db.statement).partition("WHERE")[2].lower()
+    assert "orphan_states.orphan_type" in where_sql
+    assert "orphan_states.status =" not in where_sql
+
+
+def test_orphan_tool_recovers_model_status_field_mixup(monkeypatch):
+    captured = {}
+
+    def fake_list_orphans(_db, **kwargs):
+        captured.update(kwargs)
+        return [
+            {
+                "integrationId": 12,
+                "integrationName": "Active Directory",
+                "application": "Active Directory",
+                "sourceAccountId": 1,
+                "displayName": "Pooja Mehta",
+                "orphanType": "UNMATCHED_ACCOUNT",
+                "orphanStatus": None,
+            }
+        ]
+
+    monkeypatch.setattr(
+        "app.ai.tools.orphan_tools.list_orphan_accounts",
+        fake_list_orphans,
+    )
+
+    result = SearchOrphanAccountsTool().execute(
+        db=object(),
+        arguments={
+            "integration": "Active Directory",
+            "status": "UNMATCHED_ACCOUNT",
+        },
+    )
+
+    assert result["count"] == 1
+    assert captured["orphan_type"] == "UNMATCHED_ACCOUNT"
+    assert captured["status"] is None
+    assert result["reportFilters"]["orphanType"] == "UNMATCHED_ACCOUNT"
+    assert "status" not in result["reportFilters"]

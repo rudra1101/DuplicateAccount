@@ -17,6 +17,19 @@ def _normalized_source_reference(value: str | None) -> str:
     )
 
 
+def _normalize_orphan_filters(
+    orphan_type: str | None,
+    status: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_type = str(orphan_type or "").strip().upper() or None
+    normalized_status = str(status or "").strip().upper() or None
+    if normalized_status in ORPHAN_TYPES:
+        if normalized_type is None:
+            normalized_type = normalized_status
+        normalized_status = None
+    return normalized_type, normalized_status
+
+
 class SearchOrphanAccountsTool(BaseAITool):
     name = "search_orphan_accounts"
     description = (
@@ -61,8 +74,12 @@ class SearchOrphanAccountsTool(BaseAITool):
         ):
             application = None
 
-        orphan_type = str(arguments.get("orphan_type") or "").strip().upper() or None
-        status = str(arguments.get("status") or "").strip().upper() or None
+        # Keep orphan classification and workflow status semantically separate even
+        # when a small model places a known orphan type in the generic status field.
+        orphan_type, status = _normalize_orphan_filters(
+            arguments.get("orphan_type"),
+            arguments.get("status"),
+        )
         search = str(arguments.get("search") or "").strip() or None
         reason = str(arguments.get("reason") or "").strip() or None
         date_from = str(arguments.get("date_from") or "").strip() or None
@@ -94,8 +111,8 @@ class SearchOrphanAccountsTool(BaseAITool):
         if application:
             report_filters["application"] = application
         if orphan_type:
-            report_filters["status"] = orphan_type
-        elif status:
+            report_filters["orphanType"] = orphan_type
+        if status:
             report_filters["status"] = status
         if reason:
             report_filters["search"] = reason

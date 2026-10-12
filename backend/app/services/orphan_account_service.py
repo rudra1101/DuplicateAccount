@@ -100,7 +100,19 @@ def list_orphan_accounts(
     the integration display name, connector type, and account application so Rudrix
     can understand references such as "Active Directory" even when the configured
     integration itself has a custom display name.
+
+    `orphan_type` and workflow `status` are separate fields. For robustness, if a
+    caller places a known orphan type (for example `UNMATCHED_ACCOUNT`) in `status`,
+    treat it as `orphan_type` instead of filtering `OrphanStateRecord.status`. This
+    prevents small-model argument mistakes from hiding rows that the Accounts UI shows.
     """
+
+    normalized_orphan_type = str(orphan_type or "").strip().upper() or None
+    normalized_status = str(status or "").strip().upper() or None
+    if normalized_status in ORPHAN_TYPES:
+        if normalized_orphan_type is None:
+            normalized_orphan_type = normalized_status
+        normalized_status = None
 
     statement = (
         select(OrphanStateRecord, SourceAccountRecord, IntegrationRecord)
@@ -134,10 +146,10 @@ def list_orphan_accounts(
         )
     if application:
         conditions.append(SourceAccountRecord.application.ilike(_contains(application)))
-    if orphan_type:
-        conditions.append(OrphanStateRecord.orphan_type == orphan_type.strip().upper())
-    if status:
-        conditions.append(OrphanStateRecord.status == status.strip().upper())
+    if normalized_orphan_type:
+        conditions.append(OrphanStateRecord.orphan_type == normalized_orphan_type)
+    if normalized_status:
+        conditions.append(OrphanStateRecord.status == normalized_status)
 
     start = _date_start(date_from)
     end = _date_end(date_to)

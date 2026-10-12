@@ -12,9 +12,17 @@ ORPHAN_REPORT_TYPE = "orphan_accounts"
 
 
 def _orphan_rows(db: Session, filters: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_orphan_type = str(filters.get("orphanType") or "").strip().upper()
     raw_status = str(filters.get("status") or "").strip().upper()
-    orphan_type = raw_status if raw_status in ORPHAN_TYPES else None
-    orphan_status = raw_status if raw_status and raw_status not in ORPHAN_TYPES else None
+
+    # Backward compatibility for older saved report/chat state that stored an orphan
+    # classification in the generic `status` field.
+    if not raw_orphan_type and raw_status in ORPHAN_TYPES:
+        raw_orphan_type = raw_status
+        raw_status = ""
+
+    orphan_type = raw_orphan_type if raw_orphan_type in ORPHAN_TYPES else None
+    orphan_status = raw_status or None
 
     items = list_orphan_accounts(
         db,
@@ -73,6 +81,7 @@ def register_orphan_report() -> None:
                 "filters": [
                     "integrationId",
                     "application",
+                    "orphanType",
                     "status",
                     "search",
                     "dateFrom",
