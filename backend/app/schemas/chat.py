@@ -108,14 +108,14 @@ class ToolInvocationResponse(
 def _structured_tool_message(
     tools_used: list[ToolInvocationResponse],
 ) -> str | None:
-    """Render authoritative live record collections without another model guess.
+    """Render records only when they are the latest successful operation.
 
-    IdentityAI search/list capabilities return their current records through an
-    ``items`` collection. Once such a capability succeeds, those records are the
-    source of truth for the response. This prevents a local model from replacing
-    successful live data with a greeting, refusal, or hallucinated summary.
-    Knowledge/explanation tools that do not use this record contract remain model
-    synthesized.
+    IdentityAI search/list capabilities return current records through an ``items``
+    collection. If the latest successful operation is such a read, those records are
+    authoritative and cannot be replaced by unrelated model prose. If a later
+    successful report, ticket, review, navigation, or other action has completed,
+    that newer operation supersedes the earlier read and the normal final response
+    is preserved.
     """
 
     for invocation in reversed(tools_used):
@@ -125,11 +125,11 @@ def _structured_tool_message(
 
         data = result.get("data")
         if not isinstance(data, dict):
-            continue
+            return None
 
         items = data.get("items")
         if not isinstance(items, list):
-            continue
+            return None
 
         message = str(data.get("message") or "").strip()
         if not items:
