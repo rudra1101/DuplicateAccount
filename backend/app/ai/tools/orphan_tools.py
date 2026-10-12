@@ -42,26 +42,13 @@ class SearchOrphanAccountsTool(BaseAITool):
     parameters = {
         "type": "object",
         "properties": {
-            "integration": {
-                "type": ["string", "null"],
-                "description": "Human source/integration reference such as Active Directory.",
-            },
-            "application": {
-                "type": ["string", "null"],
-                "description": "Account application filter when explicitly requested.",
-            },
+            "integration": {"type": ["string", "null"]},
+            "application": {"type": ["string", "null"]},
             "orphan_type": {
                 "type": ["string", "null"],
                 "enum": [*sorted(ORPHAN_TYPES), None],
-                "description": "Orphan classification such as UNMATCHED_ACCOUNT.",
             },
-            "status": {
-                "type": ["string", "null"],
-                "description": (
-                    "Workflow/finding status only. Do not put orphan classifications such as "
-                    "UNMATCHED_ACCOUNT in this field; use orphan_type instead."
-                ),
-            },
+            "status": {"type": ["string", "null"]},
             "search": {"type": ["string", "null"]},
             "reason": {"type": ["string", "null"]},
             "date_from": {"type": ["string", "null"]},
@@ -87,6 +74,8 @@ class SearchOrphanAccountsTool(BaseAITool):
         ):
             application = None
 
+        # Keep orphan classification and workflow status semantically separate even
+        # when a small model places a known orphan type in the generic status field.
         orphan_type, status = _normalize_orphan_filters(
             arguments.get("orphan_type"),
             arguments.get("status"),
@@ -167,12 +156,8 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
             "orphan_type": {
                 "type": ["string", "null"],
                 "enum": [*sorted(ORPHAN_TYPES), None],
-                "description": "Orphan classification such as UNMATCHED_ACCOUNT.",
             },
-            "status": {
-                "type": ["string", "null"],
-                "description": "Workflow/finding status only; not an orphan classification.",
-            },
+            "status": {"type": ["string", "null"]},
             "reason": {"type": ["string", "null"]},
             "last_days": {"type": ["integer", "null"], "minimum": 1, "maximum": 3650},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50},
