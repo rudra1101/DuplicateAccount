@@ -17,6 +17,19 @@ def _normalized_source_reference(value: str | None) -> str:
     )
 
 
+def _normalize_orphan_filters(
+    orphan_type: str | None,
+    status: str | None,
+) -> tuple[str | None, str | None]:
+    normalized_type = str(orphan_type or "").strip().upper() or None
+    normalized_status = str(status or "").strip().upper() or None
+    if normalized_status in ORPHAN_TYPES:
+        if normalized_type is None:
+            normalized_type = normalized_status
+        normalized_status = None
+    return normalized_type, normalized_status
+
+
 class SearchOrphanAccountsTool(BaseAITool):
     name = "search_orphan_accounts"
     description = (
@@ -29,13 +42,26 @@ class SearchOrphanAccountsTool(BaseAITool):
     parameters = {
         "type": "object",
         "properties": {
-            "integration": {"type": ["string", "null"]},
-            "application": {"type": ["string", "null"]},
+            "integration": {
+                "type": ["string", "null"],
+                "description": "Human source/integration reference such as Active Directory.",
+            },
+            "application": {
+                "type": ["string", "null"],
+                "description": "Account application filter when explicitly requested.",
+            },
             "orphan_type": {
                 "type": ["string", "null"],
                 "enum": [*sorted(ORPHAN_TYPES), None],
+                "description": "Orphan classification such as UNMATCHED_ACCOUNT.",
             },
-            "status": {"type": ["string", "null"]},
+            "status": {
+                "type": ["string", "null"],
+                "description": (
+                    "Workflow/finding status only. Do not put orphan classifications such as "
+                    "UNMATCHED_ACCOUNT in this field; use orphan_type instead."
+                ),
+            },
             "search": {"type": ["string", "null"]},
             "reason": {"type": ["string", "null"]},
             "date_from": {"type": ["string", "null"]},
@@ -61,8 +87,10 @@ class SearchOrphanAccountsTool(BaseAITool):
         ):
             application = None
 
-        orphan_type = str(arguments.get("orphan_type") or "").strip().upper() or None
-        status = str(arguments.get("status") or "").strip().upper() or None
+        orphan_type, status = _normalize_orphan_filters(
+            arguments.get("orphan_type"),
+            arguments.get("status"),
+        )
         search = str(arguments.get("search") or "").strip() or None
         reason = str(arguments.get("reason") or "").strip() or None
         date_from = str(arguments.get("date_from") or "").strip() or None
@@ -94,8 +122,8 @@ class SearchOrphanAccountsTool(BaseAITool):
         if application:
             report_filters["application"] = application
         if orphan_type:
-            report_filters["status"] = orphan_type
-        elif status:
+            report_filters["orphanType"] = orphan_type
+        if status:
             report_filters["status"] = status
         if reason:
             report_filters["search"] = reason
@@ -139,8 +167,12 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
             "orphan_type": {
                 "type": ["string", "null"],
                 "enum": [*sorted(ORPHAN_TYPES), None],
+                "description": "Orphan classification such as UNMATCHED_ACCOUNT.",
             },
-            "status": {"type": ["string", "null"]},
+            "status": {
+                "type": ["string", "null"],
+                "description": "Workflow/finding status only; not an orphan classification.",
+            },
             "reason": {"type": ["string", "null"]},
             "last_days": {"type": ["integer", "null"], "minimum": 1, "maximum": 3650},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50},
