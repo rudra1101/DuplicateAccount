@@ -81,14 +81,7 @@ def _row_search_text(row: Any) -> str:
 
 
 def _search_tokens(value: str) -> set[str]:
-    """Return stable lexical terms without relying on question-specific phrases.
-
-    Small local models occasionally send an entire follow-up sentence in the
-    generic search field (for example, a question containing a person's display
-    name). Exact substring matching then hides an otherwise valid orphan record.
-    Token matching lets the data layer recover the account reference while still
-    requiring every query term that is actually present in the current result set.
-    """
+    """Return stable lexical terms without relying on question-specific phrases."""
 
     tokens: set[str] = set()
     for token in re.findall(r"[a-z0-9]+", str(value or "").casefold()):
@@ -101,6 +94,15 @@ def _search_tokens(value: str) -> set[str]:
 
 
 def _filter_rows_by_search(rows: list[Any], search: str | None) -> list[Any]:
+    """Match account references even when a model sends a full user sentence.
+
+    Exact search remains the first choice. When it misses, query terms are compared
+    with terms present in the already source-filtered orphan rows. Terms that occur in
+    at most half of those rows are treated as discriminators (typically a person's
+    name, username, email, employee ID, or service-account suffix). Common context
+    such as the source name does not accidentally narrow a broad orphan request.
+    """
+
     if not search:
         return rows
 
@@ -112,22 +114,30 @@ def _filter_rows_by_search(rows: list[Any], search: str | None) -> list[Any]:
         return direct_matches
 
     query_tokens = _search_tokens(normalized_search)
-    if not query_tokens:
+    if not query_tokens or not rows:
         return []
 
     tokenized_rows = [(row, _search_tokens(_row_search_text(row))) for row in rows]
-    informative_tokens = {
-        token
+    frequencies = {
+        token: sum(1 for _row, row_tokens in tokenized_rows if token in row_tokens)
         for token in query_tokens
-        if any(token in row_tokens for _row, row_tokens in tokenized_rows)
     }
+    informative_tokens = {token for token, count in frequencies.items() if count > 0}
     if not informative_tokens:
         return []
+
+    distinctive_tokens = {
+        token
+        for token in informative_tokens
+        if frequencies[token] * 2 <= len(tokenized_rows)
+    }
+    if not distinctive_tokens:
+        return rows
 
     return [
         row
         for row, row_tokens in tokenized_rows
-        if informative_tokens.issubset(row_tokens)
+        if distinctive_tokens.issubset(row_tokens)
     ]
 
 
