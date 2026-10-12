@@ -94,11 +94,30 @@ class CapabilityRetriever:
         if not self._definitions:
             return []
 
-        ranked = self.rank(query)
+        query_text = str(query or "").strip()
+        # `_selection_query` places the current user request on the first line and
+        # appends history/state afterwards. Retrieve from the current goal first so
+        # a long previous result set cannot crowd out an explicitly requested next
+        # capability (for example, report generation after an orphan listing).
+        current_goal = query_text.splitlines()[0].strip() if query_text else ""
+        current_ranked = self.rank(current_goal)
+        contextual_ranked = self.rank(query_text)
+
         selected: list[dict[str, Any]] = []
         seen: set[str] = set()
+        target = max(1, limit)
+        current_budget = min(target, max(2, (target + 1) // 2))
 
-        for item in ranked[: max(1, limit)]:
+        for item in current_ranked[:current_budget]:
+            name = str(item.definition.get("name") or "")
+            if not name or name in seen:
+                continue
+            selected.append(item.definition)
+            seen.add(name)
+
+        for item in contextual_ranked:
+            if len(selected) >= target:
+                break
             name = str(item.definition.get("name") or "")
             if not name or name in seen:
                 continue
