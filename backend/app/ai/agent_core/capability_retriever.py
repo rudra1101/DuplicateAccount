@@ -96,9 +96,10 @@ class CapabilityRetriever:
 
         query_text = str(query or "").strip()
         # `_selection_query` places the current user request on the first line and
-        # appends history/state afterwards. Retrieve from the current goal first so
-        # a long previous result set cannot crowd out an explicitly requested next
-        # capability (for example, report generation after an orphan listing).
+        # appends history/state afterwards. Guarantee a small number of slots for
+        # the explicit current goal, then let the majority of the budget come from
+        # full conversation context. This keeps the requested next action visible
+        # without losing entity/domain capabilities needed by referential follow-ups.
         current_goal = query_text.splitlines()[0].strip() if query_text else ""
         current_ranked = self.rank(current_goal)
         contextual_ranked = self.rank(query_text)
@@ -106,7 +107,7 @@ class CapabilityRetriever:
         selected: list[dict[str, Any]] = []
         seen: set[str] = set()
         target = max(1, limit)
-        current_budget = min(target, max(2, (target + 1) // 2))
+        current_budget = min(target, 2)
 
         for item in current_ranked[:current_budget]:
             name = str(item.definition.get("name") or "")
