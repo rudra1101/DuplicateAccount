@@ -105,6 +105,83 @@ class ToolInvocationResponse(
     result: Any
 
 
+def _structured_tool_message(
+    tools_used: list[ToolInvocationResponse],
+) -> str | None:
+    """Render authoritative live record collections without another model guess.
+
+    IdentityAI search/list capabilities return their current records through an
+    ``items`` collection. Once such a capability succeeds, those records are the
+    source of truth for the response. This prevents a local model from replacing
+    successful live data with a greeting, refusal, or hallucinated summary.
+    Knowledge/explanation tools that do not use this record contract remain model
+    synthesized.
+    """
+
+    for invocation in reversed(tools_used):
+        result = invocation.result if isinstance(invocation.result, dict) else {}
+        if not result.get("success"):
+            continue
+
+        data = result.get("data")
+        if not isinstance(data, dict):
+            continue
+
+        items = data.get("items")
+        if not isinstance(items, list):
+            continue
+
+        message = str(data.get("message") or "").strip()
+        if not items:
+            return message or "No matching current records were found."
+
+        lines = [message] if message else [f"Found {len(items)} matching record(s)."]
+
+        for item in items[:20]:
+            if not isinstance(item, dict):
+                continue
+
+            label = (
+                item.get("displayName")
+                or item.get("name")
+                or item.get("username")
+                or item.get("nativeIdentity")
+                or item.get("email")
+                or item.get("employeeId")
+                or item.get("sourceAccountId")
+                or item.get("id")
+                or "Record"
+            )
+
+            details: list[str] = []
+            for key, display in (
+                ("application", "application"),
+                ("integrationName", "source"),
+                ("connectorType", "connector"),
+                ("employeeId", "employee ID"),
+                ("orphanType", "orphan type"),
+                ("orphanStatus", "orphan status"),
+                ("reason", "reason"),
+                ("status", "status"),
+                ("confidence", "confidence"),
+                ("decision", "decision"),
+                ("state", "state"),
+            ):
+                value = item.get(key)
+                if value not in (None, ""):
+                    details.append(f"{display}: {value}")
+
+            suffix = f" — {', '.join(details)}" if details else ""
+            lines.append(f"- **{label}**{suffix}")
+
+        if len(items) > 20:
+            lines.append(f"- …and {len(items) - 20} more matching record(s).")
+
+        return "\n".join(lines)
+
+    return None
+
+
 class ChatSource(
     BaseModel
 ):
@@ -135,6 +212,13 @@ class ChatResponse(
     ] = Field(
         default_factory=list
     )
+
+    @model_validator(mode="after")
+    def prefer_authoritative_structured_tool_result(self):
+        grounded_message = _structured_tool_message(self.toolsUsed)
+        if grounded_message:
+            self.message = grounded_message
+        return self
 
 
 class ChatConversationSummary(
