@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, time
 from typing import Any
 
@@ -77,6 +78,67 @@ def _row_search_text(row: Any) -> str:
             attempts,
         )
     ).casefold()
+
+
+def _search_tokens(value: str) -> set[str]:
+    """Return stable lexical terms without relying on question-specific phrases."""
+
+    tokens: set[str] = set()
+    for token in re.findall(r"[a-z0-9]+", str(value or "").casefold()):
+        if len(token) < 3 and not any(character.isdigit() for character in token):
+            continue
+        tokens.add(token)
+        if token.endswith("s") and len(token) > 4:
+            tokens.add(token[:-1])
+    return tokens
+
+
+def _filter_rows_by_search(rows: list[Any], search: str | None) -> list[Any]:
+    """Match account references even when a model sends a full user sentence.
+
+    Exact search remains the first choice. When it misses, query terms are compared
+    with terms present in the already source-filtered orphan rows. Terms that occur in
+    at most half of those rows are treated as discriminators (typically a person's
+    name, username, email, employee ID, or service-account suffix). Common context
+    such as the source name does not accidentally narrow a broad orphan request.
+    """
+
+    if not search:
+        return rows
+
+    normalized_search = " ".join(str(search).casefold().split())
+    direct_matches = [
+        row for row in rows if normalized_search and normalized_search in _row_search_text(row)
+    ]
+    if direct_matches:
+        return direct_matches
+
+    query_tokens = _search_tokens(normalized_search)
+    if not query_tokens or not rows:
+        return []
+
+    tokenized_rows = [(row, _search_tokens(_row_search_text(row))) for row in rows]
+    frequencies = {
+        token: sum(1 for _row, row_tokens in tokenized_rows if token in row_tokens)
+        for token in query_tokens
+    }
+    informative_tokens = {token for token, count in frequencies.items() if count > 0}
+    if not informative_tokens:
+        return []
+
+    distinctive_tokens = {
+        token
+        for token in informative_tokens
+        if frequencies[token] * 2 <= len(tokenized_rows)
+    }
+    if not distinctive_tokens:
+        return rows
+
+    return [
+        row
+        for row, row_tokens in tokenized_rows
+        if distinctive_tokens.issubset(row_tokens)
+    ]
 
 
 def list_orphan_accounts(
@@ -167,9 +229,7 @@ def list_orphan_accounts(
 
     rows = list(db.execute(statement).all())
 
-    if search:
-        search_needle = search.casefold().strip()
-        rows = [row for row in rows if search_needle in _row_search_text(row)]
+    rows = _filter_rows_by_search(rows, search)
 
     if reason:
         reason_needle = reason.casefold().strip()

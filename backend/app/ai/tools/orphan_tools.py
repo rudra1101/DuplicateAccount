@@ -42,14 +42,23 @@ class SearchOrphanAccountsTool(BaseAITool):
     parameters = {
         "type": "object",
         "properties": {
-            "integration": {"type": ["string", "null"]},
+            "integration": {
+                "type": ["string", "null"],
+                "description": "Optional source/integration reference such as Active Directory.",
+            },
             "application": {"type": ["string", "null"]},
             "orphan_type": {
                 "type": ["string", "null"],
                 "enum": [*sorted(ORPHAN_TYPES), None],
             },
             "status": {"type": ["string", "null"]},
-            "search": {"type": ["string", "null"]},
+            "search": {
+                "type": ["string", "null"],
+                "description": (
+                    "Optional account reference or text. Prefer the display name, username, "
+                    "email, employee ID, or native identity when the user asks about one orphan."
+                ),
+            },
             "reason": {"type": ["string", "null"]},
             "date_from": {"type": ["string", "null"]},
             "date_to": {"type": ["string", "null"]},
@@ -216,10 +225,10 @@ class GroundedAccountInvestigationTool(InvestigateAccountsTool):
             integration = self._integration_from_orphan_sentence(raw_query)
 
         search: str | None
-        if contains_orphan_language:
-            search = self._reference_from_orphan_sentence(raw_query)
-        elif generic_orphan_query:
+        if generic_orphan_query:
             search = None
+        elif contains_orphan_language:
+            search = self._reference_from_orphan_sentence(raw_query) or raw_query
         else:
             search = raw_query or None
 
