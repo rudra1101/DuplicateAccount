@@ -133,9 +133,10 @@ def stream_chat(
                     continue
 
                 if event_type == "delta":
-                    text = str(event.get("text") or "")
-                    if text:
-                        yield _event("delta", text=text)
+                    # Do not expose provisional model prose. The final ChatResponse
+                    # applies the grounded-response contract after all tool results are
+                    # known. This prevents a local model greeting/refusal from replacing
+                    # successful live IdentityAI data in the UI.
                     continue
 
                 if event_type == "done":
@@ -146,6 +147,11 @@ def stream_chat(
 
             if final_response is None:
                 raise RuntimeError("Rudrix streaming finished without a final response.")
+
+            final_text = str(final_response.message or "").strip()
+            if not final_text:
+                final_text = "No response was generated."
+            yield _event("delta", text=final_text)
 
             conversation = get_or_create_chat_conversation(
                 db,
@@ -171,7 +177,7 @@ def stream_chat(
                 db,
                 conversation_id=conversation_id,
                 role="assistant",
-                content=final_response.message,
+                content=final_text,
                 model=final_response.model,
                 sources=[source.model_dump() for source in final_response.sources],
             )
