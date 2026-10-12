@@ -26,7 +26,10 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "search_knowledge_base": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
     "list_knowledge_documents": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
     "search_identityai_product_knowledge": {"domain": "product", "kind": CapabilityKind.KNOWLEDGE, "fast_path": True},
-    "generate_report": {"domain": "report", "kind": CapabilityKind.WRITE},
+    # Report generation is a read/export operation: it does not mutate IdentityAI
+    # product state. Classifying it as READ lets the grounded fallback reliably
+    # complete explicit report requests without making other write actions forceable.
+    "generate_report": {"domain": "report", "kind": CapabilityKind.READ},
     "search_remediation_items": {"domain": "remediation", "kind": CapabilityKind.READ},
     "create_remediation_ticket": {"domain": "remediation", "kind": CapabilityKind.WRITE},
     "navigate_app": {"domain": "navigation", "kind": CapabilityKind.NAVIGATION, "fast_path": True},
