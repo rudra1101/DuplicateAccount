@@ -19,7 +19,12 @@ def test_capability_catalog_is_generated_from_real_tool_registry():
     assert capabilities["search_duplicate_groups"].domain == "duplicate"
 
     assert "generate_report" in capabilities
-    assert capabilities["generate_report"].kind.value == "WRITE"
+    assert capabilities["generate_report"].kind.value == "READ"
+
+    # Exporting a report is non-mutating, but real product-state changes remain
+    # WRITE capabilities and are never admitted to the safe grounding fallback.
+    assert capabilities["create_remediation_ticket"].kind.value == "WRITE"
+    assert capabilities["review_duplicate_candidate"].kind.value == "WRITE"
 
     assert "search_knowledge_base" in capabilities
     assert capabilities["search_knowledge_base"].kind.value == "KNOWLEDGE"
