@@ -34,13 +34,36 @@ def _entity(
 
 def _store_orphan_context(updated: AgentState, data: dict[str, Any], tool_name: str) -> None:
     report_filters = data.get("reportFilters")
-    updated.last_filters = {
+    items = data.get("items")
+    item_count = len(items) if isinstance(items, list) else None
+
+    next_filters: dict[str, Any] = {
         "context": "orphan_accounts",
         "reportType": str(data.get("reportType") or "orphan_accounts"),
         "filters": dict(report_filters) if isinstance(report_filters, dict) else {},
     }
+    if item_count is not None:
+        next_filters["resultCount"] = item_count
 
-    items = data.get("items")
+    # Keep the latest grounded collection as the referent for plural follow-ups
+    # such as "generate a report for these accounts". A one-record drill-down (or
+    # an empty exploratory search) still updates current_account below, but should
+    # not erase a broader collection that the user was just working with.
+    existing = updated.last_filters if isinstance(updated.last_filters, dict) else {}
+    existing_is_orphan = existing.get("context") == "orphan_accounts"
+    try:
+        existing_count = int(existing.get("resultCount"))
+    except (TypeError, ValueError):
+        existing_count = 0
+    preserve_existing_collection = (
+        existing_is_orphan
+        and existing_count > 1
+        and item_count is not None
+        and item_count <= 1
+    )
+    if not preserve_existing_collection:
+        updated.last_filters = next_filters
+
     if isinstance(items, list) and len(items) == 1:
         account = _dict(items[0])
         updated.current_account = _entity(

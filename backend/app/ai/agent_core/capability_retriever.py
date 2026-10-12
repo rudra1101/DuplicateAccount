@@ -94,11 +94,31 @@ class CapabilityRetriever:
         if not self._definitions:
             return []
 
-        ranked = self.rank(query)
+        query_text = str(query or "").strip()
+        # `_selection_query` places the current user request on the first line and
+        # appends history/state afterwards. Guarantee a small number of slots for
+        # the explicit current goal, then let the majority of the budget come from
+        # full conversation context. This keeps the requested next action visible
+        # without losing entity/domain capabilities needed by referential follow-ups.
+        current_goal = query_text.splitlines()[0].strip() if query_text else ""
+        current_ranked = self.rank(current_goal)
+        contextual_ranked = self.rank(query_text)
+
         selected: list[dict[str, Any]] = []
         seen: set[str] = set()
+        target = max(1, limit)
+        current_budget = min(target, 2)
 
-        for item in ranked[: max(1, limit)]:
+        for item in current_ranked[:current_budget]:
+            name = str(item.definition.get("name") or "")
+            if not name or name in seen:
+                continue
+            selected.append(item.definition)
+            seen.add(name)
+
+        for item in contextual_ranked:
+            if len(selected) >= target:
+                break
             name = str(item.definition.get("name") or "")
             if not name or name in seen:
                 continue
