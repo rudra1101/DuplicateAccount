@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, time
 from typing import Any
 
@@ -77,6 +78,57 @@ def _row_search_text(row: Any) -> str:
             attempts,
         )
     ).casefold()
+
+
+def _search_tokens(value: str) -> set[str]:
+    """Return stable lexical terms without relying on question-specific phrases.
+
+    Small local models occasionally send an entire follow-up sentence in the
+    generic search field (for example, a question containing a person's display
+    name). Exact substring matching then hides an otherwise valid orphan record.
+    Token matching lets the data layer recover the account reference while still
+    requiring every query term that is actually present in the current result set.
+    """
+
+    tokens: set[str] = set()
+    for token in re.findall(r"[a-z0-9]+", str(value or "").casefold()):
+        if len(token) < 3 and not any(character.isdigit() for character in token):
+            continue
+        tokens.add(token)
+        if token.endswith("s") and len(token) > 4:
+            tokens.add(token[:-1])
+    return tokens
+
+
+def _filter_rows_by_search(rows: list[Any], search: str | None) -> list[Any]:
+    if not search:
+        return rows
+
+    normalized_search = " ".join(str(search).casefold().split())
+    direct_matches = [
+        row for row in rows if normalized_search and normalized_search in _row_search_text(row)
+    ]
+    if direct_matches:
+        return direct_matches
+
+    query_tokens = _search_tokens(normalized_search)
+    if not query_tokens:
+        return []
+
+    tokenized_rows = [(row, _search_tokens(_row_search_text(row))) for row in rows]
+    informative_tokens = {
+        token
+        for token in query_tokens
+        if any(token in row_tokens for _row, row_tokens in tokenized_rows)
+    }
+    if not informative_tokens:
+        return []
+
+    return [
+        row
+        for row, row_tokens in tokenized_rows
+        if informative_tokens.issubset(row_tokens)
+    ]
 
 
 def list_orphan_accounts(
@@ -167,9 +219,7 @@ def list_orphan_accounts(
 
     rows = list(db.execute(statement).all())
 
-    if search:
-        search_needle = search.casefold().strip()
-        rows = [row for row in rows if search_needle in _row_search_text(row)]
+    rows = _filter_rows_by_search(rows, search)
 
     if reason:
         reason_needle = reason.casefold().strip()
