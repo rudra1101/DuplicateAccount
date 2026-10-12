@@ -93,3 +93,43 @@ def test_non_record_tool_keeps_model_synthesis():
     assert response.message == (
         "Orphan accounts are accounts that are not correlated to an identity."
     )
+
+
+def test_later_successful_action_supersedes_earlier_record_read():
+    response = ChatResponse(
+        conversationId="conversation-4",
+        message="Generated the Active Directory orphan account report.",
+        model="llama3.1:8b",
+        toolsUsed=[
+            _tool(
+                "search_orphan_accounts",
+                {
+                    "count": 2,
+                    "items": [
+                        {
+                            "sourceAccountId": 101,
+                            "displayName": "Pooja Mehta",
+                            "application": "Active Directory",
+                            "orphanType": "UNMATCHED_ACCOUNT",
+                        },
+                        {
+                            "sourceAccountId": 102,
+                            "displayName": "Rudra Reddy",
+                            "application": "Active Directory",
+                            "orphanType": "AMBIGUOUS_CORRELATION",
+                        },
+                    ],
+                },
+            ),
+            _tool(
+                "generate_report",
+                {
+                    "message": "Generated the Active Directory orphan account report.",
+                    "reportId": 44,
+                },
+            ),
+        ],
+        sources=[],
+    )
+
+    assert response.message == "Generated the Active Directory orphan account report."
