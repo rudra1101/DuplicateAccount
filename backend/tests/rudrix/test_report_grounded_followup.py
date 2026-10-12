@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 from app.ai.agent_core.capabilities import CapabilityCatalog
 from app.ai.agent_core.models import AgentState, CapabilityKind
+from app.ai.agent_core.state import reduce_tool_result
 from app.ai.fast_agent_service import run_identity_agent_stream_fast
 from app.ai.providers.base import ProviderResponse
 from app.schemas.chat import ChatRequest
@@ -158,3 +159,49 @@ def test_referential_orphan_report_reuses_grounded_result_filters(monkeypatch):
     assert response.toolsUsed[0].arguments["filters"] == {"integrationId": 12}
     assert "Generated **Orphan Accounts** with **19** matching row(s)." in response.message
     assert "Found 19 current orphan account(s)." not in response.message
+
+
+def test_single_orphan_drilldown_does_not_erase_previous_collection_scope():
+    broad = reduce_tool_result(
+        AgentState(),
+        tool_name="search_orphan_accounts",
+        tool_result={
+            "success": True,
+            "data": {
+                "reportType": "orphan_accounts",
+                "reportFilters": {"integrationId": 12},
+                "items": [
+                    {"sourceAccountId": index, "integrationId": 12}
+                    for index in range(1, 20)
+                ],
+            },
+        },
+    )
+
+    narrowed = reduce_tool_result(
+        broad,
+        tool_name="search_orphan_accounts",
+        tool_result={
+            "success": True,
+            "data": {
+                "reportType": "orphan_accounts",
+                "reportFilters": {
+                    "integrationId": 12,
+                    "search": "Pooja Mehta",
+                },
+                "items": [
+                    {
+                        "sourceAccountId": 9,
+                        "integrationId": 12,
+                        "displayName": "Pooja Mehta",
+                        "orphanType": "UNMATCHED_ACCOUNT",
+                    }
+                ],
+            },
+        },
+    )
+
+    assert narrowed.current_account is not None
+    assert narrowed.current_account.label == "Pooja Mehta"
+    assert narrowed.last_filters["filters"] == {"integrationId": 12}
+    assert narrowed.last_filters["resultCount"] == 19
