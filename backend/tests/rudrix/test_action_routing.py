@@ -25,6 +25,13 @@ def test_orphan_request_retrieves_orphan_capability_and_grounding_fallbacks():
     assert len(names) < len(create_ai_tool_registry().definitions())
 
 
+def test_orphan_explanation_request_retrieves_dedicated_investigation_capability():
+    names = _selected_names("Which correlation rule failed for Neha Verma and why is she orphaned?")
+
+    assert "explain_orphan_account" in names
+    assert "search_orphan_accounts" in names
+
+
 def test_report_request_retrieves_report_capability():
     names = _selected_names("Generate a duplicate report above 95%")
 
@@ -107,5 +114,6 @@ def test_action_tools_are_hidden_by_rbac():
     assert "generate_report" in names
     assert "create_remediation_ticket" not in names
     assert "search_remediation_items" not in names
+    assert "explain_orphan_account" not in names
     assert "navigate_app" in names
     assert "search_identityai_product_knowledge" in names
