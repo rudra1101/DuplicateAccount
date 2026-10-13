@@ -281,11 +281,12 @@ def _structured_success_message(tool_history: list[ToolInvocationResponse]) -> s
 def _authoritative_investigation_message(
     tool_history: list[ToolInvocationResponse],
 ) -> str | None:
-    """Return a deterministic message for the latest structured investigation.
+    """Return a deterministic message for the latest structured orphan workflow.
 
-    Investigation capabilities can contain precise persisted evidence that should not
-    be paraphrased away by a small model. Only the latest successful capability is
-    considered so a later action can still supersede an earlier investigation.
+    Orphan investigation and remediation capabilities contain precise persisted data or
+    side-effect results that should not be paraphrased away by a small model. Only the
+    latest successful capability is considered so a later action can supersede an
+    earlier investigation.
     """
 
     for invocation in reversed(tool_history):
@@ -295,7 +296,10 @@ def _authoritative_investigation_message(
         data = result.get("data")
         if not isinstance(data, dict):
             return None
-        if data.get("resultType") != "orphan_explanation":
+        if data.get("resultType") not in {
+            "orphan_explanation",
+            "orphan_remediation_ticket",
+        }:
             return None
         message = str(data.get("message") or "").strip()
         return message or None
