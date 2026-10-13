@@ -31,11 +31,11 @@ from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
 
 
 MAX_CONTEXT_MESSAGES = 12
-# IdentityAI now has both broad account/orphan reads and a dedicated orphan
-# investigation read. Keep one extra retrieved slot so adding the more precise
-# capability does not evict a related general capability needed for multi-step
-# follow-ups. Selection remains score-driven and well below the full catalog size.
-MAX_SELECTED_CAPABILITIES = 9
+# IdentityAI now has broad account/orphan reads, a dedicated orphan investigation
+# read, and an explicit orphan-remediation write. Keep enough retrieved slots for
+# these related capabilities to coexist during multi-step follow-ups without sending
+# the full catalog to the local model.
+MAX_SELECTED_CAPABILITIES = 10
 
 _TRIVIAL_CONVERSATION = {
     "hi",
