@@ -87,6 +87,25 @@ def _identity_value(identity: IdentityRecord, attribute: str) -> Any:
     return _raw_value(identity.raw_attributes or {}, attribute)
 
 
+def _identity_attempt_summary(identity: IdentityRecord) -> dict[str, Any]:
+    """Persist the identities a correlation rule actually matched.
+
+    This is deliberately compact and uses only fields already exposed by the current
+    orphan-account read model. It lets later investigation explain ambiguity without
+    recomputing historical correlation against a potentially changed authoritative set.
+    """
+
+    return {
+        "id": identity.id,
+        "sourceIdentityId": identity.source_identity_id,
+        "displayName": identity.display_name,
+        "username": identity.username,
+        "email": identity.email,
+        "employeeId": identity.employee_id,
+        "employmentStatus": identity.employment_status,
+    }
+
+
 def _values_match(account_value: Any, identity_value: Any, match_type: str) -> bool:
     left = str(account_value or "").strip()
     right = str(identity_value or "").strip()
@@ -127,7 +146,11 @@ def correlate_account(
         matches = [
             identity
             for identity in identities
-            if _values_match(account_value, _identity_value(identity, rule.identity_attribute), rule.match_type)
+            if _values_match(
+                account_value,
+                _identity_value(identity, rule.identity_attribute),
+                rule.match_type,
+            )
         ]
         attempt = {
             "priority": rule.priority,
@@ -136,6 +159,10 @@ def correlate_account(
             "matchType": rule.match_type,
             "accountValue": str(account_value),
             "matches": len(matches),
+            "matchedIdentities": [
+                _identity_attempt_summary(identity)
+                for identity in matches[:10]
+            ],
         }
 
         if len(matches) == 1:
@@ -159,7 +186,12 @@ def _looks_non_human(account: AccountRecord) -> bool:
     username = _norm(account.username)
     display_name = _norm(account.display_name)
     raw = account.raw_attributes or {}
-    account_type = _norm(raw.get("accountType") or raw.get("account_type") or raw.get("type") or raw.get("userType"))
+    account_type = _norm(
+        raw.get("accountType")
+        or raw.get("account_type")
+        or raw.get("type")
+        or raw.get("userType")
+    )
     if account_type in {"service", "shared", "system", "robot", "rpa"}:
         return True
     return any(hint in username or hint in display_name for hint in NON_HUMAN_HINTS)
@@ -167,7 +199,13 @@ def _looks_non_human(account: AccountRecord) -> bool:
 
 def _has_valid_non_human_owner(account: AccountRecord) -> bool:
     raw = account.raw_attributes or {}
-    owner = raw.get("owner") or raw.get("ownerId") or raw.get("owner_id") or raw.get("serviceOwner") or raw.get("service_owner")
+    owner = (
+        raw.get("owner")
+        or raw.get("ownerId")
+        or raw.get("owner_id")
+        or raw.get("serviceOwner")
+        or raw.get("service_owner")
+    )
     return bool(str(owner or "").strip())
 
 
@@ -182,7 +220,9 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
     if policy is None:
         raise ValueError("No enabled correlation policy is configured for this account integration.")
 
-    accounts = list(db.scalars(select(AccountRecord).where(AccountRecord.scan_id == scan_id)).all())
+    accounts = list(
+        db.scalars(select(AccountRecord).where(AccountRecord.scan_id == scan_id)).all()
+    )
     identities = list(
         db.scalars(
             select(IdentityRecord).where(
@@ -193,7 +233,9 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
         ).all()
     )
     if not identities:
-        raise ValueError("The authoritative source selected by the correlation policy has no active identities loaded.")
+        raise ValueError(
+            "The authoritative source selected by the correlation policy has no active identities loaded."
+        )
 
     db.execute(delete(OrphanFindingRecord).where(OrphanFindingRecord.scan_id == scan_id))
     findings: list[OrphanFindingRecord] = []
@@ -210,6 +252,7 @@ def detect_orphan_findings(db: Session, *, scan_id: int) -> list[OrphanFindingRe
                 "reason": "Account correlated to an authoritative identity that is terminated or inactive.",
                 "policyId": policy.id,
                 "policyName": policy.name,
+                "strategy": policy.strategy,
                 "identityStatus": correlation.identity.employment_status,
                 "correlationMethod": correlation.method,
                 "correlationAttempts": correlation.attempts,
