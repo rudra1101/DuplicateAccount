@@ -36,6 +36,21 @@ def _identity_label(identity: dict[str, Any]) -> str:
     )
 
 
+def _identity_bits(identity: dict[str, Any]) -> list[str]:
+    label = _identity_label(identity)
+    bits = [label]
+    username = _clean(identity.get("username"))
+    if username and username.casefold() != label.casefold():
+        bits.append(f"username {username}")
+    employee_id = _clean(identity.get("employeeId"))
+    if employee_id:
+        bits.append(f"employee ID {employee_id}")
+    employment_status = _clean(identity.get("employmentStatus"))
+    if employment_status:
+        bits.append(f"status {employment_status}")
+    return bits
+
+
 def _matched_identities(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -153,21 +168,11 @@ def _format_explanation(account: dict[str, Any]) -> str:
 
     if matched_identity:
         lines.extend(["", "**Matched authoritative identity**"])
-        identity_bits = [_identity_label(matched_identity)]
-        if _clean(matched_identity.get("employeeId")):
-            identity_bits.append(f"employee ID {matched_identity['employeeId']}")
-        if _clean(matched_identity.get("employmentStatus")):
-            identity_bits.append(f"status {matched_identity['employmentStatus']}")
-        lines.append("- " + " — ".join(identity_bits))
+        lines.append("- " + " — ".join(_identity_bits(matched_identity)))
     elif ambiguous_identities:
         lines.extend(["", "**Authoritative identities matched by the ambiguous rule**"])
         for identity in ambiguous_identities[:10]:
-            identity_bits = [_identity_label(identity)]
-            if _clean(identity.get("employeeId")):
-                identity_bits.append(f"employee ID {identity['employeeId']}")
-            if _clean(identity.get("employmentStatus")):
-                identity_bits.append(f"status {identity['employmentStatus']}")
-            lines.append("- " + " — ".join(identity_bits))
+            lines.append("- " + " — ".join(_identity_bits(identity)))
     elif orphan_type == "UNMATCHED_ACCOUNT":
         lines.extend(
             [
