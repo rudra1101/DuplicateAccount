@@ -145,6 +145,7 @@ def list_orphan_accounts(
     db: Session,
     *,
     integration_id: int | None = None,
+    source_account_id: int | None = None,
     integration_name: str | None = None,
     application: str | None = None,
     orphan_type: str | None = None,
@@ -161,7 +162,9 @@ def list_orphan_accounts(
     active `OrphanStateRecord`. Human-facing source references are resolved across
     the integration display name, connector type, and account application so Rudrix
     can understand references such as "Active Directory" even when the configured
-    integration itself has a custom display name.
+    integration itself has a custom display name. `source_account_id` provides an
+    exact grounded lookup for conversational drill-downs after an account has already
+    been resolved.
 
     `orphan_type` and workflow `status` are separate fields. For robustness, if a
     caller places a known orphan type (for example `UNMATCHED_ACCOUNT`) in `status`,
@@ -192,6 +195,8 @@ def list_orphan_accounts(
     conditions = []
     if integration_id is not None:
         conditions.append(OrphanStateRecord.integration_id == int(integration_id))
+    if source_account_id is not None:
+        conditions.append(SourceAccountRecord.id == int(source_account_id))
     if integration_name:
         source_reference = _human_source_reference(integration_name)
         normalized_connector = func.replace(
