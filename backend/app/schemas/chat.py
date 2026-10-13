@@ -108,14 +108,13 @@ class ToolInvocationResponse(
 def _structured_tool_message(
     tools_used: list[ToolInvocationResponse],
 ) -> str | None:
-    """Render records only when they are the latest successful operation.
+    """Prefer the latest successful authoritative IdentityAI result.
 
-    IdentityAI search/list capabilities return current records through an ``items``
-    collection. If the latest successful operation is such a read, those records are
-    authoritative and cannot be replaced by unrelated model prose. If a later
-    successful report, ticket, review, navigation, or other action has completed,
-    that newer operation supersedes the earlier read and the normal final response
-    is preserved.
+    Current-record capabilities expose ``items`` and are rendered deterministically
+    so model prose cannot replace live rows. Download/report capabilities expose a
+    structured ``DOWNLOAD_REPORT`` client action plus a server-generated message;
+    that message is also authoritative because it carries the real authenticated
+    download URL. Other successful actions continue to use normal model synthesis.
     """
 
     for invocation in reversed(tools_used):
@@ -127,11 +126,19 @@ def _structured_tool_message(
         if not isinstance(data, dict):
             return None
 
+        message = str(data.get("message") or "").strip()
+        client_action = data.get("clientAction")
+        if (
+            isinstance(client_action, dict)
+            and client_action.get("type") == "DOWNLOAD_REPORT"
+            and message
+        ):
+            return message
+
         items = data.get("items")
         if not isinstance(items, list):
             return None
 
-        message = str(data.get("message") or "").strip()
         if not items:
             return message or "No matching current records were found."
 

@@ -133,3 +133,48 @@ def test_later_successful_action_supersedes_earlier_record_read():
     )
 
     assert response.message == "Generated the Active Directory orphan account report."
+
+
+def test_report_download_action_keeps_real_download_link_visible():
+    download_url = (
+        "/api/reports/rudrix-download?"
+        "reportType=orphan_accounts&integrationId=12"
+    )
+    authoritative_message = (
+        "Generated **Orphan Accounts** with **19** matching row(s). "
+        f"[Download CSV]({download_url})"
+    )
+
+    response = ChatResponse(
+        conversationId="conversation-5",
+        message=(
+            "The report has been generated and can be downloaded from the "
+            "provided download URL."
+        ),
+        model="llama3.1:8b",
+        toolsUsed=[
+            _tool(
+                "generate_report",
+                {
+                    "message": authoritative_message,
+                    "reportType": "orphan_accounts",
+                    "total": 19,
+                    "downloadUrl": download_url,
+                    "clientAction": {
+                        "type": "DOWNLOAD_REPORT",
+                        "label": "Download Orphan Accounts",
+                        "url": download_url,
+                        "reportType": "orphan_accounts",
+                        "filters": {"integrationId": 12},
+                        "autoExecute": False,
+                    },
+                },
+            )
+        ],
+        sources=[],
+    )
+
+    assert response.message == authoritative_message
+    assert "[Download CSV]" in response.message
+    assert download_url in response.message
+    assert "provided download URL" not in response.message
