@@ -13,6 +13,7 @@ from app.ai.authorization import (
 )
 from app.ai.tools import create_ai_tool_registry
 from app.ai.tools.orphan_remediation_tools import CreateOrphanRemediationTicketTool
+from app.schemas.chat import ChatResponse, ToolInvocationResponse
 from app.services.orphan_remediation_service import create_orphan_ticket
 
 
@@ -138,6 +139,39 @@ def test_orphan_ticket_creation_uses_grounded_account_and_authenticated_actor(mo
     assert result["ticketId"] == "INC001234"
     assert "Open ticket" in result["message"]
     assert result["clientAction"]["type"] == "OPEN_EXTERNAL"
+
+
+def test_orphan_ticket_response_keeps_real_ticket_link_authoritative():
+    message = (
+        "Created Service Desk ticket **INC001234** to **disable** orphan account "
+        "**Neha Verma**. [Open ticket](https://servicedesk.example/tickets/INC001234)"
+    )
+    response = ChatResponse(
+        conversationId="conversation-orphan-ticket",
+        message="The requested remediation has been processed.",
+        model="llama3.1:8b",
+        toolsUsed=[
+            ToolInvocationResponse(
+                name="create_orphan_remediation_ticket",
+                arguments={"source_account_id": 208, "action": "DISABLE"},
+                result={
+                    "success": True,
+                    "data": {
+                        "resultType": "orphan_remediation_ticket",
+                        "created": True,
+                        "sourceAccountId": 208,
+                        "ticketId": "INC001234",
+                        "ticketUrl": "https://servicedesk.example/tickets/INC001234",
+                        "message": message,
+                    },
+                },
+            )
+        ],
+        sources=[],
+    )
+
+    assert response.message == message
+    assert "[Open ticket]" in response.message
 
 
 def test_orphan_ticket_preparation_persists_pending_action_context():
