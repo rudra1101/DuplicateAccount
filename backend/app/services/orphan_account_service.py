@@ -72,8 +72,8 @@ def _row_search_text(row: Any) -> str:
             orphan.orphan_type,
             orphan.status,
             orphan.correlation_method,
-            orphan.service_desk_ticket_id,
-            orphan.service_desk_ticket_status,
+            getattr(orphan, "service_desk_ticket_id", None),
+            getattr(orphan, "service_desk_ticket_status", None),
             evidence.get("reason"),
             evidence.get("policyName"),
             evidence.get("strategy"),
@@ -271,6 +271,8 @@ def list_orphan_accounts(
     results: list[dict[str, Any]] = []
     for orphan, account, integration in rows:
         evidence = dict(orphan.evidence or {})
+        ticket_created_at = getattr(orphan, "ticket_created_at", None)
+        ticket_last_synced_at = getattr(orphan, "ticket_last_synced_at", None)
         results.append(
             {
                 "orphanStateId": orphan.id,
@@ -299,14 +301,14 @@ def list_orphan_accounts(
                     if orphan.matched_identity_id is not None
                     else None
                 ),
-                "remediationAction": orphan.remediation_action,
-                "actionedBy": orphan.actioned_by,
-                "ticketId": orphan.service_desk_ticket_id,
-                "ticketStatus": orphan.service_desk_ticket_status,
-                "ticketUrl": orphan.service_desk_ticket_url,
-                "ticketCreatedAt": orphan.ticket_created_at.isoformat() if orphan.ticket_created_at else None,
-                "ticketLastSyncedAt": orphan.ticket_last_synced_at.isoformat() if orphan.ticket_last_synced_at else None,
-                "ticketError": orphan.ticket_error,
+                "remediationAction": getattr(orphan, "remediation_action", None),
+                "actionedBy": getattr(orphan, "actioned_by", None),
+                "ticketId": getattr(orphan, "service_desk_ticket_id", None),
+                "ticketStatus": getattr(orphan, "service_desk_ticket_status", None),
+                "ticketUrl": getattr(orphan, "service_desk_ticket_url", None),
+                "ticketCreatedAt": ticket_created_at.isoformat() if ticket_created_at else None,
+                "ticketLastSyncedAt": ticket_last_synced_at.isoformat() if ticket_last_synced_at else None,
+                "ticketError": getattr(orphan, "ticket_error", None),
                 "firstDetectedAt": orphan.first_detected_at.isoformat(),
                 "lastDetectedAt": orphan.last_detected_at.isoformat(),
                 "lastSeenAt": account.last_seen_at.isoformat() if account.last_seen_at else None,
