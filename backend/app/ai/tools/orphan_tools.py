@@ -37,10 +37,10 @@ def _normalized_account_reference(value: Any) -> str:
 def _items_support_account_reference(reference: str, items: list[dict[str, Any]]) -> bool:
     """Return true only when a recovered value actually names an account.
 
-    A small local model can place a person's display name in ``reason``, ``integration``,
-    or ``application``. Recovery is only accepted when the value contains a concrete
-    account identifier from the returned rows. This prevents genuine source names or
-    correlation-reason text from being silently reinterpreted as account references.
+    A small local model can place a person's display name in ``reason`` instead of
+    ``search``. Recovery is only accepted when the value contains a concrete account
+    identifier from the returned rows. This prevents genuine correlation-reason text
+    from being silently reinterpreted as an account reference.
     """
 
     normalized_reference = _normalized_account_reference(reference)
@@ -145,15 +145,13 @@ class SearchOrphanAccountsTool(BaseAITool):
 
         def find_items(
             *,
-            effective_integration: str | None,
-            effective_application: str | None,
             effective_search: str | None,
             effective_reason: str | None,
         ) -> list[dict[str, Any]]:
             return list_orphan_accounts(
                 db,
-                integration_name=effective_integration,
-                application=effective_application,
+                integration_name=integration,
+                application=application,
                 orphan_type=orphan_type,
                 status=status,
                 search=effective_search,
@@ -164,44 +162,28 @@ class SearchOrphanAccountsTool(BaseAITool):
             )
 
         items = find_items(
-            effective_integration=integration,
-            effective_application=application,
             effective_search=search,
             effective_reason=reason,
         )
 
         if not items:
-            # Local models occasionally bind a named account to the wrong free-text
-            # argument (most commonly ``reason``). Retry only reversible bindings and
-            # accept them only when the candidate is proven by an account identifier
-            # in the recovered live rows. Structured type/status/date filters remain.
-            recovery_attempts: list[
-                tuple[str, str | None, str | None]
-            ] = []
-
+            # Local models occasionally bind a named account to ``reason`` instead of
+            # ``search``. Retry only that reversible free-text ambiguity. Source,
+            # application, type, status, and date filters remain authoritative.
+            recovery_candidates: list[str] = []
             if search and reason:
-                recovery_attempts.append((search, integration, application))
+                recovery_candidates.append(search)
             if reason:
-                recovery_attempts.append((reason, integration, application))
-            if integration:
-                recovery_attempts.append((integration, None, application))
-            if application:
-                recovery_attempts.append((application, integration, None))
+                recovery_candidates.append(reason)
 
-            seen_attempts: set[tuple[str, str | None, str | None]] = set()
-            for reference, recovered_integration, recovered_application in recovery_attempts:
-                attempt_key = (
-                    _normalized_account_reference(reference),
-                    recovered_integration,
-                    recovered_application,
-                )
-                if attempt_key in seen_attempts:
+            seen_candidates: set[str] = set()
+            for reference in recovery_candidates:
+                normalized_reference = _normalized_account_reference(reference)
+                if not normalized_reference or normalized_reference in seen_candidates:
                     continue
-                seen_attempts.add(attempt_key)
+                seen_candidates.add(normalized_reference)
 
                 recovered_items = find_items(
-                    effective_integration=recovered_integration,
-                    effective_application=recovered_application,
                     effective_search=reference,
                     effective_reason=None,
                 )
@@ -212,8 +194,6 @@ class SearchOrphanAccountsTool(BaseAITool):
                     continue
 
                 items = recovered_items
-                integration = recovered_integration
-                application = recovered_application
                 search = reference
                 reason = None
                 break
