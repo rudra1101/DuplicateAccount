@@ -31,7 +31,11 @@ from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
 
 
 MAX_CONTEXT_MESSAGES = 12
-MAX_SELECTED_CAPABILITIES = 8
+# IdentityAI now has both broad account/orphan reads and a dedicated orphan
+# investigation read. Keep one extra retrieved slot so adding the more precise
+# capability does not evict a related general capability needed for multi-step
+# follow-ups. Selection remains score-driven and well below the full catalog size.
+MAX_SELECTED_CAPABILITIES = 9
 
 _TRIVIAL_CONVERSATION = {
     "hi",
@@ -274,6 +278,30 @@ def _structured_success_message(tool_history: list[ToolInvocationResponse]) -> s
     return None
 
 
+def _authoritative_investigation_message(
+    tool_history: list[ToolInvocationResponse],
+) -> str | None:
+    """Return a deterministic message for the latest structured investigation.
+
+    Investigation capabilities can contain precise persisted evidence that should not
+    be paraphrased away by a small model. Only the latest successful capability is
+    considered so a later action can still supersede an earlier investigation.
+    """
+
+    for invocation in reversed(tool_history):
+        result = invocation.result if isinstance(invocation.result, dict) else {}
+        if not result.get("success"):
+            continue
+        data = result.get("data")
+        if not isinstance(data, dict):
+            return None
+        if data.get("resultType") != "orphan_explanation":
+            return None
+        message = str(data.get("message") or "").strip()
+        return message or None
+    return None
+
+
 def _looks_unavailable(message: str) -> bool:
     lowered = str(message or "").casefold()
     return any(marker in lowered for marker in _UNAVAILABLE_MARKERS)
@@ -466,8 +494,11 @@ def run_identity_agent_stream_fast(
         if not final_message:
             final_message = "No response was generated."
 
+        authoritative_message = _authoritative_investigation_message(tool_history)
         failure_message = _grounded_failure_message(tool_history)
-        if failure_message is not None:
+        if authoritative_message is not None:
+            final_message = authoritative_message
+        elif failure_message is not None:
             final_message = failure_message
         elif (
             _looks_unavailable(final_message)
@@ -486,8 +517,9 @@ def run_identity_agent_stream_fast(
         yield {"type": "delta", "text": final_message}
         break
     else:
+        authoritative_message = _authoritative_investigation_message(tool_history)
         failure_message = _grounded_failure_message(tool_history)
-        final_message = failure_message or (
+        final_message = authoritative_message or failure_message or (
             _structured_success_message(tool_history)
             or "The request needs more IdentityAI operations than the current agent limit allows."
         )

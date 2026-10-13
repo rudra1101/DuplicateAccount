@@ -77,6 +77,17 @@ def test_correlation_uses_user_rule_priority():
     assert result.identity is email_match
     assert result.method == "email->email:CASE_INSENSITIVE"
     assert result.attempts[0]["result"] == "MATCHED"
+    assert result.attempts[0]["matchedIdentities"] == [
+        {
+            "id": email_match.id,
+            "sourceIdentityId": "email-match",
+            "displayName": None,
+            "username": "rudra.hr",
+            "email": "rudra@example.com",
+            "employeeId": "2000",
+            "employmentStatus": "ACTIVE",
+        }
+    ]
 
 
 def test_correlation_supports_dynamic_raw_attributes():
@@ -110,6 +121,10 @@ def test_ambiguous_match_does_not_choose_identity():
     assert result.identity is None
     assert result.ambiguous is True
     assert result.attempts[0]["result"] == "AMBIGUOUS"
+    assert [
+        identity["sourceIdentityId"]
+        for identity in result.attempts[0]["matchedIdentities"]
+    ] == ["one", "two"]
 
 
 def test_unmatched_account_records_all_attempts():
@@ -127,3 +142,4 @@ def test_unmatched_account_records_all_attempts():
     assert result.identity is None
     assert result.method is None
     assert [attempt["result"] for attempt in result.attempts] == ["NO_MATCH", "NO_MATCH"]
+    assert all(attempt["matchedIdentities"] == [] for attempt in result.attempts)

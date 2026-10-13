@@ -111,10 +111,12 @@ def _structured_tool_message(
     """Prefer the latest successful authoritative IdentityAI result.
 
     Current-record capabilities expose ``items`` and are rendered deterministically
-    so model prose cannot replace live rows. Download/report capabilities expose a
-    structured ``DOWNLOAD_REPORT`` client action plus a server-generated message;
-    that message is also authoritative because it carries the real authenticated
-    download URL. Other successful actions continue to use normal model synthesis.
+    so model prose cannot replace live rows. Structured investigation result families
+    can provide a server-generated authoritative message when they must preserve exact
+    persisted evidence. Download/report capabilities expose a structured
+    ``DOWNLOAD_REPORT`` client action plus a server-generated message carrying the
+    authenticated download URL. Other successful actions continue to use normal model
+    synthesis.
     """
 
     for invocation in reversed(tools_used):
@@ -127,6 +129,9 @@ def _structured_tool_message(
             return None
 
         message = str(data.get("message") or "").strip()
+        if data.get("resultType") == "orphan_explanation" and message:
+            return message
+
         client_action = data.get("clientAction")
         if (
             isinstance(client_action, dict)

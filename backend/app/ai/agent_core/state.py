@@ -83,6 +83,26 @@ def _store_orphan_context(updated: AgentState, data: dict[str, Any], tool_name: 
             )
 
 
+def _store_matched_identity(
+    updated: AgentState,
+    account: dict[str, Any],
+    tool_name: str,
+) -> None:
+    matched = _dict(account.get("matchedIdentity"))
+    if not matched:
+        return
+    identity_id = matched.get("id") or matched.get("sourceIdentityId")
+    if identity_id is None:
+        return
+    updated.current_identity = _entity(
+        EntityType.IDENTITY,
+        id_value=identity_id,
+        label=matched.get("displayName") or matched.get("username") or matched.get("email"),
+        attributes=matched,
+        source=tool_name,
+    )
+
+
 def reduce_tool_result(
     state: AgentState,
     *,
@@ -137,6 +157,20 @@ def reduce_tool_result(
 
     elif tool_name == "search_orphan_accounts":
         _store_orphan_context(updated, data, tool_name)
+
+    elif tool_name == "explain_orphan_account":
+        account = _dict(data.get("account"))
+        if account:
+            _store_orphan_context(
+                updated,
+                {
+                    "reportType": data.get("reportType") or "orphan_accounts",
+                    "reportFilters": data.get("reportFilters") or {},
+                    "items": [account],
+                },
+                tool_name,
+            )
+            _store_matched_identity(updated, account, tool_name)
 
     elif tool_name in {"search_duplicate_groups", "get_duplicate_group_details"}:
         groups = data.get("groups")
