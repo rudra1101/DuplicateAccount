@@ -13,6 +13,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "investigate_accounts": {"domain": "account", "kind": CapabilityKind.READ, "fast_path": True},
     "search_orphan_accounts": {"domain": "orphan", "kind": CapabilityKind.READ, "fast_path": True},
     "explain_orphan_account": {"domain": "orphan", "kind": CapabilityKind.READ, "fast_path": True},
+    "create_orphan_remediation_ticket": {"domain": "orphan", "kind": CapabilityKind.WRITE},
     "get_operations_summary": {"domain": "operations", "kind": CapabilityKind.READ},
     "search_operations": {"domain": "operations", "kind": CapabilityKind.READ},
     "get_latest_execution": {"domain": "operations", "kind": CapabilityKind.READ},

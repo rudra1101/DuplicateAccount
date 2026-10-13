@@ -172,6 +172,46 @@ def reduce_tool_result(
             )
             _store_matched_identity(updated, account, tool_name)
 
+    elif tool_name == "create_orphan_remediation_ticket":
+        account = _dict(data.get("account"))
+        source_account_id = data.get("sourceAccountId") or account.get("sourceAccountId")
+        if source_account_id is not None:
+            attributes = {
+                **account,
+                "sourceAccountId": source_account_id,
+                "application": data.get("application") or account.get("application"),
+                "orphanType": data.get("orphanType") or account.get("orphanType"),
+                "orphanStatus": data.get("orphanStatus") or account.get("orphanStatus"),
+                "remediationAction": data.get("remediationAction"),
+                "ticketId": data.get("ticketId"),
+                "ticketStatus": data.get("ticketStatus"),
+                "ticketUrl": data.get("ticketUrl"),
+            }
+            updated.current_account = _entity(
+                EntityType.SOURCE_ACCOUNT,
+                id_value=source_account_id,
+                label=(
+                    data.get("displayName")
+                    or account.get("displayName")
+                    or data.get("username")
+                    or account.get("username")
+                ),
+                attributes=attributes,
+                source=tool_name,
+            )
+
+        if data.get("requiresInput") and source_account_id is not None:
+            missing = data.get("missingFields")
+            missing_fields = [str(value) for value in missing] if isinstance(missing, list) else []
+            updated.pending_action = PendingAction(
+                capability="create_orphan_remediation_ticket",
+                arguments={"source_account_id": source_account_id},
+                requires_confirmation=False,
+                missing_fields=missing_fields or ["action"],
+            )
+        elif data.get("ticketId") or data.get("created") is True:
+            updated.pending_action = None
+
     elif tool_name in {"search_duplicate_groups", "get_duplicate_group_details"}:
         groups = data.get("groups")
         if groups is None and data.get("found"):

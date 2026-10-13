@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -22,6 +22,20 @@ class OrphanStateRecord(Base):
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="OPEN", index=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+
+    # Orphan remediation is intentionally tracked separately from orphan detection
+    # status. A Service Desk ticket can be open while the account is still an active
+    # orphan; a future aggregation/correlation run remains authoritative for whether
+    # the orphan itself is resolved.
+    remediation_action: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    actioned_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    service_desk_ticket_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    service_desk_ticket_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    service_desk_ticket_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    ticket_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticket_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     first_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     last_detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True)
     last_scan_id: Mapped[int | None] = mapped_column(ForeignKey("scans.id", ondelete="SET NULL"), nullable=True, index=True)

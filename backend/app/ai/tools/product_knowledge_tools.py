@@ -24,7 +24,7 @@ PRODUCT_AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "area": "Orphan accounts",
-        "summary": "IdentityAI persists current orphan state and correlation evidence such as orphan type, reason, policy, strategy, correlation attempts, and matched identity when available.",
+        "summary": "IdentityAI persists current orphan state and correlation evidence such as orphan type, reason, policy, strategy, correlation attempts, and matched identity when available. Authorized users can prepare Service Desk remediation for a specific current orphan account without changing orphan detection state until aggregation/correlation actually resolves it.",
     },
     {
         "area": "Duplicate accounts",
@@ -32,7 +32,7 @@ PRODUCT_AREAS: tuple[dict[str, Any], ...] = (
     },
     {
         "area": "Remediation",
-        "summary": "IdentityAI tracks remediation items for duplicate accounts and can create Service Desk tickets for explicit targets/actions when the logged-in user has permission.",
+        "summary": "IdentityAI supports Service Desk remediation for confirmed duplicate pairs and current orphan accounts. Rudrix resolves the real target first and only creates a ticket when the required target/action information is explicit and the logged-in user has remediation permission.",
     },
     {
         "area": "Reports",

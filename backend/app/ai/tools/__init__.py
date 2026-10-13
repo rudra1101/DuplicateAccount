@@ -35,6 +35,9 @@ from app.ai.tools.operations_tools import (
 from app.ai.tools.orphan_explanation_tools import (
     ExplainOrphanAccountTool,
 )
+from app.ai.tools.orphan_remediation_tools import (
+    CreateOrphanRemediationTicketTool,
+)
 from app.ai.tools.orphan_tools import (
     GroundedAccountInvestigationTool,
     SearchOrphanAccountsTool,
@@ -69,6 +72,7 @@ def create_ai_tool_registry() -> AIToolRegistry:
     registry.register(GroundedAccountInvestigationTool())
     registry.register(SearchOrphanAccountsTool())
     registry.register(ExplainOrphanAccountTool())
+    registry.register(CreateOrphanRemediationTicketTool())
 
     registry.register(GetOperationsSummaryTool())
     registry.register(SearchOperationsTool())
