@@ -98,6 +98,27 @@ def test_did_it_complete_reuses_grounded_execution_id_without_model_guess():
     assert calls[0].arguments == {"execution_id": 91}
 
 
+def test_referential_status_prefers_exact_execution_over_latest_filter():
+    provider = Mock()
+    state = _run_state()
+
+    calls = force_grounding_tool_calls(
+        provider=provider,
+        model="llama3.1:8b",
+        user_message="Did it complete?",
+        grounded_state=render_state_for_planner(state),
+        definitions=[
+            _definition("get_latest_execution"),
+            _definition("get_execution_details"),
+        ],
+    )
+
+    provider.chat.assert_not_called()
+    assert len(calls) == 1
+    assert calls[0].name == "get_execution_details"
+    assert calls[0].arguments == {"execution_id": 91}
+
+
 def test_result_followup_reuses_grounded_execution_id_without_model_guess():
     provider = Mock()
     state = _run_state()
