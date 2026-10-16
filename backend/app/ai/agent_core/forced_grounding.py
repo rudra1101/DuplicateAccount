@@ -194,31 +194,26 @@ def _grounded_referential_call(
     user_message: str,
     grounded_state: str,
 ) -> ProviderToolCall | None:
-    """Bind a referential follow-up directly when state satisfies the schema.
+    """Bind a referential read directly when state satisfies the tool schema.
 
     The definitions reaching forced grounding have already been authorized and
-    filtered for safety. Ranking still decides among multiple state-bindable tools,
-    but a short phrase such as ``Did it complete?`` does not need to clear the normal
-    standalone relevance threshold when the selected capability's required inputs
-    are already grounded. Recoverable writes keep their stricter explicit-action
-    guard and score threshold.
+    filtered for safety. For a short follow-up, prefer an exact grounded entity-ID
+    capability over broader state-derived filters. This makes ``Did it complete?``
+    resolve the execution that was just started rather than a later execution that
+    merely happens to match the same source/status. Recoverable writes deliberately
+    stay on the explicit write-recovery path below.
     """
 
     message = str(user_message or "")
     if not _REFERENTIAL_REQUEST.search(message):
         return None
 
+    candidates: list[tuple[int, float, str, dict[str, Any]]] = []
     for item in CapabilityRetriever(definitions).rank(message):
         definition = item.definition
         name = str(definition.get("name") or "")
-        if not name:
+        if not name or name in RECOVERABLE_WRITE_CAPABILITIES:
             continue
-
-        if name in RECOVERABLE_WRITE_CAPABILITIES:
-            if item.score < MIN_RECOVERABLE_WRITE_SCORE:
-                continue
-            if not _EXPLICIT_WRITE_REQUEST.search(message):
-                continue
 
         arguments = _grounded_required_arguments(
             definition,
@@ -228,9 +223,21 @@ def _grounded_referential_call(
         if arguments is None:
             continue
 
-        return ProviderToolCall(name=name, arguments=arguments)
+        exact_id_arguments = sum(
+            1
+            for key in arguments
+            if _normalized_key(key).endswith("id")
+        )
+        candidates.append((exact_id_arguments, item.score, name, arguments))
 
-    return None
+    if not candidates:
+        return None
+
+    _, _, name, arguments = max(
+        candidates,
+        key=lambda candidate: (candidate[0], candidate[1]),
+    )
+    return ProviderToolCall(name=name, arguments=arguments)
 
 
 def force_grounding_tool_calls(
