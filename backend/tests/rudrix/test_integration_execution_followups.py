@@ -1,6 +1,7 @@
 from unittest.mock import Mock, patch
 
 from app.ai.agent_core import AgentState, reduce_tool_result, render_state_for_planner
+from app.ai.agent_core.capability_retriever import CapabilityRetriever
 from app.ai.agent_core.forced_grounding import force_grounding_tool_calls
 from app.ai.tools import create_ai_tool_registry
 from app.ai.tools.operations_tools import GetExecutionDetailsTool
@@ -62,6 +63,21 @@ def test_run_integration_persists_source_and_execution_for_followups():
     assert state.current_execution.attributes["execution_id"] == 91
     assert state.current_execution.attributes["accountsScanned"] == 1450
     assert state.current_execution.attributes["duplicateGroups"] == 7
+
+
+def test_execution_details_is_retrieved_for_status_followup():
+    state = _run_state()
+    definitions = create_ai_tool_registry().definitions()
+    retriever = CapabilityRetriever(definitions)
+
+    selected = retriever.select(
+        "Did it complete?\n" + render_state_for_planner(state),
+        limit=10,
+        always_include=set(),
+    )
+    names = {str(item.get("name") or "") for item in selected}
+
+    assert "get_execution_details" in names
 
 
 def test_did_it_complete_reuses_grounded_execution_id_without_model_guess():
