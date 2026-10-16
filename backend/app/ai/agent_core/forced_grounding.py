@@ -19,7 +19,9 @@ RECOVERABLE_WRITE_CAPABILITIES = {"run_integration"}
 MIN_PRIMARY_GROUNDING_SCORE = 0.22
 MIN_RECOVERABLE_WRITE_SCORE = 0.40
 _REFERENTIAL_REQUEST = re.compile(
-    r"\b(?:this|that|these|those|them|it|same|previous|above)\b",
+    r"\b(?:this|that|these|those|them|it|same|previous|above)\b"
+    r"|\b(?:what|which)\s+(?:was|is)\s+the\s+(?:result|status)\b"
+    r"|\b(?:the|last|latest|previous)\s+(?:run|execution|aggregation)\b",
     flags=re.IGNORECASE,
 )
 _EXPLICIT_WRITE_REQUEST = re.compile(
