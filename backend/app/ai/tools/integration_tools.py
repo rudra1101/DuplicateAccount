@@ -9,7 +9,7 @@ from app.ai.tools.base import BaseAITool
 from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.db_models.scan import ScanRecord
-from app.services.integration_service import integration_to_dict
+from app.services.integration_service import integration_to_dict, run_integration
 
 
 def _find_integration(
@@ -39,12 +39,9 @@ def _find_integration(
         select(IntegrationRecord)
         .where(
             or_(
-                func.lower(IntegrationRecord.name)
-                == normalized,
-                func.lower(IntegrationRecord.name)
-                .like(f"%{normalized}%"),
-                func.lower(IntegrationRecord.connector_type)
-                .like(f"%{normalized}%"),
+                func.lower(IntegrationRecord.name) == normalized,
+                func.lower(IntegrationRecord.name).like(f"%{normalized}%"),
+                func.lower(IntegrationRecord.connector_type).like(f"%{normalized}%"),
             )
         )
         .order_by(IntegrationRecord.name.asc())
@@ -56,42 +53,24 @@ class ListIntegrationsTool(BaseAITool):
     name = "list_integrations"
 
     description = (
-        "List configured account-source integrations, including "
-        "connector type and enabled status."
+        "List configured account-source integrations, including connector type and enabled status."
     )
 
     parameters = {
         "type": "object",
-        "properties": {
-            "enabled_only": {"type": "boolean"},
-        },
+        "properties": {"enabled_only": {"type": "boolean"}},
         "required": ["enabled_only"],
         "additionalProperties": False,
     }
 
-    def execute(
-        self,
-        *,
-        db: Session,
-        arguments: dict[str, Any],
-    ) -> Any:
-        statement = select(IntegrationRecord).order_by(
-            IntegrationRecord.name.asc()
-        )
-
+    def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
+        statement = select(IntegrationRecord).order_by(IntegrationRecord.name.asc())
         if arguments.get("enabled_only", False):
-            statement = statement.where(
-                IntegrationRecord.enabled.is_(True)
-            )
-
+            statement = statement.where(IntegrationRecord.enabled.is_(True))
         integrations = db.scalars(statement).all()
-
         return {
             "count": len(integrations),
-            "integrations": [
-                integration_to_dict(integration)
-                for integration in integrations
-            ],
+            "integrations": [integration_to_dict(integration) for integration in integrations],
         }
 
 
@@ -99,63 +78,32 @@ class GetIntegrationDetailsTool(BaseAITool):
     name = "get_integration_details"
 
     description = (
-        "Get one integration's configuration summary, enabled status, "
-        "latest scan, and latest execution. The integration may be "
-        "identified by name, connector type, alias, or numeric ID."
+        "Get one integration's configuration summary, enabled status, latest scan, and latest "
+        "execution. The integration may be identified by name, connector type, alias, or numeric ID."
     )
 
     parameters = {
         "type": "object",
-        "properties": {
-            "integration": {
-                "type": "string",
-                "minLength": 1,
-            },
-        },
+        "properties": {"integration": {"type": "string", "minLength": 1}},
         "required": ["integration"],
         "additionalProperties": False,
     }
 
-    def execute(
-        self,
-        *,
-        db: Session,
-        arguments: dict[str, Any],
-    ) -> Any:
-        integration = _find_integration(
-            db,
-            arguments["integration"],
-        )
-
+    def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
+        integration = _find_integration(db, arguments["integration"])
         if integration is None:
-            return {
-                "found": False,
-                "message": "Integration was not found.",
-            }
+            return {"found": False, "message": "Integration was not found."}
 
         latest_scan = db.scalars(
             select(ScanRecord)
-            .where(
-                ScanRecord.integration_id
-                == integration.id
-            )
-            .order_by(
-                ScanRecord.created_at.desc(),
-                ScanRecord.id.desc(),
-            )
+            .where(ScanRecord.integration_id == integration.id)
+            .order_by(ScanRecord.created_at.desc(), ScanRecord.id.desc())
             .limit(1)
         ).first()
-
         latest_execution = db.scalars(
             select(JobExecutionRecord)
-            .where(
-                JobExecutionRecord.integration_id
-                == integration.id
-            )
-            .order_by(
-                JobExecutionRecord.started_at.desc(),
-                JobExecutionRecord.id.desc(),
-            )
+            .where(JobExecutionRecord.integration_id == integration.id)
+            .order_by(JobExecutionRecord.started_at.desc(), JobExecutionRecord.id.desc())
             .limit(1)
         ).first()
 
@@ -169,20 +117,10 @@ class GetIntegrationDetailsTool(BaseAITool):
                     "status": latest_scan.status,
                     "accountsScanned": latest_scan.accounts_scanned,
                     "applications": latest_scan.application_count,
-                    "duplicateGroups": (
-                        latest_scan.duplicate_group_count
-                    ),
-                    "duplicateAccounts": (
-                        latest_scan.duplicate_account_count
-                    ),
-                    "highConfidenceMatches": (
-                        latest_scan.high_confidence_count
-                    ),
-                    "createdAt": (
-                        latest_scan.created_at.isoformat()
-                        if latest_scan.created_at
-                        else None
-                    ),
+                    "duplicateGroups": latest_scan.duplicate_group_count,
+                    "duplicateAccounts": latest_scan.duplicate_account_count,
+                    "highConfidenceMatches": latest_scan.high_confidence_count,
+                    "createdAt": latest_scan.created_at.isoformat() if latest_scan.created_at else None,
                 }
                 if latest_scan
                 else None
@@ -192,33 +130,82 @@ class GetIntegrationDetailsTool(BaseAITool):
                     "id": latest_execution.id,
                     "scanId": latest_execution.scan_id,
                     "status": latest_execution.status,
-                    "sourceFileName": (
-                        latest_execution.source_file_name
-                    ),
-                    "accountsScanned": (
-                        latest_execution.accounts_scanned
-                    ),
-                    "duplicateGroups": (
-                        latest_execution.duplicate_groups
-                    ),
-                    "duplicateAccounts": (
-                        latest_execution.duplicate_accounts
-                    ),
-                    "errorMessage": (
-                        latest_execution.error_message
-                    ),
-                    "startedAt": (
-                        latest_execution.started_at.isoformat()
-                        if latest_execution.started_at
-                        else None
-                    ),
-                    "completedAt": (
-                        latest_execution.completed_at.isoformat()
-                        if latest_execution.completed_at
-                        else None
-                    ),
+                    "sourceFileName": latest_execution.source_file_name,
+                    "accountsScanned": latest_execution.accounts_scanned,
+                    "duplicateGroups": latest_execution.duplicate_groups,
+                    "duplicateAccounts": latest_execution.duplicate_accounts,
+                    "errorMessage": latest_execution.error_message,
+                    "startedAt": latest_execution.started_at.isoformat() if latest_execution.started_at else None,
+                    "completedAt": latest_execution.completed_at.isoformat() if latest_execution.completed_at else None,
                 }
                 if latest_execution
                 else None
+            ),
+        }
+
+
+class RunIntegrationTool(BaseAITool):
+    name = "run_integration"
+    description = (
+        "Run/aggregate an enabled IdentityAI integration now. Use only when the user explicitly "
+        "asks to run, aggregate, sync, or refresh a source. Resolve the integration by configured "
+        "name, connector type, common alias such as AD, or numeric ID. This starts a real integration "
+        "execution and returns the persisted execution result; never claim a run occurred without it."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "integration": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Integration name, connector type, alias, or numeric ID.",
+            },
+            "aggregation_type": {
+                "type": "string",
+                "enum": ["FULL", "DELTA"],
+                "description": "FULL unless the user explicitly requests a delta/incremental run.",
+            },
+        },
+        "required": ["integration"],
+        "additionalProperties": False,
+    }
+
+    def execute(self, *, db: Session, arguments: dict[str, Any]) -> Any:
+        integration = _find_integration(db, arguments.get("integration"))
+        if integration is None:
+            return {
+                "started": False,
+                "message": "Integration was not found, so no aggregation was started.",
+            }
+        if not integration.enabled:
+            return {
+                "started": False,
+                "integration": integration_to_dict(integration),
+                "message": (
+                    f"{integration.name} is disabled. Enable it before running an aggregation."
+                ),
+            }
+
+        aggregation_type = str(arguments.get("aggregation_type") or "FULL").strip().upper()
+        if aggregation_type not in {"FULL", "DELTA"}:
+            raise ValueError("aggregation_type must be FULL or DELTA.")
+
+        execution = run_integration(
+            db=db,
+            integration=integration,
+            aggregation_type=aggregation_type,
+        )
+        return {
+            "started": True,
+            "integration": {
+                "id": integration.id,
+                "name": integration.name,
+                "connectorType": integration.connector_type,
+            },
+            "aggregationType": aggregation_type,
+            "execution": execution,
+            "message": (
+                f"Ran {aggregation_type.lower()} aggregation for {integration.name}. "
+                f"Execution status: {execution.get('status') or 'UNKNOWN'}."
             ),
         }

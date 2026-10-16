@@ -10,6 +10,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "get_dashboard_summary": {"domain": "dashboard", "kind": CapabilityKind.READ, "fast_path": True},
     "list_integrations": {"domain": "integration", "kind": CapabilityKind.READ},
     "get_integration_details": {"domain": "integration", "kind": CapabilityKind.READ},
+    "run_integration": {"domain": "integration", "kind": CapabilityKind.WRITE},
     "investigate_accounts": {"domain": "account", "kind": CapabilityKind.READ, "fast_path": True},
     "search_orphan_accounts": {"domain": "orphan", "kind": CapabilityKind.READ, "fast_path": True},
     "explain_orphan_account": {"domain": "orphan", "kind": CapabilityKind.READ, "fast_path": True},
@@ -28,9 +29,6 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
     "search_knowledge_base": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
     "list_knowledge_documents": {"domain": "knowledge", "kind": CapabilityKind.KNOWLEDGE},
     "search_identityai_product_knowledge": {"domain": "product", "kind": CapabilityKind.KNOWLEDGE, "fast_path": True},
-    # Report generation is a read/export operation: it does not mutate IdentityAI
-    # product state. Classifying it as READ lets the grounded fallback reliably
-    # complete explicit report requests without making other write actions forceable.
     "generate_report": {"domain": "report", "kind": CapabilityKind.READ},
     "search_remediation_items": {"domain": "remediation", "kind": CapabilityKind.READ},
     "create_remediation_ticket": {"domain": "remediation", "kind": CapabilityKind.WRITE},
@@ -39,12 +37,7 @@ _CAPABILITY_METADATA: dict[str, dict[str, Any]] = {
 
 
 class CapabilityCatalog:
-    """Machine-readable catalog of everything Rudrix can do.
-
-    The catalog is generated from the actual authorized tool registry, so the
-    agent learns product capabilities from tool contracts instead of relying on
-    sentence-specific prompt rules.
-    """
+    """Machine-readable catalog of everything Rudrix can do."""
 
     def __init__(self, registry: AIToolRegistry):
         self._registry = registry
@@ -71,7 +64,6 @@ class CapabilityCatalog:
         return items
 
     def compact_for_planner(self) -> list[dict[str, Any]]:
-        """Return a low-token catalog suitable for a planner prompt."""
         return [
             {
                 "name": item.name,
