@@ -207,10 +207,9 @@ class GetExecutionDetailsTool(BaseAITool):
     name = "get_execution_details"
 
     description = (
-        "Get the authoritative status and result for one integration execution by execution ID. "
-        "Use this for follow-up questions about a run or aggregation: whether it completed or "
-        "failed, what the result was, how many accounts were scanned or changed, how many "
-        "duplicates were found, when it finished, or why it failed."
+        "Get persisted details for one specific integration execution ID. Use for a previously "
+        "started run or aggregation to determine whether that execution completed or failed, "
+        "its outcome metrics, completion time, and execution error."
     )
 
     parameters = {
