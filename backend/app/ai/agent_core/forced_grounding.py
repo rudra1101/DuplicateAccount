@@ -19,7 +19,11 @@ RECOVERABLE_WRITE_CAPABILITIES = {"run_integration"}
 MIN_PRIMARY_GROUNDING_SCORE = 0.22
 MIN_RECOVERABLE_WRITE_SCORE = 0.40
 _REFERENTIAL_REQUEST = re.compile(
-    r"\b(?:this|that|these|those|them|it|same|previous|above)\b",
+    r"\b(?:this|that|these|those|them|it|same|previous|above)\b"
+    r"|\b(?:what|which)\s+(?:was|is)\s+the\s+(?:result|status)\b"
+    r"|\b(?:the|last|latest|previous)\s+(?:run|execution|aggregation)\b"
+    r"|\bhow\s+many\s+(?:accounts?|records?)\b.*\b(?:scanned|processed|created|updated|unchanged|deleted)\b"
+    r"|\bhow\s+many\s+(?:duplicates?|duplicate\s+accounts?|duplicate\s+groups?)\b",
     flags=re.IGNORECASE,
 )
 _EXPLICIT_WRITE_REQUEST = re.compile(
@@ -184,6 +188,58 @@ def _grounded_required_arguments(
     return arguments
 
 
+def _grounded_referential_call(
+    definitions: list[dict[str, Any]],
+    *,
+    user_message: str,
+    grounded_state: str,
+) -> ProviderToolCall | None:
+    """Bind a referential read directly when state satisfies the tool schema.
+
+    The definitions reaching forced grounding have already been authorized and
+    filtered for safety. For a short follow-up, prefer an exact grounded entity-ID
+    capability over broader state-derived filters. This makes ``Did it complete?``
+    resolve the execution that was just started rather than a later execution that
+    merely happens to match the same source/status. Recoverable writes deliberately
+    stay on the explicit write-recovery path below.
+    """
+
+    message = str(user_message or "")
+    if not _REFERENTIAL_REQUEST.search(message):
+        return None
+
+    candidates: list[tuple[int, float, str, dict[str, Any]]] = []
+    for item in CapabilityRetriever(definitions).rank(message):
+        definition = item.definition
+        name = str(definition.get("name") or "")
+        if not name or name in RECOVERABLE_WRITE_CAPABILITIES:
+            continue
+
+        arguments = _grounded_required_arguments(
+            definition,
+            user_message=message,
+            grounded_state=grounded_state,
+        )
+        if arguments is None:
+            continue
+
+        exact_id_arguments = sum(
+            1
+            for key in arguments
+            if _normalized_key(key).endswith("id")
+        )
+        candidates.append((exact_id_arguments, item.score, name, arguments))
+
+    if not candidates:
+        return None
+
+    _, _, name, arguments = max(
+        candidates,
+        key=lambda candidate: (candidate[0], candidate[1]),
+    )
+    return ProviderToolCall(name=name, arguments=arguments)
+
+
 def force_grounding_tool_calls(
     *,
     provider,
@@ -201,6 +257,14 @@ def force_grounding_tool_calls(
     the action. Referential follow-ups can reuse required arguments from grounded
     state instead of asking the model to guess them again.
     """
+
+    grounded_call = _grounded_referential_call(
+        definitions,
+        user_message=user_message,
+        grounded_state=grounded_state,
+    )
+    if grounded_call is not None:
+        return [grounded_call]
 
     selected = primary_grounding_definition(definitions, user_message)
     if selected is None:

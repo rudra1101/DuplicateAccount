@@ -111,12 +111,12 @@ def _structured_tool_message(
     """Prefer the latest successful authoritative IdentityAI result.
 
     Current-record capabilities expose ``items`` and are rendered deterministically
-    so model prose cannot replace live rows. Structured orphan workflow result families
-    can provide a server-generated authoritative message when they must preserve exact
-    persisted evidence or a real side-effect result. Download/report capabilities expose
-    a structured ``DOWNLOAD_REPORT`` client action plus a server-generated message carrying
-    the authenticated download URL. Other successful actions continue to use normal model
-    synthesis.
+    so model prose cannot replace live rows. Structured workflow result families can
+    provide a server-generated authoritative message when they must preserve exact
+    persisted evidence, execution facts, or a real side-effect result. Download/report
+    capabilities expose a structured ``DOWNLOAD_REPORT`` client action plus a server-
+    generated message carrying the authenticated download URL. Other successful actions
+    continue to use normal model synthesis.
     """
 
     for invocation in reversed(tools_used):
@@ -132,6 +132,7 @@ def _structured_tool_message(
         if data.get("resultType") in {
             "orphan_explanation",
             "orphan_remediation_ticket",
+            "integration_execution",
         } and message:
             return message
 

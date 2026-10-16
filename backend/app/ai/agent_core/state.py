@@ -45,10 +45,6 @@ def _store_orphan_context(updated: AgentState, data: dict[str, Any], tool_name: 
     if item_count is not None:
         next_filters["resultCount"] = item_count
 
-    # Keep the latest grounded collection as the referent for plural follow-ups
-    # such as "generate a report for these accounts". A one-record drill-down (or
-    # an empty exploratory search) still updates current_account below, but should
-    # not erase a broader collection that the user was just working with.
     existing = updated.last_filters if isinstance(updated.last_filters, dict) else {}
     existing_is_orphan = existing.get("context") == "orphan_accounts"
     try:
@@ -101,6 +97,69 @@ def _store_matched_identity(
         attributes=matched,
         source=tool_name,
     )
+
+
+def _store_execution_context(
+    updated: AgentState,
+    data: dict[str, Any],
+    tool_name: str,
+) -> None:
+    """Persist one grounded integration execution and its source for follow-ups."""
+
+    integration = _dict(data.get("integration"))
+    execution = (
+        _dict(data.get("execution"))
+        if isinstance(data.get("execution"), dict)
+        else data
+    )
+
+    execution_id = execution.get("executionId") or execution.get("id")
+    integration_id = (
+        integration.get("id")
+        or integration.get("integrationId")
+        or execution.get("integrationId")
+    )
+    integration_name = (
+        integration.get("name")
+        or integration.get("integrationName")
+        or execution.get("integrationName")
+    )
+
+    if integration_id is not None:
+        integration_attributes = {
+            **integration,
+            "integrationId": integration_id,
+        }
+        if integration_name:
+            integration_attributes.setdefault("name", integration_name)
+            integration_attributes.setdefault("integration", integration_name)
+        updated.current_integration = _entity(
+            EntityType.INTEGRATION,
+            id_value=integration_id,
+            label=integration_name,
+            attributes=integration_attributes,
+            source=tool_name,
+        )
+
+    if execution_id is not None:
+        execution_attributes = {
+            **execution,
+            "executionId": execution_id,
+            "execution_id": execution_id,
+        }
+        if integration_name:
+            execution_attributes.setdefault("integration", integration_name)
+            execution_attributes.setdefault("integrationName", integration_name)
+        if integration_id is not None:
+            execution_attributes.setdefault("integrationId", integration_id)
+
+        updated.current_execution = _entity(
+            EntityType.EXECUTION,
+            id_value=execution_id,
+            label=execution.get("status"),
+            attributes=execution_attributes,
+            source=tool_name,
+        )
 
 
 def reduce_tool_result(
@@ -322,23 +381,16 @@ def reduce_tool_result(
                 source=tool_name,
             )
 
-    elif tool_name in {"get_latest_execution", "get_execution_details"}:
-        execution = data.get("execution") if isinstance(data.get("execution"), dict) else data
-        execution_id = execution.get("id") or execution.get("executionId")
-        if execution_id is not None:
-            updated.current_execution = _entity(
-                EntityType.EXECUTION,
-                id_value=execution_id,
-                label=execution.get("status"),
-                attributes=execution,
-                source=tool_name,
-            )
+    elif tool_name in {"run_integration", "get_latest_execution", "get_execution_details"}:
+        _store_execution_context(updated, data, tool_name)
 
     return updated
 
 
 def render_state_for_planner(state: AgentState) -> str:
-    compact = state.compact()
+    # Use JSON mode so enum-backed entities become literal-safe primitive values.
+    # The forced-grounding layer parses this private state with ast.literal_eval.
+    compact = state.model_dump(exclude_none=True, mode="json")
     if not compact:
         return "No structured entity context has been established yet."
     return "Structured conversation state (grounded): " + str(compact)

@@ -10,6 +10,7 @@ from app.services.operations_service import (
     get_operation,
     get_operations,
     get_operations_summary,
+    operation_to_dict,
 )
 
 
@@ -38,12 +39,9 @@ def _resolve_integration_id(
         select(IntegrationRecord)
         .where(
             or_(
-                func.lower(IntegrationRecord.name)
-                == normalized,
-                func.lower(IntegrationRecord.name)
-                .like(f"%{normalized}%"),
-                func.lower(IntegrationRecord.connector_type)
-                .like(f"%{normalized}%"),
+                func.lower(IntegrationRecord.name) == normalized,
+                func.lower(IntegrationRecord.name).like(f"%{normalized}%"),
+                func.lower(IntegrationRecord.connector_type).like(f"%{normalized}%"),
             )
         )
         .order_by(IntegrationRecord.name.asc())
@@ -51,6 +49,71 @@ def _resolve_integration_id(
     ).first()
 
     return row.id if row else None
+
+
+def _execution_message(execution: dict[str, Any]) -> str:
+    """Render persisted execution facts into a deterministic Rudrix summary."""
+
+    execution_id = execution.get("executionId") or execution.get("id")
+    integration_name = (
+        execution.get("integrationName")
+        or (
+            f"Integration {execution.get('integrationId')}"
+            if execution.get("integrationId") is not None
+            else "Integration"
+        )
+    )
+    status = str(execution.get("status") or "UNKNOWN").upper()
+    aggregation_type = str(execution.get("aggregationType") or "").upper()
+
+    run_label = f"{aggregation_type.lower()} aggregation" if aggregation_type else "execution"
+    identity = f" (execution {execution_id})" if execution_id is not None else ""
+    parts = [f"{integration_name} {run_label}{identity} is {status}."]
+
+    accounts_scanned = execution.get("accountsScanned")
+    if accounts_scanned is not None:
+        parts.append(f"Accounts scanned: {accounts_scanned}.")
+
+    inventory_parts: list[str] = []
+    for key, label in (
+        ("accountsCreated", "created"),
+        ("accountsUpdated", "updated"),
+        ("accountsUnchanged", "unchanged"),
+        ("accountsDeleted", "deleted"),
+    ):
+        value = execution.get(key)
+        if value is not None:
+            inventory_parts.append(f"{label}: {value}")
+    if inventory_parts:
+        parts.append("Account changes — " + ", ".join(inventory_parts) + ".")
+
+    duplicate_groups = execution.get("duplicateGroups")
+    duplicate_accounts = execution.get("duplicateAccounts")
+    if duplicate_groups is not None or duplicate_accounts is not None:
+        parts.append(
+            "Duplicates — groups: "
+            f"{duplicate_groups if duplicate_groups is not None else 0}, accounts: "
+            f"{duplicate_accounts if duplicate_accounts is not None else 0}."
+        )
+
+    error_message = str(execution.get("errorMessage") or "").strip()
+    if error_message:
+        parts.append(f"Failure reason: {error_message}")
+
+    completed_at = execution.get("completedAt")
+    if completed_at:
+        parts.append(f"Completed at: {completed_at}.")
+
+    return " ".join(parts)
+
+
+def _execution_result(execution: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "found": True,
+        "resultType": "integration_execution",
+        "execution": execution,
+        "message": _execution_message(execution),
+    }
 
 
 class GetOperationsSummaryTool(BaseAITool):
@@ -90,18 +153,11 @@ class SearchOperationsTool(BaseAITool):
         "properties": {
             "status": {
                 "type": ["string", "null"],
-                "enum": [
-                    "RUNNING",
-                    "COMPLETED",
-                    "FAILED",
-                    None,
-                ],
+                "enum": ["RUNNING", "COMPLETED", "FAILED", None],
             },
             "integration": {
                 "type": ["string", "null"],
-                "description": (
-                    "Integration name, connector alias, or numeric ID."
-                ),
+                "description": "Integration name, connector alias, or numeric ID.",
             },
             "search": {"type": ["string", "null"]},
             "limit": {
@@ -110,12 +166,7 @@ class SearchOperationsTool(BaseAITool):
                 "maximum": 100,
             },
         },
-        "required": [
-            "status",
-            "integration",
-            "search",
-            "limit",
-        ],
+        "required": ["status", "integration", "search", "limit"],
         "additionalProperties": False,
     }
 
@@ -126,10 +177,7 @@ class SearchOperationsTool(BaseAITool):
         arguments: dict[str, Any],
     ) -> Any:
         integration_value = arguments.get("integration")
-        integration_id = _resolve_integration_id(
-            db,
-            integration_value,
-        )
+        integration_id = _resolve_integration_id(db, integration_value)
 
         if integration_value and integration_id is None:
             return {
@@ -144,10 +192,7 @@ class SearchOperationsTool(BaseAITool):
             status=arguments.get("status"),
             integration_id=integration_id,
             search=arguments.get("search"),
-            limit=min(
-                max(int(arguments.get("limit", 20) or 20), 1),
-                100,
-            ),
+            limit=min(max(int(arguments.get("limit", 20) or 20), 1), 100),
             offset=0,
         )
 
@@ -161,10 +206,7 @@ class SearchOperationsTool(BaseAITool):
 class GetExecutionDetailsTool(BaseAITool):
     name = "get_execution_details"
 
-    description = (
-        "Get complete details for one integration execution using "
-        "its execution ID."
-    )
+    description = "Get complete details for one integration execution using its execution ID."
 
     parameters = {
         "type": "object",
@@ -195,10 +237,7 @@ class GetExecutionDetailsTool(BaseAITool):
                 "message": "Execution was not found.",
             }
 
-        return {
-            "found": True,
-            "execution": result,
-        }
+        return _execution_result(result)
 
 
 class GetLatestExecutionTool(BaseAITool):
@@ -215,12 +254,7 @@ class GetLatestExecutionTool(BaseAITool):
             "integration": {"type": ["string", "null"]},
             "status": {
                 "type": ["string", "null"],
-                "enum": [
-                    "RUNNING",
-                    "COMPLETED",
-                    "FAILED",
-                    None,
-                ],
+                "enum": ["RUNNING", "COMPLETED", "FAILED", None],
             },
         },
         "required": ["integration", "status"],
@@ -234,10 +268,7 @@ class GetLatestExecutionTool(BaseAITool):
         arguments: dict[str, Any],
     ) -> Any:
         integration_value = arguments.get("integration")
-        integration_id = _resolve_integration_id(
-            db,
-            integration_value,
-        )
+        integration_id = _resolve_integration_id(db, integration_value)
 
         if integration_value and integration_id is None:
             return {
@@ -249,22 +280,19 @@ class GetLatestExecutionTool(BaseAITool):
             select(JobExecutionRecord, IntegrationRecord)
             .join(
                 IntegrationRecord,
-                IntegrationRecord.id
-                == JobExecutionRecord.integration_id,
+                IntegrationRecord.id == JobExecutionRecord.integration_id,
             )
         )
 
         if integration_id is not None:
             statement = statement.where(
-                JobExecutionRecord.integration_id
-                == integration_id
+                JobExecutionRecord.integration_id == integration_id
             )
 
         status = arguments.get("status")
         if status:
             statement = statement.where(
-                JobExecutionRecord.status
-                == str(status).upper()
+                JobExecutionRecord.status == str(status).upper()
             )
 
         row = db.execute(
@@ -281,30 +309,4 @@ class GetLatestExecutionTool(BaseAITool):
             }
 
         execution, integration = row
-
-        return {
-            "found": True,
-            "execution": {
-                "id": execution.id,
-                "integrationId": integration.id,
-                "integrationName": integration.name,
-                "scanId": execution.scan_id,
-                "status": execution.status,
-                "sourceFileName": execution.source_file_name,
-                "sourcePath": execution.source_path,
-                "accountsScanned": execution.accounts_scanned,
-                "duplicateGroups": execution.duplicate_groups,
-                "duplicateAccounts": execution.duplicate_accounts,
-                "errorMessage": execution.error_message,
-                "startedAt": (
-                    execution.started_at.isoformat()
-                    if execution.started_at
-                    else None
-                ),
-                "completedAt": (
-                    execution.completed_at.isoformat()
-                    if execution.completed_at
-                    else None
-                ),
-            },
-        }
+        return _execution_result(operation_to_dict(execution, integration))
