@@ -115,6 +115,23 @@ def test_result_followup_reuses_grounded_execution_id_without_model_guess():
     assert calls[0].arguments == {"execution_id": 91}
 
 
+def test_scanned_count_followup_reuses_grounded_execution_id_without_model_guess():
+    provider = Mock()
+    state = _run_state()
+
+    calls = force_grounding_tool_calls(
+        provider=provider,
+        model="llama3.1:8b",
+        user_message="How many accounts were scanned?",
+        grounded_state=render_state_for_planner(state),
+        definitions=[_definition("get_execution_details")],
+    )
+
+    provider.chat.assert_not_called()
+    assert len(calls) == 1
+    assert calls[0].arguments == {"execution_id": 91}
+
+
 def test_execution_details_returns_authoritative_persisted_summary():
     persisted = {
         "executionId": 91,
