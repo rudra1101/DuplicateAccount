@@ -252,6 +252,26 @@ def _execution_response_message(
     return default_message or None
 
 
+def execution_tool_message(
+    tools_used: list[ToolInvocationResponse],
+    *,
+    user_message: str | None = None,
+) -> str | None:
+    """Return the latest authoritative execution answer for stream-time rendering."""
+
+    for invocation in reversed(tools_used):
+        result = invocation.result if isinstance(invocation.result, dict) else {}
+        if not result.get("success"):
+            continue
+        data = result.get("data")
+        if not isinstance(data, dict):
+            continue
+        if data.get("resultType") != "integration_execution":
+            continue
+        return _execution_response_message(data, user_message)
+    return None
+
+
 def _structured_tool_message(
     tools_used: list[ToolInvocationResponse],
     *,
