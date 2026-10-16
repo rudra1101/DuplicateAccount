@@ -186,6 +186,51 @@ def _grounded_required_arguments(
     return arguments
 
 
+def _grounded_referential_call(
+    definitions: list[dict[str, Any]],
+    *,
+    user_message: str,
+    grounded_state: str,
+) -> ProviderToolCall | None:
+    """Bind a referential follow-up directly when state satisfies the schema.
+
+    The definitions reaching forced grounding have already been authorized and
+    filtered for safety. Ranking still decides among multiple state-bindable tools,
+    but a short phrase such as ``Did it complete?`` does not need to clear the normal
+    standalone relevance threshold when the selected capability's required inputs
+    are already grounded. Recoverable writes keep their stricter explicit-action
+    guard and score threshold.
+    """
+
+    message = str(user_message or "")
+    if not _REFERENTIAL_REQUEST.search(message):
+        return None
+
+    for item in CapabilityRetriever(definitions).rank(message):
+        definition = item.definition
+        name = str(definition.get("name") or "")
+        if not name:
+            continue
+
+        if name in RECOVERABLE_WRITE_CAPABILITIES:
+            if item.score < MIN_RECOVERABLE_WRITE_SCORE:
+                continue
+            if not _EXPLICIT_WRITE_REQUEST.search(message):
+                continue
+
+        arguments = _grounded_required_arguments(
+            definition,
+            user_message=message,
+            grounded_state=grounded_state,
+        )
+        if arguments is None:
+            continue
+
+        return ProviderToolCall(name=name, arguments=arguments)
+
+    return None
+
+
 def force_grounding_tool_calls(
     *,
     provider,
@@ -203,6 +248,14 @@ def force_grounding_tool_calls(
     the action. Referential follow-ups can reuse required arguments from grounded
     state instead of asking the model to guess them again.
     """
+
+    grounded_call = _grounded_referential_call(
+        definitions,
+        user_message=user_message,
+        grounded_state=grounded_state,
+    )
+    if grounded_call is not None:
+        return [grounded_call]
 
     selected = primary_grounding_definition(definitions, user_message)
     if selected is None:
