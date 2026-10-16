@@ -535,6 +535,7 @@ def run_identity_agent_stream_fast(
             conversationId=(request.conversationId or str(uuid.uuid4())),
             message=final_message,
             model=selected_model,
+            requestMessage=str(request.message or ""),
             toolsUsed=tool_history,
             sources=chat_sources,
         ),
