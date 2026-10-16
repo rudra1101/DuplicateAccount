@@ -11,9 +11,21 @@ from app.ai.providers.base import ProviderToolCall
 
 
 SAFE_GROUNDING_KINDS = {CapabilityKind.READ, CapabilityKind.KNOWLEDGE}
+# A WRITE capability must be explicitly allowlisted here before the deterministic
+# second-chance planner may consider it. This keeps forced grounding read-only by
+# default while allowing carefully selected, non-destructive operational writes to
+# recover when a small local model returns prose instead of a native tool call.
+RECOVERABLE_WRITE_CAPABILITIES = {"run_integration"}
 MIN_PRIMARY_GROUNDING_SCORE = 0.22
+MIN_RECOVERABLE_WRITE_SCORE = 0.40
 _REFERENTIAL_REQUEST = re.compile(
     r"\b(?:this|that|these|those|them|it|same|previous|above)\b",
+    flags=re.IGNORECASE,
+)
+_EXPLICIT_WRITE_REQUEST = re.compile(
+    r"^\s*(?:(?:please|kindly)\s+)?"
+    r"(?:(?:can|could|would|will)\s+you\s+)?"
+    r"(?:run|start|execute|trigger|aggregate|sync|refresh)\b",
     flags=re.IGNORECASE,
 )
 _MISSING = object()
@@ -26,7 +38,14 @@ def safe_grounding_definitions(
     safe_names = {
         capability.name
         for capability in capabilities
-        if capability.kind in SAFE_GROUNDING_KINDS and not capability.destructive
+        if (
+            capability.kind in SAFE_GROUNDING_KINDS
+            or (
+                capability.kind == CapabilityKind.WRITE
+                and capability.name in RECOVERABLE_WRITE_CAPABILITIES
+            )
+        )
+        and not capability.destructive
     }
     return [
         definition
@@ -39,15 +58,33 @@ def primary_grounding_definition(
     definitions: list[dict[str, Any]],
     user_message: str,
 ) -> dict[str, Any] | None:
-    """Choose a sufficiently relevant safe capability from its contract."""
+    """Choose a sufficiently relevant capability from its tool contract.
+
+    Read/knowledge capabilities retain the normal grounding threshold. Allowlisted
+    WRITE capabilities are deliberately stricter: the request must look like an
+    explicit action command and the capability must clear a higher relevance score.
+    This prevents informational questions from being converted into side effects.
+    """
 
     if not definitions:
         return None
 
-    ranked = CapabilityRetriever(definitions).rank(str(user_message or ""))
-    if not ranked or ranked[0].score < MIN_PRIMARY_GROUNDING_SCORE:
-        return None
-    return ranked[0].definition
+    message = str(user_message or "")
+    ranked = CapabilityRetriever(definitions).rank(message)
+    for item in ranked:
+        if item.score < MIN_PRIMARY_GROUNDING_SCORE:
+            break
+
+        name = str(item.definition.get("name") or "")
+        if name in RECOVERABLE_WRITE_CAPABILITIES:
+            if item.score < MIN_RECOVERABLE_WRITE_SCORE:
+                continue
+            if not _EXPLICIT_WRITE_REQUEST.search(message):
+                continue
+
+        return item.definition
+
+    return None
 
 
 def _normalized_key(value: Any) -> str:
@@ -158,11 +195,11 @@ def force_grounding_tool_calls(
     """Constrained second-chance planner for models that answer without grounding.
 
     Capability choice is deterministic from the retrieved tool contracts. The model
-    only fills arguments for that single selected read/knowledge capability. When a
-    referential follow-up can satisfy the capability's required arguments entirely
-    from grounded state, Rudrix binds those values directly and avoids another model
-    guess. This prevents requests such as "generate a report for these" from being
-    reinterpreted as a fresh search.
+    only fills arguments for that single selected capability. Read/knowledge tools
+    are safe by default; a WRITE tool reaches this path only when it is explicitly
+    allowlisted, non-destructive, highly relevant, and the user clearly requested
+    the action. Referential follow-ups can reuse required arguments from grounded
+    state instead of asking the model to guess them again.
     """
 
     selected = primary_grounding_definition(definitions, user_message)
