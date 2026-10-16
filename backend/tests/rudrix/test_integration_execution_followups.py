@@ -49,6 +49,61 @@ def _definition(name: str) -> dict:
     )
 
 
+def _execution_response(
+    request_message: str,
+    *,
+    status: str = "COMPLETED",
+    error_message: str | None = None,
+) -> ChatResponse:
+    execution = {
+        "executionId": 91,
+        "integrationId": 12,
+        "integrationName": "Active Directory",
+        "status": status,
+        "aggregationType": "FULL",
+        "accountsScanned": 1450,
+        "accountsCreated": 20,
+        "accountsUpdated": 15,
+        "accountsUnchanged": 1415,
+        "accountsDeleted": 0,
+        "duplicateGroups": 7,
+        "duplicateAccounts": 15,
+        "errorMessage": error_message,
+        "completedAt": "2026-10-16T14:30:00+05:30",
+    }
+    authoritative = (
+        f"Active Directory full aggregation (execution 91) is {status}. "
+        "Accounts scanned: 1450. Account changes — created: 20, updated: 15, "
+        "unchanged: 1415, deleted: 0. Duplicates — groups: 7, accounts: 15. "
+        "Completed at: 2026-10-16T14:30:00+05:30."
+    )
+    if error_message:
+        authoritative += f" Failure reason: {error_message}"
+
+    return ChatResponse(
+        conversationId="aggregation-followup",
+        message="generic model prose",
+        model="llama3.1:8b",
+        requestMessage=request_message,
+        toolsUsed=[
+            ToolInvocationResponse(
+                name="get_execution_details",
+                arguments={"execution_id": 91},
+                result={
+                    "success": True,
+                    "data": {
+                        "found": True,
+                        "resultType": "integration_execution",
+                        "execution": execution,
+                        "message": authoritative,
+                    },
+                },
+            )
+        ],
+        sources=[],
+    )
+
+
 def test_run_integration_persists_source_and_execution_for_followups():
     state = _run_state()
 
@@ -223,6 +278,62 @@ def test_execution_result_overrides_generic_model_prose():
 
     assert response.message == authoritative
     assert "What would you like" not in response.message
+
+
+def test_execution_status_followup_is_concise_and_grounded():
+    response = _execution_response("Did it complete?")
+
+    assert response.message == "Yes. Active Directory execution 91 completed successfully."
+
+
+def test_execution_result_followup_keeps_full_authoritative_summary():
+    response = _execution_response("What was the result?")
+
+    assert "Accounts scanned: 1450." in response.message
+    assert "created: 20" in response.message
+    assert "groups: 7, accounts: 15" in response.message
+
+
+def test_execution_scanned_followup_answers_only_scanned_count():
+    response = _execution_response("How many accounts were scanned?")
+
+    assert response.message == "1450 accounts were scanned in Active Directory execution 91."
+    assert "Duplicates" not in response.message
+
+
+def test_execution_finish_followup_answers_only_completion_time():
+    response = _execution_response("When did it finish?")
+
+    assert response.message == (
+        "Active Directory execution 91 finished on Oct 16, 2026 at 2:30:00 PM (UTC+05:30)."
+    )
+
+
+def test_execution_duplicate_followup_answers_duplicate_counts_only():
+    response = _execution_response("How many duplicates did it find?")
+
+    assert response.message == (
+        "15 duplicate accounts across 7 duplicate groups were found."
+    )
+    assert "Accounts scanned" not in response.message
+
+
+def test_execution_failure_question_returns_persisted_reason_only():
+    response = _execution_response(
+        "Why did it fail?",
+        status="FAILED",
+        error_message="Unable to connect to source.",
+    )
+
+    assert response.message == (
+        "Active Directory execution 91 failed because: Unable to connect to source."
+    )
+
+
+def test_internal_request_message_is_not_serialized_to_client():
+    response = _execution_response("How many accounts were scanned?")
+
+    assert "requestMessage" not in response.model_dump()
 
 
 def test_failed_execution_summary_includes_real_failure_reason():
