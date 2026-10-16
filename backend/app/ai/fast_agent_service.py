@@ -27,7 +27,12 @@ from app.ai.agent_service import (
 from app.ai.config import get_ai_settings
 from app.ai.providers.factory import AIProviderFactory
 from app.ai.tools import create_ai_tool_registry
-from app.schemas.chat import ChatResponse, ChatSource, ToolInvocationResponse
+from app.schemas.chat import (
+    ChatResponse,
+    ChatSource,
+    ToolInvocationResponse,
+    execution_tool_message,
+)
 
 
 MAX_CONTEXT_MESSAGES = 12
@@ -518,6 +523,13 @@ def run_identity_agent_stream_fast(
                     "Please retry the request; no private agent state was returned."
                 )
 
+        execution_message = execution_tool_message(
+            tool_history,
+            user_message=str(request.message or ""),
+        )
+        if execution_message:
+            final_message = execution_message
+
         yield {"type": "delta", "text": final_message}
         break
     else:
@@ -527,6 +539,12 @@ def run_identity_agent_stream_fast(
             _structured_success_message(tool_history)
             or "The request needs more IdentityAI operations than the current agent limit allows."
         )
+        execution_message = execution_tool_message(
+            tool_history,
+            user_message=str(request.message or ""),
+        )
+        if execution_message:
+            final_message = execution_message
         yield {"type": "delta", "text": final_message}
 
     yield {
