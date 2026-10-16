@@ -65,19 +65,23 @@ def test_run_integration_persists_source_and_execution_for_followups():
     assert state.current_execution.attributes["duplicateGroups"] == 7
 
 
-def test_execution_details_is_retrieved_for_status_followup():
+def test_execution_details_is_retrieved_for_grounded_followups():
     state = _run_state()
     definitions = create_ai_tool_registry().definitions()
     retriever = CapabilityRetriever(definitions)
 
-    selected = retriever.select(
-        "Did it complete?\n" + render_state_for_planner(state),
-        limit=10,
-        always_include=set(),
-    )
-    names = {str(item.get("name") or "") for item in selected}
-
-    assert "get_execution_details" in names
+    for message in (
+        "Did it complete?",
+        "What was the result?",
+        "How many accounts were scanned?",
+    ):
+        selected = retriever.select(
+            message + "\n" + render_state_for_planner(state),
+            limit=10,
+            always_include=set(),
+        )
+        names = {str(item.get("name") or "") for item in selected}
+        assert "get_execution_details" in names, message
 
 
 def test_did_it_complete_reuses_grounded_execution_id_without_model_guess():
