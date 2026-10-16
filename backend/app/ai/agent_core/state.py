@@ -388,7 +388,9 @@ def reduce_tool_result(
 
 
 def render_state_for_planner(state: AgentState) -> str:
-    compact = state.compact()
+    # Use JSON mode so enum-backed entities become literal-safe primitive values.
+    # The forced-grounding layer parses this private state with ast.literal_eval.
+    compact = state.model_dump(exclude_none=True, mode="json")
     if not compact:
         return "No structured entity context has been established yet."
     return "Structured conversation state (grounded): " + str(compact)
