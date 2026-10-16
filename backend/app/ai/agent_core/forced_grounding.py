@@ -21,7 +21,9 @@ MIN_RECOVERABLE_WRITE_SCORE = 0.40
 _REFERENTIAL_REQUEST = re.compile(
     r"\b(?:this|that|these|those|them|it|same|previous|above)\b"
     r"|\b(?:what|which)\s+(?:was|is)\s+the\s+(?:result|status)\b"
-    r"|\b(?:the|last|latest|previous)\s+(?:run|execution|aggregation)\b",
+    r"|\b(?:the|last|latest|previous)\s+(?:run|execution|aggregation)\b"
+    r"|\bhow\s+many\s+(?:accounts?|records?)\b.*\b(?:scanned|processed|created|updated|unchanged|deleted)\b"
+    r"|\bhow\s+many\s+(?:duplicates?|duplicate\s+accounts?|duplicate\s+groups?)\b",
     flags=re.IGNORECASE,
 )
 _EXPLICIT_WRITE_REQUEST = re.compile(
