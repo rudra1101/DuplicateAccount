@@ -206,11 +206,7 @@ class SearchOperationsTool(BaseAITool):
 class GetExecutionDetailsTool(BaseAITool):
     name = "get_execution_details"
 
-    description = (
-        "Get persisted details for one specific integration execution ID. Use for a previously "
-        "started run or aggregation to determine whether that execution completed or failed, "
-        "its outcome metrics, completion time, and execution error."
-    )
+    description = "Get complete details for one integration execution using its execution ID."
 
     parameters = {
         "type": "object",
@@ -218,7 +214,6 @@ class GetExecutionDetailsTool(BaseAITool):
             "execution_id": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Persisted execution ID from the current or referenced aggregation run.",
             },
         },
         "required": ["execution_id"],
@@ -249,19 +244,14 @@ class GetLatestExecutionTool(BaseAITool):
     name = "get_latest_execution"
 
     description = (
-        "Get the most recent integration execution, optionally filtered by integration and "
-        "execution status. Use when the user asks for the latest/last run or names a source "
-        "without an already-grounded execution ID. Returns authoritative aggregation status, "
-        "account counts, duplicate counts, timing, and failure reason."
+        "Get the most recent integration execution, optionally filtered "
+        "by integration and execution status."
     )
 
     parameters = {
         "type": "object",
         "properties": {
-            "integration": {
-                "type": ["string", "null"],
-                "description": "Integration name, connector alias, numeric ID, or null for any source.",
-            },
+            "integration": {"type": ["string", "null"]},
             "status": {
                 "type": ["string", "null"],
                 "enum": ["RUNNING", "COMPLETED", "FAILED", None],
