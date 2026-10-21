@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from app.models.account import Account
+from app.services.account_status_service import canonical_account_state
 
 
 APPLICATION_ALIASES = ("application", "source", "system", "app")
@@ -32,7 +33,7 @@ EMPLOYEE_ID_ALIASES = (
 )
 DEPARTMENT_ALIASES = ("department", "departmentname", "businessunit", "orgunit")
 MANAGER_ALIASES = ("manager", "managername", "managerid")
-STATUS_ALIASES = ("status", "accountstatus", "state", "enabled")
+STATUS_ALIASES = ("status", "accountstatus", "state", "enabled", "accountenabled")
 CREATED_ALIASES = ("created", "createdat", "createddate", "whencreated")
 ID_ALIASES = ("id", "accountid", "nativeidentity", "objectid", "uuid")
 
@@ -73,6 +74,19 @@ def _stable_record_key(raw_attributes: dict[str, str], row_number: int) -> str:
     return f"record-{row_number}-{digest}"
 
 
+def _status_mapping_for_application(
+    status_mappings: dict[str, dict[str, object]] | None,
+    application: str,
+) -> dict[str, object]:
+    if not status_mappings:
+        return {}
+    target = application.strip().casefold()
+    for name, mapping in status_mappings.items():
+        if str(name).strip().casefold() == target and isinstance(mapping, dict):
+            return mapping
+    return {}
+
+
 def _parse_csv_content(
     raw_content: bytes,
     *,
@@ -81,6 +95,7 @@ def _parse_csv_content(
     default_application: str | None = None,
     allow_dynamic_schema: bool = False,
     native_identity_attributes: dict[str, str] | None = None,
+    status_mappings: dict[str, dict[str, object]] | None = None,
 ) -> list[Account]:
     try:
         text_content = raw_content.decode(encoding)
@@ -160,6 +175,12 @@ def _parse_csv_content(
         if allow_dynamic_schema and not account_id:
             account_id = _stable_record_key(raw_attributes, row_number)
 
+        status_mapping = _status_mapping_for_application(status_mappings, application)
+        status_attribute = str(status_mapping.get("attribute") or "").strip() or None
+        source_status = _row_attribute(row, status_attribute) if status_attribute else _row_value(row, STATUS_ALIASES)
+        active_values = status_mapping.get("activeValues")
+        inactive_values = status_mapping.get("inactiveValues")
+
         accounts.append(
             Account(
                 id=account_id,
@@ -170,7 +191,11 @@ def _parse_csv_content(
                 employeeId=employee_id,
                 department=_row_value(row, DEPARTMENT_ALIASES),
                 manager=_row_value(row, MANAGER_ALIASES),
-                status=_row_value(row, STATUS_ALIASES),
+                status=canonical_account_state(
+                    source_status,
+                    active_values=active_values if isinstance(active_values, list) else None,
+                    inactive_values=inactive_values if isinstance(inactive_values, list) else None,
+                ),
                 created=_row_value(row, CREATED_ALIASES),
                 rawAttributes=raw_attributes,
             )
@@ -190,6 +215,7 @@ def load_uploaded_accounts(
     default_application: str | None = None,
     allow_dynamic_schema: bool = False,
     native_identity_attributes: dict[str, str] | None = None,
+    status_mappings: dict[str, dict[str, object]] | None = None,
 ) -> list[Account]:
     raw_content = file.read()
     if not raw_content:
@@ -202,6 +228,7 @@ def load_uploaded_accounts(
         default_application=default_application,
         allow_dynamic_schema=allow_dynamic_schema,
         native_identity_attributes=native_identity_attributes,
+        status_mappings=status_mappings,
     )
 
 
