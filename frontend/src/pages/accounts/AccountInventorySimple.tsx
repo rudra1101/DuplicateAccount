@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
+  Chip,
   CircularProgress,
   Drawer,
   FormControl,
@@ -91,12 +92,24 @@ const AccountInventorySimple = () => {
   const accountLabel = (account: SourceAccount) => account.displayName || account.username || account.nativeIdentity;
   const orphanLabel = (finding: OrphanFinding) => finding.displayName || finding.username || finding.email || finding.nativeIdentity || `Account ${finding.accountId}`;
 
+  const accountStateChip = (status: string | null) => {
+    const normalized = (status || "UNKNOWN").toUpperCase();
+    return (
+      <Chip
+        size="small"
+        label={normalized}
+        color={normalized === "ACTIVE" ? "success" : normalized === "INACTIVE" ? "default" : "warning"}
+        variant={normalized === "INACTIVE" ? "outlined" : "filled"}
+      />
+    );
+  };
+
   return (
     <PageContainer title="Accounts">
       <Stack spacing={3}>
         <Box>
           <Typography variant="h5" fontWeight={700}>Account Inventory</Typography>
-          <Typography color="text.secondary">Persistent source accounts and current orphan findings.</Typography>
+          <Typography color="text.secondary">Persistent source accounts, including inactive accounts, and current orphan findings.</Typography>
         </Box>
 
         <Paper variant="outlined" sx={{ p: 2.5 }}>
@@ -133,11 +146,11 @@ const AccountInventorySimple = () => {
             <>
               <TableContainer>
                 <Table size="small">
-                  <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Native Identity</TableCell><TableCell>Employee ID</TableCell><TableCell>Status</TableCell><TableCell>Last Seen</TableCell></TableRow></TableHead>
+                  <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Native Identity</TableCell><TableCell>Employee ID</TableCell><TableCell>Account State</TableCell><TableCell>Last Seen</TableCell></TableRow></TableHead>
                   <TableBody>
                     {loading ? <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow> : accounts.map((account) => (
                       <TableRow key={account.id} hover onClick={() => setSelectedAccount(account)} sx={{ cursor: "pointer" }}>
-                        <TableCell>{accountLabel(account)}</TableCell><TableCell>{account.application}</TableCell><TableCell>{account.nativeIdentity}</TableCell><TableCell>{account.employeeId || "—"}</TableCell><TableCell>{account.status || "—"}</TableCell><TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
+                        <TableCell>{accountLabel(account)}</TableCell><TableCell>{account.application}</TableCell><TableCell>{account.nativeIdentity}</TableCell><TableCell>{account.employeeId || "—"}</TableCell><TableCell>{accountStateChip(account.status)}</TableCell><TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -167,7 +180,7 @@ const AccountInventorySimple = () => {
       <Drawer anchor="right" open={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)}>
         <Box sx={{ width: 560, p: 3 }}>
           <Typography variant="h6" fontWeight={700}>Account Details</Typography>
-          {selectedAccount && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedAccount.rawAttributes).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2">{String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
+          {selectedAccount && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography><Box><Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>Account State</Typography>{accountStateChip(selectedAccount.status)}</Box><Typography variant="body2" color="text.secondary">Inactive means the account is still present in the source but is excluded from duplicate detection.</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedAccount.rawAttributes).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2">{String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
         </Box>
       </Drawer>
 
