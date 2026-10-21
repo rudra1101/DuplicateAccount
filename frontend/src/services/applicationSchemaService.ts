@@ -31,6 +31,9 @@ export interface ApplicationInput {
   enabled: boolean;
   schemaName?: string | null;
   nativeIdentityAttribute?: string | null;
+  statusAttribute?: string | null;
+  activeStatusValues?: string[];
+  inactiveStatusValues?: string[];
   attributes: SchemaAttributeInput[];
 }
 
@@ -46,6 +49,9 @@ export interface ApplicationSchemaResponse {
     version: number;
     name: string | null;
     nativeIdentityAttribute: string | null;
+    statusAttribute: string | null;
+    activeStatusValues: string[];
+    inactiveStatusValues: string[];
     isActive: boolean;
     attributes: Array<SchemaAttributeInput & { id: number }>;
   } | null;
