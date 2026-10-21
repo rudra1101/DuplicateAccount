@@ -12,6 +12,9 @@ from app.schemas.integration import IntegrationCreate, IntegrationUpdate
 from app.services.integration_ingestion_service import execute_integration, execution_to_dict
 
 
+ACCOUNT_STATUS_MAPPINGS_KEY = "accountStatusMappings"
+
+
 def _schedule_to_dict(schedule) -> dict | None:
     if schedule is None:
         return None
@@ -138,7 +141,15 @@ def update_integration(db: Session, integration: IntegrationRecord, payload: Int
     if "enabled" in update_data:
         integration.enabled = bool(update_data["enabled"])
     if "configuration" in update_data:
-        new_configuration = update_data["configuration"] or {}
+        existing_configuration = dict(integration.configuration or {})
+        new_configuration = dict(update_data["configuration"] or {})
+        if (
+            ACCOUNT_STATUS_MAPPINGS_KEY not in new_configuration
+            and ACCOUNT_STATUS_MAPPINGS_KEY in existing_configuration
+        ):
+            new_configuration[ACCOUNT_STATUS_MAPPINGS_KEY] = existing_configuration[
+                ACCOUNT_STATUS_MAPPINGS_KEY
+            ]
         connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=new_configuration)
         connector.validate_configuration()
         integration.configuration = new_configuration
