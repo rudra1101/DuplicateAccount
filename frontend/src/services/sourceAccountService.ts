@@ -1,5 +1,7 @@
 import { API_BASE_URL } from "../config/api";
 
+export type AccountState = "ACTIVE" | "INACTIVE" | "UNKNOWN";
+
 export interface SourceAccount {
   id: number;
   integrationId: number;
@@ -83,10 +85,12 @@ export async function getSourceAccounts(
   pageSize = 50,
   search = "",
   active?: boolean,
+  accountState?: AccountState,
 ): Promise<SourceAccountListResponse> {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search.trim()) params.set("search", search.trim());
   if (active !== undefined) params.set("active", String(active));
+  if (accountState) params.set("accountState", accountState);
   const response = await fetch(`${API_BASE_URL}/integrations/${integrationId}/accounts?${params.toString()}`);
   return parseResponse<SourceAccountListResponse>(response, "Unable to load source accounts.");
 }
