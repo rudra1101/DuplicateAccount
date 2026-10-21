@@ -98,8 +98,15 @@ const emptyApplication = (): ApplicationInput => ({
   enabled: true,
   schemaName: "",
   nativeIdentityAttribute: null,
+  statusAttribute: null,
+  activeStatusValues: ["true"],
+  inactiveStatusValues: ["false"],
   attributes: [],
 });
+
+const parseStatusValues = (value: string): string[] => Array.from(new Set(
+  value.split(",").map((item) => item.trim()).filter(Boolean),
+));
 
 const newRule = (priority: number): CorrelationRule => ({
   priority,
@@ -222,6 +229,9 @@ const SourceWizard = () => {
               enabled: item.enabled,
               schemaName: item.schema?.name ?? "",
               nativeIdentityAttribute: item.schema?.nativeIdentityAttribute ?? null,
+              statusAttribute: item.schema?.statusAttribute ?? null,
+              activeStatusValues: item.schema?.activeStatusValues ?? [],
+              inactiveStatusValues: item.schema?.inactiveStatusValues ?? [],
               attributes: item.schema?.attributes.map((attribute, index) => ({
                 name: attribute.name,
                 displayName: attribute.displayName,
@@ -437,7 +447,6 @@ const SourceWizard = () => {
       const result = await testIntegration(connectionId);
       setTestResult(result);
       setConnectionValidated(result.success);
-
       if (isLocalFile && !result.success && enabled) {
         await updateIntegration(connectionId, { enabled: false });
         setEnabled(false);
@@ -474,8 +483,9 @@ const SourceWizard = () => {
       updateApplication(selectedApplicationIndex, {
         attributes: result.attributes.map((attribute, index) => ({ ...emptyAttribute(index), ...attribute, position: index })),
         nativeIdentityAttribute: null,
+        statusAttribute: null,
       });
-      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}. Select the Native Identity attribute before continuing.`);
+      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}. Select the Native Identity and optional Account Status attributes before continuing.`);
     } catch (detectError) {
       setError(detectError instanceof Error ? detectError.message : "Unable to detect source schema.");
     } finally {
@@ -494,8 +504,8 @@ const SourceWizard = () => {
         position: index,
       }));
       if (mapped.some((attribute) => !attribute.name)) throw new Error("Every uploaded schema attribute requires a name.");
-      updateApplication(selectedApplicationIndex, { attributes: mapped, nativeIdentityAttribute: null });
-      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes. Select the Native Identity attribute before continuing.`);
+      updateApplication(selectedApplicationIndex, { attributes: mapped, nativeIdentityAttribute: null, statusAttribute: null });
+      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes. Select the Native Identity and optional Account Status attributes before continuing.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to read schema file.");
     }
@@ -511,6 +521,19 @@ const SourceWizard = () => {
       if (!application.nativeIdentityAttribute) {
         setError(`Select a Native Identity attribute for ${application.name || "each application"}.`);
         return false;
+      }
+      if (application.statusAttribute) {
+        const names = new Set(application.attributes.map((attribute) => attribute.name.toLowerCase()));
+        if (!names.has(application.statusAttribute.toLowerCase())) {
+          setError(`The Account Status attribute for ${application.name} must exist in its schema.`);
+          return false;
+        }
+        const active = new Set((application.activeStatusValues ?? []).map((value) => value.toLowerCase()));
+        const inactive = new Set((application.inactiveStatusValues ?? []).map((value) => value.toLowerCase()));
+        if (Array.from(active).some((value) => inactive.has(value))) {
+          setError(`Active and inactive status values cannot overlap for ${application.name}.`);
+          return false;
+        }
       }
     }
     return true;
@@ -536,6 +559,9 @@ const SourceWizard = () => {
     ...application,
     name: application.name.trim(),
     schemaName: application.schemaName?.trim() || `${application.name.trim()} schema`,
+    statusAttribute: application.statusAttribute?.trim() || null,
+    activeStatusValues: (application.activeStatusValues ?? []).map((value) => value.trim()).filter(Boolean),
+    inactiveStatusValues: (application.inactiveStatusValues ?? []).map((value) => value.trim()).filter(Boolean),
   }));
 
   const goNext = async () => {
@@ -615,7 +641,7 @@ const SourceWizard = () => {
         <Box sx={{ display: "flex", justifyContent: "space-between", gap: 2 }}>
           <Box>
             <Typography variant="h5" fontWeight={700}>{editing ? "Edit Source" : "Create Source"}</Typography>
-            <Typography color="text.secondary">Configure connection, schema, native identity, and account correlation in one onboarding flow.</Typography>
+            <Typography color="text.secondary">Configure connection, schema, native identity, account status, and correlation in one onboarding flow.</Typography>
           </Box>
           <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate("/integrations")}>Back</Button>
         </Box>
@@ -692,7 +718,7 @@ const SourceWizard = () => {
             <Stack spacing={2.5}>
               <Box>
                 <Typography variant="h6" fontWeight={700}>Schema</Typography>
-                <Typography variant="body2" color="text.secondary">Detect or define source attributes, then select the attribute that uniquely identifies one source account.</Typography>
+                <Typography variant="body2" color="text.secondary">Detect or define source attributes, select the Native Identity, and optionally define which attribute controls active/inactive account state.</Typography>
               </Box>
               <FormControl sx={{ maxWidth: 360 }}>
                 <InputLabel>Application</InputLabel>
@@ -727,6 +753,50 @@ const SourceWizard = () => {
                       </FormControl>
                     </Stack>
                   </Paper>
+
+                  <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+                    <Stack spacing={1.5}>
+                      <Typography fontWeight={700}>Account Status</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Select the source attribute that tells IdentityAI whether an account is active. Inactive accounts stay visible in Accounts but are excluded from future duplicate detection.
+                      </Typography>
+                      <FormControl fullWidth>
+                        <InputLabel>Account Status Attribute</InputLabel>
+                        <Select
+                          label="Account Status Attribute"
+                          value={selectedApplication.statusAttribute ?? ""}
+                          onChange={(event) => updateApplication(selectedApplicationIndex, { statusAttribute: event.target.value || null })}
+                        >
+                          <MenuItem value="">Not configured</MenuItem>
+                          {selectedApplication.attributes.filter((attribute) => attribute.name).map((attribute) => (
+                            <MenuItem key={attribute.name} value={attribute.name}>{attribute.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {selectedApplication.statusAttribute && (
+                        <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                          <TextField
+                            fullWidth
+                            label="Active values"
+                            value={(selectedApplication.activeStatusValues ?? []).join(", ")}
+                            helperText="Comma-separated, e.g. true, enabled, active"
+                            onChange={(event) => updateApplication(selectedApplicationIndex, { activeStatusValues: parseStatusValues(event.target.value) })}
+                          />
+                          <TextField
+                            fullWidth
+                            label="Inactive values"
+                            value={(selectedApplication.inactiveStatusValues ?? []).join(", ")}
+                            helperText="Comma-separated, e.g. false, disabled, inactive"
+                            onChange={(event) => updateApplication(selectedApplicationIndex, { inactiveStatusValues: parseStatusValues(event.target.value) })}
+                          />
+                        </Stack>
+                      )}
+                      {!selectedApplication.statusAttribute && (
+                        <Alert severity="info">Without a configured status attribute, account state is treated as UNKNOWN and remains eligible for duplicate detection.</Alert>
+                      )}
+                    </Stack>
+                  </Paper>
+
                   <TableContainer component={Paper} variant="outlined">
                     <Table size="small">
                       <TableHead><TableRow><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell>Required</TableCell><TableCell /></TableRow></TableHead>
@@ -792,9 +862,9 @@ const SourceWizard = () => {
 
           {activeStep === reviewStep && (
             <Stack spacing={3}>
-              <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, native identity, and correlation behavior before finishing.</Typography></Box>
+              <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, native identity, account status, and correlation behavior before finishing.</Typography></Box>
               <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{name}</Typography><Typography variant="body2" color="text.secondary">{selectedConnector?.displayName ?? connectorType} · {sourcePurpose === "AUTHORITATIVE" ? "Authoritative Source" : "Account Source"} · {enabled ? "Enabled" : "Disabled"}</Typography></Paper>
-              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography></Paper>)}
+              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography><Typography variant="body2" color="text.secondary">Account Status: {application.statusAttribute ? `${application.statusAttribute} · Active [${(application.activeStatusValues ?? []).join(", ") || "default"}] · Inactive [${(application.inactiveStatusValues ?? []).join(", ") || "default"}]` : "Not configured (UNKNOWN remains duplicate-eligible)"}</Typography></Paper>)}
               {sourcePurpose === "ACCOUNT" && <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>Account Correlation</Typography><Typography variant="body2" color="text.secondary">Authoritative source: {authoritativeSources.find((item) => item.id === Number(authoritativeIntegrationId))?.name ?? "Not selected"}</Typography><Stack spacing={0.5} sx={{ mt: 1 }}>{rules.map((rule, index) => <Typography key={index} variant="body2">{index + 1}. {rule.accountAttribute} → {rule.identityAttribute} ({rule.matchType})</Typography>)}</Stack></Paper>}
             </Stack>
           )}
