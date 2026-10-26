@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
+  Chip,
   CircularProgress,
   Drawer,
   FormControl,
@@ -41,6 +42,8 @@ const AccountInventorySimple = () => {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(50);
   const [total, setTotal] = useState(0);
+  const [allTotal, setAllTotal] = useState(0);
+  const [inactiveTotal, setInactiveTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [orphanType, setOrphanType] = useState("");
   const [loading, setLoading] = useState(true);
@@ -72,13 +75,32 @@ const AccountInventorySimple = () => {
       try {
         setLoading(true);
         setError("");
-        const [accountResponse, orphanResponse] = await Promise.all([
-          getSourceAccounts(Number(integrationId), page + 1, pageSize, search, true),
-          getCurrentOrphanFindings(Number(integrationId), orphanType || undefined),
+        const sourceId = Number(integrationId);
+        const [allCountResponse, inactiveCountResponse, orphanResponse] = await Promise.all([
+          getSourceAccounts(sourceId, 1, 1, "", true),
+          getSourceAccounts(sourceId, 1, 1, "", true, "INACTIVE"),
+          getCurrentOrphanFindings(sourceId, orphanType || undefined),
         ]);
-        setAccounts(accountResponse.items);
-        setTotal(accountResponse.total);
+
+        setAllTotal(allCountResponse.total);
+        setInactiveTotal(inactiveCountResponse.total);
         setOrphans(orphanResponse);
+
+        if (tab === 0 || tab === 2) {
+          const accountResponse = await getSourceAccounts(
+            sourceId,
+            page + 1,
+            pageSize,
+            search,
+            true,
+            tab === 2 ? "INACTIVE" : undefined,
+          );
+          setAccounts(accountResponse.items);
+          setTotal(accountResponse.total);
+        } else {
+          setAccounts([]);
+          setTotal(0);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unable to load account inventory.");
       } finally {
@@ -86,17 +108,36 @@ const AccountInventorySimple = () => {
       }
     };
     void load();
-  }, [integrationId, page, pageSize, search, orphanType]);
+  }, [integrationId, page, pageSize, search, orphanType, tab]);
 
   const accountLabel = (account: SourceAccount) => account.displayName || account.username || account.nativeIdentity;
   const orphanLabel = (finding: OrphanFinding) => finding.displayName || finding.username || finding.email || finding.nativeIdentity || `Account ${finding.accountId}`;
+
+  const accountStateChip = (status: string | null) => {
+    const normalized = (status || "UNKNOWN").toUpperCase();
+    return (
+      <Chip
+        size="small"
+        label={normalized}
+        color={normalized === "ACTIVE" ? "success" : normalized === "INACTIVE" ? "default" : "warning"}
+        variant={normalized === "INACTIVE" ? "outlined" : "filled"}
+      />
+    );
+  };
+
+  const handleTabChange = (_event: React.SyntheticEvent, value: number) => {
+    setTab(value);
+    setPage(0);
+    setSelectedAccount(null);
+    setSelectedOrphan(null);
+  };
 
   return (
     <PageContainer title="Accounts">
       <Stack spacing={3}>
         <Box>
           <Typography variant="h5" fontWeight={700}>Account Inventory</Typography>
-          <Typography color="text.secondary">Persistent source accounts and current orphan findings.</Typography>
+          <Typography color="text.secondary">Persistent source accounts, current orphan findings, and inactive accounts retained for visibility and audit.</Typography>
         </Box>
 
         <Paper variant="outlined" sx={{ p: 2.5 }}>
@@ -107,9 +148,7 @@ const AccountInventorySimple = () => {
                 {integrations.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}
               </Select>
             </FormControl>
-            {tab === 0 ? (
-              <TextField size="small" placeholder="Search accounts..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} sx={{ flex: 1 }} />
-            ) : (
+            {tab === 1 ? (
               <FormControl size="small" sx={{ minWidth: 240 }}>
                 <InputLabel>Orphan Type</InputLabel>
                 <Select label="Orphan Type" value={orphanType} onChange={(e) => setOrphanType(e.target.value)}>
@@ -117,6 +156,14 @@ const AccountInventorySimple = () => {
                   {ORPHAN_TYPES.map((type) => <MenuItem key={type} value={type}>{type.replaceAll("_", " ")}</MenuItem>)}
                 </Select>
               </FormControl>
+            ) : (
+              <TextField
+                size="small"
+                placeholder={tab === 2 ? "Search inactive accounts..." : "Search accounts..."}
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                sx={{ flex: 1 }}
+              />
             )}
           </Stack>
         </Paper>
@@ -124,28 +171,13 @@ const AccountInventorySimple = () => {
         {error && <Alert severity="error">{error}</Alert>}
 
         <Paper variant="outlined">
-          <Tabs value={tab} onChange={(_, value) => setTab(value)}>
-            <Tab label={`All Accounts (${total})`} />
+          <Tabs value={tab} onChange={handleTabChange}>
+            <Tab label={`All Accounts (${allTotal})`} />
             <Tab label={`Orphan Accounts (${orphans.length})`} />
+            <Tab label={`Inactive Accounts (${inactiveTotal})`} />
           </Tabs>
 
-          {tab === 0 ? (
-            <>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Native Identity</TableCell><TableCell>Employee ID</TableCell><TableCell>Status</TableCell><TableCell>Last Seen</TableCell></TableRow></TableHead>
-                  <TableBody>
-                    {loading ? <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow> : accounts.map((account) => (
-                      <TableRow key={account.id} hover onClick={() => setSelectedAccount(account)} sx={{ cursor: "pointer" }}>
-                        <TableCell>{accountLabel(account)}</TableCell><TableCell>{account.application}</TableCell><TableCell>{account.nativeIdentity}</TableCell><TableCell>{account.employeeId || "—"}</TableCell><TableCell>{account.status || "—"}</TableCell><TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-              <TablePagination component="div" count={total} page={page} rowsPerPage={pageSize} onPageChange={(_, value) => setPage(value)} onRowsPerPageChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }} rowsPerPageOptions={[25, 50, 100, 200]} />
-            </>
-          ) : (
+          {tab === 1 ? (
             <TableContainer>
               <Table size="small">
                 <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Orphan Type</TableCell><TableCell>Correlation Method</TableCell><TableCell>Status</TableCell><TableCell>Last Detected</TableCell></TableRow></TableHead>
@@ -160,6 +192,26 @@ const AccountInventorySimple = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+          ) : (
+            <>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Native Identity</TableCell><TableCell>Employee ID</TableCell><TableCell>Account State</TableCell><TableCell>Last Seen</TableCell></TableRow></TableHead>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow>
+                    ) : accounts.length === 0 ? (
+                      <TableRow><TableCell colSpan={6} align="center">{tab === 2 ? `No inactive accounts found for ${selectedIntegration?.name ?? "this source"}.` : `No accounts found for ${selectedIntegration?.name ?? "this source"}.`}</TableCell></TableRow>
+                    ) : accounts.map((account) => (
+                      <TableRow key={account.id} hover onClick={() => setSelectedAccount(account)} sx={{ cursor: "pointer" }}>
+                        <TableCell>{accountLabel(account)}</TableCell><TableCell>{account.application}</TableCell><TableCell>{account.nativeIdentity}</TableCell><TableCell>{account.employeeId || "—"}</TableCell><TableCell>{accountStateChip(account.status)}</TableCell><TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination component="div" count={total} page={page} rowsPerPage={pageSize} onPageChange={(_, value) => setPage(value)} onRowsPerPageChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }} rowsPerPageOptions={[25, 50, 100, 200]} />
+            </>
           )}
         </Paper>
       </Stack>
@@ -167,7 +219,7 @@ const AccountInventorySimple = () => {
       <Drawer anchor="right" open={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)}>
         <Box sx={{ width: 560, p: 3 }}>
           <Typography variant="h6" fontWeight={700}>Account Details</Typography>
-          {selectedAccount && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedAccount.rawAttributes).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2">{String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
+          {selectedAccount && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography><Box><Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>Account State</Typography>{accountStateChip(selectedAccount.status)}</Box><Typography variant="body2" color="text.secondary">Inactive means the account is still present in the source but is excluded from duplicate detection.</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedAccount.rawAttributes).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2">{String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
         </Box>
       </Drawer>
 

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db_models.application import ApplicationRecord
 from app.db_models.duplicate_finding import DuplicateFindingRecord
 from app.db_models.source_account import SourceAccountRecord
+from app.services.account_status_service import ACCOUNT_STATES
 
 AGGREGATION_TYPES = {"FULL", "DELTA"}
 
@@ -124,10 +125,24 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
     return {"created": created, "updated": updated, "unchanged": unchanged, "deleted": deleted, "total": len(seen_keys)}
 
 
-def list_source_accounts(db: Session, *, integration_id: int, page: int = 1, page_size: int = 50, search: str = "", active: bool | None = None) -> tuple[list[SourceAccountRecord], int]:
+def list_source_accounts(
+    db: Session,
+    *,
+    integration_id: int,
+    page: int = 1,
+    page_size: int = 50,
+    search: str = "",
+    active: bool | None = None,
+    account_state: str | None = None,
+) -> tuple[list[SourceAccountRecord], int]:
     filters = [SourceAccountRecord.integration_id == integration_id]
     if active is not None:
         filters.append(SourceAccountRecord.active.is_(active))
+    if account_state:
+        normalized_state = account_state.strip().upper()
+        if normalized_state not in ACCOUNT_STATES:
+            raise ValueError("Account state must be ACTIVE, INACTIVE, or UNKNOWN.")
+        filters.append(func.upper(func.coalesce(SourceAccountRecord.status, "UNKNOWN")) == normalized_state)
     if search.strip():
         needle = f"%{search.strip()}%"
         filters.append(or_(SourceAccountRecord.native_identity.ilike(needle), SourceAccountRecord.username.ilike(needle), SourceAccountRecord.email.ilike(needle), SourceAccountRecord.employee_id.ilike(needle), SourceAccountRecord.display_name.ilike(needle), SourceAccountRecord.application.ilike(needle)))

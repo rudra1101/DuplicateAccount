@@ -57,6 +57,9 @@ class ApplicationInput(BaseModel):
     enabled: bool = True
     schemaName: str | None = None
     nativeIdentityAttribute: str | None = None
+    statusAttribute: str | None = None
+    activeStatusValues: list[str] = Field(default_factory=list)
+    inactiveStatusValues: list[str] = Field(default_factory=list)
     attributes: list[SchemaAttributeInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -68,6 +71,17 @@ class ApplicationInput(BaseModel):
             self.objectType = self.objectType.strip() or None
         if self.nativeIdentityAttribute is not None:
             self.nativeIdentityAttribute = self.nativeIdentityAttribute.strip() or None
+        if self.statusAttribute is not None:
+            self.statusAttribute = self.statusAttribute.strip() or None
+
+        self.activeStatusValues = sorted(
+            {str(value).strip() for value in self.activeStatusValues if str(value).strip()},
+            key=str.casefold,
+        )
+        self.inactiveStatusValues = sorted(
+            {str(value).strip() for value in self.inactiveStatusValues if str(value).strip()},
+            key=str.casefold,
+        )
 
         seen: set[str] = set()
         for attribute in self.attributes:
@@ -79,6 +93,14 @@ class ApplicationInput(BaseModel):
         if self.nativeIdentityAttribute is not None:
             if self.nativeIdentityAttribute.lower() not in seen:
                 raise ValueError("Native identity attribute must exist in the application schema.")
+
+        if self.statusAttribute is not None:
+            if self.statusAttribute.lower() not in seen:
+                raise ValueError("Status attribute must exist in the application schema.")
+            active = {value.casefold() for value in self.activeStatusValues}
+            inactive = {value.casefold() for value in self.inactiveStatusValues}
+            if active.intersection(inactive):
+                raise ValueError("Active and inactive status values cannot overlap.")
 
         total_weight = sum(
             attribute.matchWeight

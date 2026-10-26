@@ -25,19 +25,24 @@ def get_source_accounts(
     page_size: int = Query(default=50, ge=1, le=200, alias="pageSize"),
     search: str = Query(default=""),
     active: bool | None = Query(default=None),
+    account_state: str | None = Query(default=None, alias="accountState"),
     db: Session = Depends(get_db),
     _user=Depends(require_permission("integration.view")),
 ):
     if db.get(IntegrationRecord, integration_id) is None:
         raise HTTPException(status_code=404, detail="Integration not found.")
-    rows, total = list_source_accounts(
-        db,
-        integration_id=integration_id,
-        page=page,
-        page_size=page_size,
-        search=search,
-        active=active,
-    )
+    try:
+        rows, total = list_source_accounts(
+            db,
+            integration_id=integration_id,
+            page=page,
+            page_size=page_size,
+            search=search,
+            active=active,
+            account_state=account_state,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "page": page,
         "pageSize": page_size,

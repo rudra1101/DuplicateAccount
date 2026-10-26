@@ -15,6 +15,7 @@ from app.db_models.application import ApplicationRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.job_execution import JobExecutionRecord
 from app.services.account_loader import load_uploaded_accounts
+from app.services.account_status_service import account_is_duplicate_eligible
 from app.services.correlation_policy_service import get_policy_for_account_integration
 from app.services.identity_ingestion_service import authoritative_identity_count, upsert_authoritative_identities
 from app.services.orphan_detection_service import detect_orphan_findings
@@ -204,6 +205,8 @@ def execute_integration(
 
         checksum = calculate_checksum(connector_file.content)
         configuration = integration.configuration or {}
+        configured_status_mappings = configuration.get("accountStatusMappings")
+        status_mappings = configured_status_mappings if isinstance(configured_status_mappings, dict) else None
         records = load_uploaded_accounts(
             io.BytesIO(connector_file.content),
             delimiter=str(configuration.get("delimiter", ",")),
@@ -211,6 +214,7 @@ def execute_integration(
             default_application=_default_application_for_integration(db, integration.id),
             allow_dynamic_schema=True,
             native_identity_attributes=_native_identity_attributes_for_integration(db, integration.id),
+            status_mappings=status_mappings,
         )
 
         if integration.source_purpose == "AUTHORITATIVE":
@@ -249,11 +253,23 @@ def execute_integration(
                 processed_count=len(records), inventory_stats=inventory_stats, scan_id=scan.id,
             )
 
+        duplicate_eligible_records = [
+            record
+            for record in records
+            if account_is_duplicate_eligible(record.status)
+        ]
+
         pair_feedback = load_pair_feedback(db, integration_id=integration.id)
-        duplicate_groups, duplicate_details, review_candidates = analyze_duplicate_decisions(records, pair_feedback=pair_feedback)
+        duplicate_groups, duplicate_details, review_candidates = analyze_duplicate_decisions(
+            duplicate_eligible_records,
+            pair_feedback=pair_feedback,
+        )
         next_group_id = max(duplicate_details.keys(), default=0) + 1
         schema_groups, schema_details = detect_schema_duplicate_results(
-            db, integration_id=integration.id, accounts=records, starting_group_id=next_group_id
+            db,
+            integration_id=integration.id,
+            accounts=duplicate_eligible_records,
+            starting_group_id=next_group_id,
         )
         _merge_schema_results(duplicate_groups, duplicate_details, schema_groups, schema_details)
 
