@@ -2,6 +2,18 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+RUN apk add --no-cache ca-certificates
+
+# deploy.ps1 can stage Windows enterprise interception certificates (for
+# example Zscaler) in frontend/certs before npm downloads dependencies.
+COPY certs/ /usr/local/share/ca-certificates/identityai/
+RUN if find /usr/local/share/ca-certificates/identityai -type f -name '*.crt' -print -quit | grep -q .; then \
+      update-ca-certificates; \
+    fi
+
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
+    NPM_CONFIG_CAFILE=/etc/ssl/certs/ca-certificates.crt
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
