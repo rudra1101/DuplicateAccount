@@ -247,7 +247,15 @@ def get_branding_logo(db: Session = Depends(get_db)):
     return Response(
         content=settings.logo_data,
         media_type=settings.logo_mime_type,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            # The logo is intentionally public and is rendered by normal <img>
+            # requests on login/admin screens. Local development commonly serves
+            # the frontend from localhost:5173 and the API from 127.0.0.1:8000,
+            # which is cross-site for CORP. Override the global same-site policy
+            # only for this public image response.
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        },
     )
 
 
