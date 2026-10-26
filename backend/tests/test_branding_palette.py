@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 import app.db_models  # noqa: F401
+from app.api.settings import get_branding_logo
 from app.database.base import Base
 from app.services.settings_service import (
     DEFAULT_BRANDING_BACKGROUND,
@@ -97,6 +98,23 @@ def test_branding_logo_is_persisted_and_reported():
         response = branding_response(db)
         assert response["customLogo"] is True
         assert response["filename"] == "company-logo.png"
+
+
+def test_branding_logo_response_allows_cross_origin_rendering():
+    with _session() as db:
+        logo_bytes = b"fake-png-content"
+        save_logo(
+            db,
+            filename="company-logo.png",
+            mime_type="image/png",
+            data=logo_bytes,
+        )
+
+        response = get_branding_logo(db)
+        assert response.body == logo_bytes
+        assert response.media_type == "image/png"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["cross-origin-resource-policy"] == "cross-origin"
 
 
 def test_branding_logo_can_be_cleared():
