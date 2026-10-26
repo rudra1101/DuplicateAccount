@@ -11,7 +11,10 @@ param(
     [switch]$SetupAI,
     [switch]$OpenFirewall,
     [switch]$SkipBuild,
-    [switch]$NoOpen
+    [switch]$NoOpen,
+
+    [string]$CorporateCaPath = "",
+    [switch]$SkipCorporateCaAutoDetect
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,6 +24,8 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $EnvPath = Join-Path $RepoRoot "backend\.env"
 $ComposeFile = Join-Path $RepoRoot "docker-compose.yml"
 $HttpsComposeFile = Join-Path $RepoRoot "docker-compose.https.yml"
+$BackendCertDir = Join-Path $RepoRoot "backend\certs"
+$FrontendCertDir = Join-Path $RepoRoot "frontend\certs"
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -101,6 +106,115 @@ function Set-EnvValue([string]$Key, [string]$Value) {
         $lines,
         (New-Object System.Text.UTF8Encoding($false))
     )
+}
+
+function Convert-CertificateToPem([System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate) {
+    $bytes = $Certificate.Export(
+        [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert
+    )
+    $base64 = [Convert]::ToBase64String(
+        $bytes,
+        [Base64FormattingOptions]::InsertLineBreaks
+    )
+    return "-----BEGIN CERTIFICATE-----`r`n$base64`r`n-----END CERTIFICATE-----`r`n"
+}
+
+function Write-CertificatePem([string]$Pem, [string]$FileName) {
+    foreach ($directory in @($BackendCertDir, $FrontendCertDir)) {
+        if (-not (Test-Path $directory)) {
+            New-Item -ItemType Directory -Force -Path $directory | Out-Null
+        }
+        $target = Join-Path $directory $FileName
+        [System.IO.File]::WriteAllText(
+            $target,
+            $Pem,
+            (New-Object System.Text.UTF8Encoding($false))
+        )
+    }
+}
+
+function Stage-CertificateFile([string]$Path) {
+    $resolved = (Resolve-Path $Path -ErrorAction Stop).Path
+    $raw = [System.IO.File]::ReadAllText($resolved)
+
+    if ($raw -match "-----BEGIN CERTIFICATE-----") {
+        $pem = $raw.Trim() + "`r`n"
+    }
+    else {
+        $certificate = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($resolved)
+        $pem = Convert-CertificateToPem $certificate
+    }
+
+    Write-CertificatePem $pem "identityai-manual.crt"
+}
+
+function Stage-CorporateCertificates {
+    foreach ($directory in @($BackendCertDir, $FrontendCertDir)) {
+        if (-not (Test-Path $directory)) {
+            New-Item -ItemType Directory -Force -Path $directory | Out-Null
+        }
+        Get-ChildItem -Path $directory -Filter "identityai-auto-*.crt" -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        $manual = Join-Path $directory "identityai-manual.crt"
+        if (Test-Path $manual) {
+            Remove-Item $manual -Force
+        }
+    }
+
+    $staged = 0
+
+    if ($CorporateCaPath) {
+        Stage-CertificateFile $CorporateCaPath
+        $staged++
+        Write-Ok "Staged the supplied corporate CA certificate for Docker builds."
+    }
+
+    if (-not $SkipCorporateCaAutoDetect -and $env:OS -eq "Windows_NT") {
+        $vendorPattern = "Zscaler|Netskope|Fortinet|FortiGate|Palo Alto|Blue Coat|Symantec|Forcepoint|Cisco Umbrella"
+        $stores = @(
+            "Cert:\LocalMachine\Root",
+            "Cert:\CurrentUser\Root",
+            "Cert:\LocalMachine\CA",
+            "Cert:\CurrentUser\CA"
+        )
+        $seen = @{}
+
+        foreach ($store in $stores) {
+            if (-not (Test-Path $store)) {
+                continue
+            }
+
+            foreach ($certificate in (Get-ChildItem $store -ErrorAction SilentlyContinue)) {
+                $subject = [string]$certificate.Subject
+                $issuer = [string]$certificate.Issuer
+                if ($subject -notmatch $vendorPattern -and $issuer -notmatch $vendorPattern) {
+                    continue
+                }
+
+                $thumbprint = [string]$certificate.Thumbprint
+                if (-not $thumbprint -or $seen.ContainsKey($thumbprint)) {
+                    continue
+                }
+                $seen[$thumbprint] = $true
+
+                try {
+                    $pem = Convert-CertificateToPem $certificate
+                    Write-CertificatePem $pem "identityai-auto-$thumbprint.crt"
+                    $staged++
+                }
+                catch {
+                    Write-Warn "Could not export enterprise certificate '$subject': $($_.Exception.Message)"
+                }
+            }
+        }
+    }
+
+    if ($staged -gt 0) {
+        Write-Ok "Staged $staged enterprise CA certificate(s) for pip/npm and backend HTTPS trust."
+    }
+    else {
+        Write-Host "No supported corporate TLS interception CA was detected; using standard public CA trust." -ForegroundColor DarkGray
+    }
 }
 
 function Get-LanIp {
@@ -247,6 +361,9 @@ try {
             throw "docker-compose.https.yml is missing."
         }
     }
+
+    Write-Step "Preparing enterprise TLS trust"
+    Stage-CorporateCertificates
 
     Write-Step "Preparing deployment configuration"
     Ensure-EnvFile
@@ -403,6 +520,7 @@ try {
     Write-Host "  .\deploy.ps1                    # LAN/demo deployment"
     Write-Host "  .\deploy.ps1 -SetupAI           # LAN deployment + ensure Rudrix models"
     Write-Host "  .\deploy.ps1 -Mode https -Domain identity.example.com"
+    Write-Host "  .\deploy.ps1 -CorporateCaPath C:\path\company-root.cer"
     Write-Host "  docker compose --env-file backend/.env ps"
 }
 finally {
