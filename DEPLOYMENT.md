@@ -30,18 +30,53 @@ or run:
 The script automatically:
 
 1. checks Docker and Docker Compose;
-2. creates `backend/.env` if it does not exist;
-3. generates a PostgreSQL password if missing;
-4. generates a secure authentication secret if missing;
-5. sets Docker database networking to `DATABASE_HOST=postgres`;
-6. detects the Windows hostname and LAN IPv4 address;
-7. configures allowed hosts and same-origin browser access;
-8. validates Docker Compose before starting;
-9. builds and starts PostgreSQL, backend, and frontend;
-10. waits for PostgreSQL, backend, and frontend health checks;
-11. opens the application after a successful deployment.
+2. detects common corporate TLS interception certificates such as Zscaler from the Windows certificate store and stages them for the Docker builds;
+3. creates `backend/.env` if it does not exist;
+4. generates a PostgreSQL password if missing;
+5. generates a secure authentication secret if missing;
+6. sets Docker database networking to `DATABASE_HOST=postgres`;
+7. detects the Windows hostname and LAN IPv4 address;
+8. configures allowed hosts and same-origin browser access;
+9. validates Docker Compose before starting;
+10. builds and starts PostgreSQL, backend, and frontend;
+11. waits for PostgreSQL, backend, and frontend health checks;
+12. opens the application after a successful deployment.
 
-### LAN/demo URL
+### Corporate SSL / Zscaler
+
+On corporate machines, HTTPS inspection products can replace the public certificate chain with an enterprise CA. That certificate is trusted by Windows, but a Linux Docker build does not automatically inherit the Windows trust store. This can cause errors such as:
+
+```text
+CERTIFICATE_VERIFY_FAILED
+unable to get local issuer certificate
+files.pythonhosted.org
+```
+
+`deploy.ps1` now searches the Windows Root and Intermediate CA stores for common enterprise interception products, including Zscaler, and writes the detected CA certificates into the backend/frontend Docker build contexts. The Python build uses the staged CA bundle for `pip`, the Node build uses it for `npm`, and the backend keeps the same CA bundle for runtime HTTPS calls.
+
+Generated certificate files are ignored by Git and are never committed.
+
+If the company uses a CA that is not detected automatically, provide it explicitly:
+
+```powershell
+.\deploy.ps1 -CorporateCaPath C:\certs\company-root.cer
+```
+
+PEM certificate files are also accepted:
+
+```powershell
+.\deploy.ps1 -CorporateCaPath C:\certs\company-root.crt
+```
+
+To disable automatic enterprise CA discovery:
+
+```powershell
+.\deploy.ps1 -SkipCorporateCaAutoDetect
+```
+
+This replaces the old insecure workaround of disabling certificate verification or adding `pip --trusted-host` flags.
+
+## LAN/demo URL
 
 The default local URL is:
 
