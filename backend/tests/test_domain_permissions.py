@@ -12,6 +12,7 @@ DOMAIN_PERMISSIONS = {
     "domain.account_heatmap.view",
     "domain.non_human_identity.view",
 }
+BRANDING_PERMISSION = "branding.manage"
 
 
 def test_domain_permissions_are_seeded_for_system_roles():
@@ -31,11 +32,20 @@ def test_domain_permissions_are_seeded_for_system_roles():
         assert admin is not None
         assert user is not None
 
-        assert DOMAIN_PERMISSIONS.issubset(set(permission_codes_for_role(owner)))
-        assert DOMAIN_PERMISSIONS.issubset(set(permission_codes_for_role(super_admin)))
-        assert DOMAIN_PERMISSIONS.issubset(set(permission_codes_for_role(admin)))
-
+        owner_permissions = set(permission_codes_for_role(owner))
+        super_admin_permissions = set(permission_codes_for_role(super_admin))
+        admin_permissions = set(permission_codes_for_role(admin))
         user_permissions = set(permission_codes_for_role(user))
+
+        assert DOMAIN_PERMISSIONS.issubset(owner_permissions)
+        assert DOMAIN_PERMISSIONS.issubset(super_admin_permissions)
+        assert DOMAIN_PERMISSIONS.issubset(admin_permissions)
+
+        assert BRANDING_PERMISSION in owner_permissions
+        assert BRANDING_PERMISSION in super_admin_permissions
+        assert BRANDING_PERMISSION in admin_permissions
+        assert BRANDING_PERMISSION not in user_permissions
+
         assert "domain.account_intelligence.view" in user_permissions
         assert "domain.account_heatmap.view" not in user_permissions
         assert "domain.non_human_identity.view" not in user_permissions
