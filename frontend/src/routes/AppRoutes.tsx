@@ -58,7 +58,7 @@ const AppRoutes = () => {
         </Route>
 
         {/* Platform Administration uses its own navigation workspace. */}
-        <Route element={<PermissionRoute anyOf={["user.view", "role.view", "settings.manage"]} />}>
+        <Route element={<PermissionRoute anyOf={["user.view", "role.view", "branding.manage", "settings.manage"]} />}>
           <Route path="/platform-admin" element={<AdminLayout />}>
             <Route index element={<Admin />} />
 
@@ -70,7 +70,7 @@ const AppRoutes = () => {
               <Route path="roles" element={<Admin />} />
             </Route>
 
-            <Route element={<PermissionRoute anyOf={["settings.manage"]} />}>
+            <Route element={<PermissionRoute anyOf={["branding.manage", "settings.manage"]} />}>
               <Route path="branding" element={<Admin />} />
             </Route>
           </Route>
