@@ -17,6 +17,10 @@ dist-ssr
 .env.*
 !.env.example
 
+# Enterprise TLS certificates staged locally by deploy.ps1
+certs/*
+!certs/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

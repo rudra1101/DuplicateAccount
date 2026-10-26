@@ -1,0 +1,23 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN for HTTPS deployment}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - identityai_caddy_data:/data
+      - identityai_caddy_config:/config
+    networks:
+      - identityai_internal
+
+volumes:
+  identityai_caddy_data:
+  identityai_caddy_config:
