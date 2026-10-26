@@ -10,7 +10,8 @@
     {"code":"role.create","name":"Create roles"},
     {"code":"role.edit","name":"Edit roles"},
     {"code":"role.delete","name":"Delete roles"},
-    {"code":"role.manage_permissions","name":"Manage role permissions"}
+    {"code":"role.manage_permissions","name":"Manage role permissions"},
+    {"code":"branding.manage","name":"Manage branding","description":"Upload or reset the global logo and manage the platform color palette"}
   ],
   "defaultRoles": {"OWNER":"ALL","ADMIN":"ALL","USER":[]}
 }

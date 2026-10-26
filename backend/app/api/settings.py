@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
-from app.auth import require_permission
+from app.auth import require_any_permission, require_permission
 from app.database.session import get_db
 from app.services.email_service import send_email
 from app.services.remediation_sla_service import (
@@ -201,7 +201,7 @@ def put_remediation_sla_settings(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-# Branding is readable without settings.manage because it is needed to render
+# Branding is readable without a manage permission because it is needed to render
 # the login page and global shell before a user is authenticated.
 @router.get("/branding")
 def get_branding(db: Session = Depends(get_db)):
@@ -210,7 +210,7 @@ def get_branding(db: Session = Depends(get_db)):
 
 @router.put(
     "/branding/palette",
-    dependencies=[Depends(require_permission("settings.manage"))],
+    dependencies=[Depends(require_any_permission("branding.manage", "settings.manage"))],
 )
 def put_branding_palette(
     payload: BrandingPaletteUpdate,
@@ -231,7 +231,7 @@ def put_branding_palette(
 
 @router.delete(
     "/branding/palette",
-    dependencies=[Depends(require_permission("settings.manage"))],
+    dependencies=[Depends(require_any_permission("branding.manage", "settings.manage"))],
 )
 def delete_branding_palette(db: Session = Depends(get_db)):
     reset_branding_palette(db)
@@ -247,13 +247,21 @@ def get_branding_logo(db: Session = Depends(get_db)):
     return Response(
         content=settings.logo_data,
         media_type=settings.logo_mime_type,
-        headers={"Cache-Control": "no-store"},
+        headers={
+            "Cache-Control": "no-store",
+            # The logo is intentionally public and is rendered by normal <img>
+            # requests on login/admin screens. Local development commonly serves
+            # the frontend from localhost:5173 and the API from 127.0.0.1:8000,
+            # which is cross-site for CORP. Override the global same-site policy
+            # only for this public image response.
+            "Cross-Origin-Resource-Policy": "cross-origin",
+        },
     )
 
 
 @router.put(
     "/branding/logo",
-    dependencies=[Depends(require_permission("settings.manage"))],
+    dependencies=[Depends(require_any_permission("branding.manage", "settings.manage"))],
 )
 async def upload_branding_logo(
     logo: UploadFile = File(...),
@@ -280,7 +288,7 @@ async def upload_branding_logo(
 
 @router.delete(
     "/branding/logo",
-    dependencies=[Depends(require_permission("settings.manage"))],
+    dependencies=[Depends(require_any_permission("branding.manage", "settings.manage"))],
 )
 def delete_branding_logo(db: Session = Depends(get_db)):
     clear_logo(db)

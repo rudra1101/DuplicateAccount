@@ -23,11 +23,29 @@ PUBLIC_PATHS = {
     "/api/ai/health/",
 }
 
+# These resources must render before authentication (login page/global shell).
+# Keep this method-scoped so PUT/DELETE branding mutations still go through
+# normal authentication + endpoint permission checks.
+PUBLIC_GET_PATHS = {
+    "/api/settings/branding",
+    "/api/settings/branding/logo",
+}
+
+
+def _is_public_request(method: str, path: str) -> bool:
+    normalized_method = method.upper()
+    return (
+        normalized_method == "OPTIONS"
+        or not path.startswith("/api/")
+        or path in PUBLIC_PATHS
+        or (normalized_method == "GET" and path in PUBLIC_GET_PATHS)
+    )
+
 
 async def authentication_middleware(request: Request, call_next):
     path = request.url.path
 
-    if request.method == "OPTIONS" or not path.startswith("/api/") or path in PUBLIC_PATHS:
+    if _is_public_request(request.method, path):
         return await call_next(request)
 
     token = request.cookies.get("identityai_access_token")

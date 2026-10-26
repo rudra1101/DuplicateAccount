@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 import app.db_models  # noqa: F401
+from app.api.settings import get_branding_logo
 from app.database.base import Base
 from app.services.settings_service import (
     DEFAULT_BRANDING_BACKGROUND,
@@ -10,7 +11,10 @@ from app.services.settings_service import (
     DEFAULT_BRANDING_PRIMARY,
     DEFAULT_BRANDING_SECONDARY,
     branding_response,
+    clear_logo,
+    get_application_settings,
     reset_branding_palette,
+    save_logo,
     update_branding_palette,
 )
 
@@ -73,3 +77,59 @@ def test_branding_palette_can_be_reset():
         assert response["secondaryColor"] == DEFAULT_BRANDING_SECONDARY
         assert response["navigationColor"] == DEFAULT_BRANDING_NAVIGATION
         assert response["backgroundColor"] == DEFAULT_BRANDING_BACKGROUND
+
+
+def test_branding_logo_is_persisted_and_reported():
+    with _session() as db:
+        logo_bytes = b"fake-png-content"
+        save_logo(
+            db,
+            filename="company-logo.png",
+            mime_type="image/png",
+            data=logo_bytes,
+        )
+
+        settings = get_application_settings(db)
+        assert settings is not None
+        assert settings.logo_filename == "company-logo.png"
+        assert settings.logo_mime_type == "image/png"
+        assert settings.logo_data == logo_bytes
+
+        response = branding_response(db)
+        assert response["customLogo"] is True
+        assert response["filename"] == "company-logo.png"
+
+
+def test_branding_logo_response_allows_cross_origin_rendering():
+    with _session() as db:
+        logo_bytes = b"fake-png-content"
+        save_logo(
+            db,
+            filename="company-logo.png",
+            mime_type="image/png",
+            data=logo_bytes,
+        )
+
+        response = get_branding_logo(db)
+        assert response.body == logo_bytes
+        assert response.media_type == "image/png"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["cross-origin-resource-policy"] == "cross-origin"
+
+
+def test_branding_logo_can_be_cleared():
+    with _session() as db:
+        save_logo(
+            db,
+            filename="company-logo.webp",
+            mime_type="image/webp",
+            data=b"fake-webp-content",
+        )
+        clear_logo(db)
+
+        settings = get_application_settings(db)
+        assert settings is not None
+        assert settings.logo_filename is None
+        assert settings.logo_mime_type is None
+        assert settings.logo_data is None
+        assert branding_response(db)["customLogo"] is False
