@@ -25,26 +25,28 @@ const adminItems = [
     text: "Users",
     path: "/platform-admin/users",
     icon: <ManageAccountsOutlinedIcon />,
-    permission: "user.view",
+    permissions: ["user.view"],
   },
   {
     text: "Roles & Permissions",
     path: "/platform-admin/roles",
     icon: <SecurityOutlinedIcon />,
-    permission: "role.view",
+    permissions: ["role.view"],
   },
   {
     text: "Branding",
     path: "/platform-admin/branding",
     icon: <BrandingWatermarkOutlinedIcon />,
-    permission: "settings.manage",
+    permissions: ["branding.manage", "settings.manage"],
   },
 ];
 
 export default function AdminSidebar() {
   const location = useLocation();
   const { hasPermission } = useAuth();
-  const visibleItems = adminItems.filter((item) => hasPermission(item.permission));
+  const visibleItems = adminItems.filter((item) =>
+    item.permissions.some((permission) => hasPermission(permission)),
+  );
 
   return (
     <Drawer
