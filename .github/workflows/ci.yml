@@ -115,7 +115,7 @@ jobs:
         run: npm run build
 
   container-builds:
-    name: Compose + monitoring + container builds
+    name: Compose + deployment + container builds
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs:
@@ -132,17 +132,56 @@ jobs:
           POSTGRES_DB=identityai_ci
           POSTGRES_USER=identityai
           POSTGRES_PASSWORD=identityai-ci-password
+          DATABASE_HOST=postgres
+          DATABASE_PORT=5432
+          DATABASE_NAME=identityai_ci
+          DATABASE_USER=identityai
+          DATABASE_PASSWORD=identityai-ci-password
           APP_ENV=development
           AUTH_SECRET_KEY=identityai-ci-auth-secret-key-with-more-than-32-characters
-          ALLOWED_HOSTS=localhost,127.0.0.1,backend,testserver
+          ALLOWED_HOSTS=localhost,127.0.0.1,backend,frontend,testserver
           CORS_ORIGINS=
           AUTH_COOKIE_SECURE=false
           AUTH_COOKIE_SAMESITE=lax
           SECURITY_HEADERS_ENABLED=true
+          FRONTEND_BIND_ADDRESS=0.0.0.0
+          FRONTEND_PORT=8080
+          APP_DOMAIN=identity.example.com
           EOF
+
+      - name: Validate PowerShell deployment script syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD "deploy.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
 
       - name: Validate Docker Compose configuration
         run: docker compose --env-file backend/.env --profile monitoring config --quiet
+
+      - name: Validate HTTPS Docker Compose configuration
+        run: >-
+          docker compose
+          --env-file backend/.env
+          -f docker-compose.yml
+          -f docker-compose.https.yml
+          config --quiet
+
+      - name: Validate Caddy HTTPS configuration
+        run: >-
+          docker run --rm
+          -e APP_DOMAIN=identity.example.com
+          -v "$PWD/ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2.10-alpine
+          caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
       - name: Validate Prometheus configuration and alert rules
         run: >-
