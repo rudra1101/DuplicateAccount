@@ -14,7 +14,7 @@ export default function Admin() {
   const location = useLocation();
   const canUsers = hasPermission("user.view");
   const canRoles = hasPermission("role.view");
-  const canBranding = hasPermission("settings.manage");
+  const canBranding = hasPermission("branding.manage") || hasPermission("settings.manage");
 
   const allowedSections = useMemo<AdminSection[]>(() => {
     const sections: AdminSection[] = [];
