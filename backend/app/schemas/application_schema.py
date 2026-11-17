@@ -74,6 +74,8 @@ class ApplicationInput(BaseModel):
     lastLoginDateFormat: str = "AUTO"
     lastLoginCustomFormat: str | None = None
     inactivityThresholdDays: int | None = Field(default=None, ge=1, le=3650)
+    automaticRemindersEnabled: bool = False
+    reminderIntervalDays: int = Field(default=3, ge=1, le=365)
     attributes: list[SchemaAttributeInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -138,6 +140,8 @@ class ApplicationInput(BaseModel):
             self.lastLoginDateFormat = "AUTO"
             self.lastLoginCustomFormat = None
             self.inactivityThresholdDays = None
+            self.automaticRemindersEnabled = False
+            self.reminderIntervalDays = 3
 
         total_weight = sum(
             attribute.matchWeight
