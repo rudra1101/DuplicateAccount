@@ -47,6 +47,7 @@ from app.observability import (
     update_operational_gauges,
 )
 from app.security_headers import security_headers_middleware
+from app.services.dormancy_reminder_service import process_automatic_dormancy_reminders
 from app.services.monitoring_service import get_system_status
 from app.services.rbac_service import seed_rbac
 from app.services.remediation_sla_service import process_remediation_sla
@@ -89,6 +90,16 @@ async def lifespan(app: FastAPI):
         minutes=15,
         id="remediation_sla_escalation",
         name="Remediation SLA escalation",
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )
+    scheduler_service.scheduler.add_job(
+        process_automatic_dormancy_reminders,
+        trigger="interval",
+        hours=1,
+        id="automatic_dormancy_reminders",
+        name="Automatic dormant account reminders",
         replace_existing=True,
         coalesce=True,
         max_instances=1,
