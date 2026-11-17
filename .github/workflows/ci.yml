@@ -78,6 +78,7 @@ jobs:
           tests/test_runtime_config.py
           tests/test_database_runtime_config.py
           tests/test_postgresql_runtime.py
+          tests/test_account_dormancy.py
           -v --tb=short
 
       - name: Run Rudrix fast regression tests
