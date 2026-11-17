@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Drawer,
   FormControl,
   InputLabel,
+  Link,
   MenuItem,
   Paper,
   Select,
@@ -23,15 +25,28 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import ConfirmationNumberOutlinedIcon from "@mui/icons-material/ConfirmationNumberOutlined";
+import SyncIcon from "@mui/icons-material/Sync";
 
+import { useAuth } from "../../auth/AuthContext";
 import PageContainer from "../../components/common/PageContainer";
 import { getIntegrations, type Integration } from "../../services/integrationService";
 import { getCurrentOrphanFindings, type OrphanFinding } from "../../services/orphanService";
-import { getSourceAccounts, type SourceAccount } from "../../services/sourceAccountService";
+import {
+  createDormancyDisableTicket,
+  getSourceAccounts,
+  sendDormancyReminder,
+  syncDormancyDisableTicket,
+  type SourceAccount,
+} from "../../services/sourceAccountService";
 
 const ORPHAN_TYPES = ["UNMATCHED_ACCOUNT", "TERMINATED_IDENTITY", "AMBIGUOUS_CORRELATION"];
 
 const AccountInventorySimple = () => {
+  const { hasPermission, user } = useAuth();
+  const canRemediate = hasPermission("remediation.manage");
+
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [integrationId, setIntegrationId] = useState<number | "">("");
   const [accounts, setAccounts] = useState<SourceAccount[]>([]);
@@ -44,9 +59,13 @@ const AccountInventorySimple = () => {
   const [total, setTotal] = useState(0);
   const [allTotal, setAllTotal] = useState(0);
   const [inactiveTotal, setInactiveTotal] = useState(0);
+  const [dormantTotal, setDormantTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [orphanType, setOrphanType] = useState("");
   const [loading, setLoading] = useState(true);
+  const [actionAccountId, setActionAccountId] = useState<number | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ severity: "success" | "error"; text: string } | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState("");
 
   const selectedIntegration = useMemo(
@@ -76,17 +95,19 @@ const AccountInventorySimple = () => {
         setLoading(true);
         setError("");
         const sourceId = Number(integrationId);
-        const [allCountResponse, inactiveCountResponse, orphanResponse] = await Promise.all([
+        const [allCountResponse, inactiveCountResponse, dormantCountResponse, orphanResponse] = await Promise.all([
           getSourceAccounts(sourceId, 1, 1, "", true),
           getSourceAccounts(sourceId, 1, 1, "", true, "INACTIVE"),
+          getSourceAccounts(sourceId, 1, 1, "", true, undefined, true),
           getCurrentOrphanFindings(sourceId, orphanType || undefined),
         ]);
 
         setAllTotal(allCountResponse.total);
         setInactiveTotal(inactiveCountResponse.total);
+        setDormantTotal(dormantCountResponse.total);
         setOrphans(orphanResponse);
 
-        if (tab === 0 || tab === 2) {
+        if (tab === 0 || tab === 2 || tab === 3) {
           const accountResponse = await getSourceAccounts(
             sourceId,
             page + 1,
@@ -94,6 +115,7 @@ const AccountInventorySimple = () => {
             search,
             true,
             tab === 2 ? "INACTIVE" : undefined,
+            tab === 3,
           );
           setAccounts(accountResponse.items);
           setTotal(accountResponse.total);
@@ -108,7 +130,7 @@ const AccountInventorySimple = () => {
       }
     };
     void load();
-  }, [integrationId, page, pageSize, search, orphanType, tab]);
+  }, [integrationId, page, pageSize, search, orphanType, tab, refreshKey]);
 
   const accountLabel = (account: SourceAccount) => account.displayName || account.username || account.nativeIdentity;
   const orphanLabel = (finding: OrphanFinding) => finding.displayName || finding.username || finding.email || finding.nativeIdentity || `Account ${finding.accountId}`;
@@ -130,21 +152,109 @@ const AccountInventorySimple = () => {
     setPage(0);
     setSelectedAccount(null);
     setSelectedOrphan(null);
+    setActionMessage(null);
   };
+
+  const handleDormancyReminder = async (account: SourceAccount) => {
+    if (!integrationId) return;
+    try {
+      setActionAccountId(account.id);
+      setActionMessage(null);
+      const result = await sendDormancyReminder(
+        Number(integrationId),
+        account.id,
+        user?.username ?? null,
+      );
+      setActionMessage({
+        severity: "success",
+        text: `Reminder sent to ${result.recipient} for ${accountLabel(account)}.`,
+      });
+      setRefreshKey((current) => current + 1);
+    } catch (actionError) {
+      setActionMessage({
+        severity: "error",
+        text: actionError instanceof Error ? actionError.message : "Unable to send reminder.",
+      });
+    } finally {
+      setActionAccountId(null);
+    }
+  };
+
+  const handleDormancyTicket = async (account: SourceAccount) => {
+    if (!integrationId) return;
+    try {
+      setActionAccountId(account.id);
+      setActionMessage(null);
+      const result = await createDormancyDisableTicket(
+        Number(integrationId),
+        account.id,
+        user?.username ?? null,
+      );
+      setActionMessage({
+        severity: "success",
+        text: `Disable ticket ${result.ticketId ?? ""} created for ${accountLabel(account)}.`,
+      });
+      setRefreshKey((current) => current + 1);
+    } catch (actionError) {
+      setActionMessage({
+        severity: "error",
+        text: actionError instanceof Error ? actionError.message : "Unable to create disable ticket.",
+      });
+    } finally {
+      setActionAccountId(null);
+    }
+  };
+
+  const handleDormancyTicketSync = async (account: SourceAccount) => {
+    if (!integrationId) return;
+    try {
+      setActionAccountId(account.id);
+      setActionMessage(null);
+      const result = await syncDormancyDisableTicket(Number(integrationId), account.id);
+      setActionMessage({
+        severity: "success",
+        text: `Ticket ${result.ticketId ?? ""} synchronized. Current status: ${result.ticketStatus ?? "Unknown"}.`,
+      });
+      setRefreshKey((current) => current + 1);
+    } catch (actionError) {
+      setActionMessage({
+        severity: "error",
+        text: actionError instanceof Error ? actionError.message : "Unable to synchronize disable ticket.",
+      });
+    } finally {
+      setActionAccountId(null);
+    }
+  };
+
+  const searchPlaceholder = tab === 2
+    ? "Search inactive accounts..."
+    : tab === 3
+      ? "Search dormant accounts..."
+      : "Search accounts...";
 
   return (
     <PageContainer title="Accounts">
       <Stack spacing={3}>
         <Box>
           <Typography variant="h5" fontWeight={700}>Account Inventory</Typography>
-          <Typography color="text.secondary">Persistent source accounts, current orphan findings, and inactive accounts retained for visibility and audit.</Typography>
+          <Typography color="text.secondary">
+            Persistent source accounts, orphan findings, inactive accounts, and dormant accounts identified from application-specific last-login policies.
+          </Typography>
         </Box>
 
         <Paper variant="outlined" sx={{ p: 2.5 }}>
           <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
             <FormControl size="small" sx={{ minWidth: 280 }}>
               <InputLabel>Source</InputLabel>
-              <Select label="Source" value={integrationId} onChange={(e) => { setIntegrationId(Number(e.target.value)); setPage(0); }}>
+              <Select
+                label="Source"
+                value={integrationId}
+                onChange={(e) => {
+                  setIntegrationId(Number(e.target.value));
+                  setPage(0);
+                  setActionMessage(null);
+                }}
+              >
                 {integrations.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}
               </Select>
             </FormControl>
@@ -159,9 +269,12 @@ const AccountInventorySimple = () => {
             ) : (
               <TextField
                 size="small"
-                placeholder={tab === 2 ? "Search inactive accounts..." : "Search accounts..."}
+                placeholder={searchPlaceholder}
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
                 sx={{ flex: 1 }}
               />
             )}
@@ -169,48 +282,214 @@ const AccountInventorySimple = () => {
         </Paper>
 
         {error && <Alert severity="error">{error}</Alert>}
+        {actionMessage && <Alert severity={actionMessage.severity}>{actionMessage.text}</Alert>}
+        {tab === 3 && !canRemediate && (
+          <Alert severity="info">
+            You can review dormant accounts, but sending reminders and creating disable tickets requires the Remediation Manage permission.
+          </Alert>
+        )}
 
         <Paper variant="outlined">
-          <Tabs value={tab} onChange={handleTabChange}>
+          <Tabs value={tab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
             <Tab label={`All Accounts (${allTotal})`} />
             <Tab label={`Orphan Accounts (${orphans.length})`} />
             <Tab label={`Inactive Accounts (${inactiveTotal})`} />
+            <Tab label={`Dormant Accounts (${dormantTotal})`} />
           </Tabs>
 
           {tab === 1 ? (
             <TableContainer>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Orphan Type</TableCell><TableCell>Correlation Method</TableCell><TableCell>Status</TableCell><TableCell>Last Detected</TableCell></TableRow></TableHead>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Account</TableCell>
+                    <TableCell>Application</TableCell>
+                    <TableCell>Orphan Type</TableCell>
+                    <TableCell>Correlation Method</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Last Detected</TableCell>
+                  </TableRow>
+                </TableHead>
                 <TableBody>
-                  {loading ? <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow> : orphans.length === 0 ? (
+                  {loading ? (
+                    <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow>
+                  ) : orphans.length === 0 ? (
                     <TableRow><TableCell colSpan={6} align="center">No orphan accounts found for {selectedIntegration?.name ?? "this source"}.</TableCell></TableRow>
                   ) : orphans.map((finding) => (
                     <TableRow key={finding.id} hover onClick={() => setSelectedOrphan(finding)} sx={{ cursor: "pointer" }}>
-                      <TableCell>{orphanLabel(finding)}</TableCell><TableCell>{finding.application}</TableCell><TableCell>{finding.orphanType.replaceAll("_", " ")}</TableCell><TableCell>{finding.correlationMethod || "No identity matched"}</TableCell><TableCell>{finding.accountStatus || "—"}</TableCell><TableCell>{new Date(finding.lastDetectedAt).toLocaleString()}</TableCell>
+                      <TableCell>{orphanLabel(finding)}</TableCell>
+                      <TableCell>{finding.application}</TableCell>
+                      <TableCell>{finding.orphanType.replaceAll("_", " ")}</TableCell>
+                      <TableCell>{finding.correlationMethod || "No identity matched"}</TableCell>
+                      <TableCell>{finding.accountStatus || "—"}</TableCell>
+                      <TableCell>{new Date(finding.lastDetectedAt).toLocaleString()}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </TableContainer>
-          ) : (
+          ) : tab === 3 ? (
             <>
               <TableContainer>
                 <Table size="small">
-                  <TableHead><TableRow><TableCell>Account</TableCell><TableCell>Application</TableCell><TableCell>Native Identity</TableCell><TableCell>Employee ID</TableCell><TableCell>Account State</TableCell><TableCell>Last Seen</TableCell></TableRow></TableHead>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Account</TableCell>
+                      <TableCell>Application</TableCell>
+                      <TableCell>Last Login</TableCell>
+                      <TableCell>Inactive Days</TableCell>
+                      <TableCell>Threshold</TableCell>
+                      <TableCell>Last Reminder</TableCell>
+                      <TableCell>Disable Ticket</TableCell>
+                      <TableCell align="right">Actions</TableCell>
+                    </TableRow>
+                  </TableHead>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={26} /></TableCell></TableRow>
                     ) : accounts.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} align="center">{tab === 2 ? `No inactive accounts found for ${selectedIntegration?.name ?? "this source"}.` : `No accounts found for ${selectedIntegration?.name ?? "this source"}.`}</TableCell></TableRow>
+                      <TableRow>
+                        <TableCell colSpan={8} align="center">
+                          No dormant accounts found for {selectedIntegration?.name ?? "this source"}. Configure Last Login and threshold values in the source application schema, then aggregate the source.
+                        </TableCell>
+                      </TableRow>
                     ) : accounts.map((account) => (
                       <TableRow key={account.id} hover onClick={() => setSelectedAccount(account)} sx={{ cursor: "pointer" }}>
-                        <TableCell>{accountLabel(account)}</TableCell><TableCell>{account.application}</TableCell><TableCell>{account.nativeIdentity}</TableCell><TableCell>{account.employeeId || "—"}</TableCell><TableCell>{accountStateChip(account.status)}</TableCell><TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
+                        <TableCell>
+                          <Typography variant="body2" fontWeight={600}>{accountLabel(account)}</Typography>
+                          <Typography variant="caption" color="text.secondary">{account.email || account.nativeIdentity}</Typography>
+                        </TableCell>
+                        <TableCell>{account.application}</TableCell>
+                        <TableCell>{account.lastLoginAt ? new Date(account.lastLoginAt).toLocaleString() : "—"}</TableCell>
+                        <TableCell>{account.inactiveDays ?? "—"}</TableCell>
+                        <TableCell>{account.dormancyThresholdDays ? `${account.dormancyThresholdDays} days` : "—"}</TableCell>
+                        <TableCell>{account.lastDormancyReminderAt ? new Date(account.lastDormancyReminderAt).toLocaleString() : "Not sent"}</TableCell>
+                        <TableCell>
+                          {account.dormancyTicketId ? (
+                            <Stack spacing={0.25}>
+                              {account.dormancyTicketUrl ? (
+                                <Link
+                                  href={account.dormancyTicketUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {account.dormancyTicketId}
+                                </Link>
+                              ) : (
+                                <Typography variant="body2">{account.dormancyTicketId}</Typography>
+                              )}
+                              <Typography variant="caption" color="text.secondary">{account.dormancyTicketStatus || "CREATED"}</Typography>
+                            </Stack>
+                          ) : "Not created"}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            justifyContent="flex-end"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={<EmailOutlinedIcon />}
+                              disabled={!canRemediate || !account.email || actionAccountId === account.id}
+                              onClick={() => void handleDormancyReminder(account)}
+                            >
+                              Reminder
+                            </Button>
+                            {account.dormancyTicketId ? (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<SyncIcon />}
+                                disabled={!canRemediate || actionAccountId === account.id}
+                                onClick={() => void handleDormancyTicketSync(account)}
+                              >
+                                Sync
+                              </Button>
+                            ) : (
+                              <Button
+                                size="small"
+                                variant="contained"
+                                startIcon={<ConfirmationNumberOutlinedIcon />}
+                                disabled={!canRemediate || actionAccountId === account.id}
+                                onClick={() => void handleDormancyTicket(account)}
+                              >
+                                Disable Ticket
+                              </Button>
+                            )}
+                          </Stack>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </TableContainer>
-              <TablePagination component="div" count={total} page={page} rowsPerPage={pageSize} onPageChange={(_, value) => setPage(value)} onRowsPerPageChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }} rowsPerPageOptions={[25, 50, 100, 200]} />
+              <TablePagination
+                component="div"
+                count={total}
+                page={page}
+                rowsPerPage={pageSize}
+                onPageChange={(_, value) => setPage(value)}
+                onRowsPerPageChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+                rowsPerPageOptions={[25, 50, 100, 200]}
+              />
+            </>
+          ) : (
+            <>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Account</TableCell>
+                      <TableCell>Application</TableCell>
+                      <TableCell>Native Identity</TableCell>
+                      <TableCell>Employee ID</TableCell>
+                      <TableCell>Account State</TableCell>
+                      <TableCell>Last Seen</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {loading ? (
+                      <TableRow><TableCell colSpan={6} align="center"><CircularProgress size={26} /></TableCell></TableRow>
+                    ) : accounts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} align="center">
+                          {tab === 2
+                            ? `No inactive accounts found for ${selectedIntegration?.name ?? "this source"}.`
+                            : `No accounts found for ${selectedIntegration?.name ?? "this source"}.`}
+                        </TableCell>
+                      </TableRow>
+                    ) : accounts.map((account) => (
+                      <TableRow key={account.id} hover onClick={() => setSelectedAccount(account)} sx={{ cursor: "pointer" }}>
+                        <TableCell>{accountLabel(account)}</TableCell>
+                        <TableCell>{account.application}</TableCell>
+                        <TableCell>{account.nativeIdentity}</TableCell>
+                        <TableCell>{account.employeeId || "—"}</TableCell>
+                        <TableCell>{accountStateChip(account.status)}</TableCell>
+                        <TableCell>{account.lastSeenAt ? new Date(account.lastSeenAt).toLocaleString() : "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <TablePagination
+                component="div"
+                count={total}
+                page={page}
+                rowsPerPage={pageSize}
+                onPageChange={(_, value) => setPage(value)}
+                onRowsPerPageChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+                rowsPerPageOptions={[25, 50, 100, 200]}
+              />
             </>
           )}
         </Paper>
@@ -219,14 +498,69 @@ const AccountInventorySimple = () => {
       <Drawer anchor="right" open={Boolean(selectedAccount)} onClose={() => setSelectedAccount(null)}>
         <Box sx={{ width: 560, p: 3 }}>
           <Typography variant="h6" fontWeight={700}>Account Details</Typography>
-          {selectedAccount && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography><Box><Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>Account State</Typography>{accountStateChip(selectedAccount.status)}</Box><Typography variant="body2" color="text.secondary">Inactive means the account is still present in the source but is excluded from duplicate detection.</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedAccount.rawAttributes).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2">{String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
+          {selectedAccount && (
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <Typography><strong>Native Identity:</strong> {selectedAccount.nativeIdentity}</Typography>
+              <Box>
+                <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>Account State</Typography>
+                {accountStateChip(selectedAccount.status)}
+              </Box>
+              <Typography><strong>Last Login:</strong> {selectedAccount.lastLoginAt ? new Date(selectedAccount.lastLoginAt).toLocaleString() : "Not configured / unavailable"}</Typography>
+              {selectedAccount.dormancyThresholdDays && (
+                <Typography>
+                  <strong>Dormancy:</strong> {selectedAccount.inactiveDays ?? "—"} inactive days / {selectedAccount.dormancyThresholdDays}-day threshold
+                </Typography>
+              )}
+              {selectedAccount.lastDormancyReminderAt && (
+                <Typography><strong>Last Reminder:</strong> {new Date(selectedAccount.lastDormancyReminderAt).toLocaleString()}</Typography>
+              )}
+              {selectedAccount.dormancyTicketId && (
+                <Typography>
+                  <strong>Dormancy Ticket:</strong> {selectedAccount.dormancyTicketId} ({selectedAccount.dormancyTicketStatus || "CREATED"})
+                </Typography>
+              )}
+              <Typography variant="body2" color="text.secondary">
+                Inactive means the source reports the account disabled. Dormant means the source still reports the account present, but its configured last-login timestamp exceeds the application's inactivity threshold.
+              </Typography>
+              <Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>
+                {Object.entries(selectedAccount.rawAttributes).map(([key, value]) => (
+                  <Box key={key} sx={{ py: 0.75 }}>
+                    <Typography variant="caption" color="text.secondary">{key}</Typography>
+                    <Typography variant="body2">{String(value ?? "") || "—"}</Typography>
+                  </Box>
+                ))}
+              </Paper>
+            </Stack>
+          )}
         </Box>
       </Drawer>
 
       <Drawer anchor="right" open={Boolean(selectedOrphan)} onClose={() => setSelectedOrphan(null)}>
         <Box sx={{ width: 600, p: 3 }}>
           <Typography variant="h6" fontWeight={700}>Orphan Account Details</Typography>
-          {selectedOrphan && <Stack spacing={2} sx={{ mt: 2 }}><Typography><strong>Account:</strong> {orphanLabel(selectedOrphan)}</Typography><Typography><strong>Native Identity:</strong> {selectedOrphan.nativeIdentity || "—"}</Typography><Typography><strong>Orphan Type:</strong> {selectedOrphan.orphanType.replaceAll("_", " ")}</Typography><Typography><strong>Correlation Method:</strong> {selectedOrphan.correlationMethod || "No identity matched"}</Typography><Typography><strong>Matched Identity:</strong> {selectedOrphan.matchedIdentityId ?? "—"}</Typography><Typography><strong>Finding Status:</strong> {selectedOrphan.status}</Typography><Typography><strong>First Detected:</strong> {new Date(selectedOrphan.firstDetectedAt).toLocaleString()}</Typography><Typography><strong>Last Detected:</strong> {new Date(selectedOrphan.lastDetectedAt).toLocaleString()}</Typography><Typography fontWeight={700}>Correlation Evidence</Typography><Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>{Object.entries(selectedOrphan.evidence).map(([key, value]) => <Box key={key} sx={{ py: 0.75 }}><Typography variant="caption" color="text.secondary">{key}</Typography><Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "") || "—"}</Typography></Box>)}</Paper></Stack>}
+          {selectedOrphan && (
+            <Stack spacing={2} sx={{ mt: 2 }}>
+              <Typography><strong>Account:</strong> {orphanLabel(selectedOrphan)}</Typography>
+              <Typography><strong>Native Identity:</strong> {selectedOrphan.nativeIdentity || "—"}</Typography>
+              <Typography><strong>Orphan Type:</strong> {selectedOrphan.orphanType.replaceAll("_", " ")}</Typography>
+              <Typography><strong>Correlation Method:</strong> {selectedOrphan.correlationMethod || "No identity matched"}</Typography>
+              <Typography><strong>Matched Identity:</strong> {selectedOrphan.matchedIdentityId ?? "—"}</Typography>
+              <Typography><strong>Finding Status:</strong> {selectedOrphan.status}</Typography>
+              <Typography><strong>First Detected:</strong> {new Date(selectedOrphan.firstDetectedAt).toLocaleString()}</Typography>
+              <Typography><strong>Last Detected:</strong> {new Date(selectedOrphan.lastDetectedAt).toLocaleString()}</Typography>
+              <Typography fontWeight={700}>Correlation Evidence</Typography>
+              <Paper variant="outlined" sx={{ p: 2, maxHeight: 600, overflow: "auto" }}>
+                {Object.entries(selectedOrphan.evidence).map(([key, value]) => (
+                  <Box key={key} sx={{ py: 0.75 }}>
+                    <Typography variant="caption" color="text.secondary">{key}</Typography>
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {typeof value === "object" ? JSON.stringify(value, null, 2) : String(value ?? "") || "—"}
+                    </Typography>
+                  </Box>
+                ))}
+              </Paper>
+            </Stack>
+          )}
         </Box>
       </Drawer>
     </PageContainer>
