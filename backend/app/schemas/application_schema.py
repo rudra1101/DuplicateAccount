@@ -4,6 +4,16 @@ from pydantic import BaseModel, Field, model_validator
 
 
 ALLOWED_MATCH_TYPES = {"EXACT", "FUZZY", "CONTAINS", "NONE"}
+ALLOWED_DORMANCY_DATE_FORMATS = {
+    "AUTO",
+    "ISO_8601",
+    "UNIX_SECONDS",
+    "UNIX_MILLISECONDS",
+    "UNIX_MICROSECONDS",
+    "UNIX_NANOSECONDS",
+    "WINDOWS_FILETIME",
+    "CUSTOM",
+}
 ALLOWED_NORMALIZATIONS = {
     "NONE",
     "TRIM",
@@ -60,6 +70,10 @@ class ApplicationInput(BaseModel):
     statusAttribute: str | None = None
     activeStatusValues: list[str] = Field(default_factory=list)
     inactiveStatusValues: list[str] = Field(default_factory=list)
+    lastLoginAttribute: str | None = None
+    lastLoginDateFormat: str = "AUTO"
+    lastLoginCustomFormat: str | None = None
+    inactivityThresholdDays: int | None = Field(default=None, ge=1, le=3650)
     attributes: list[SchemaAttributeInput] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -73,6 +87,11 @@ class ApplicationInput(BaseModel):
             self.nativeIdentityAttribute = self.nativeIdentityAttribute.strip() or None
         if self.statusAttribute is not None:
             self.statusAttribute = self.statusAttribute.strip() or None
+        if self.lastLoginAttribute is not None:
+            self.lastLoginAttribute = self.lastLoginAttribute.strip() or None
+        self.lastLoginDateFormat = (self.lastLoginDateFormat or "AUTO").strip().upper()
+        if self.lastLoginCustomFormat is not None:
+            self.lastLoginCustomFormat = self.lastLoginCustomFormat.strip() or None
 
         self.activeStatusValues = sorted(
             {str(value).strip() for value in self.activeStatusValues if str(value).strip()},
@@ -101,6 +120,24 @@ class ApplicationInput(BaseModel):
             inactive = {value.casefold() for value in self.inactiveStatusValues}
             if active.intersection(inactive):
                 raise ValueError("Active and inactive status values cannot overlap.")
+
+        if self.lastLoginAttribute is not None:
+            if self.lastLoginAttribute.lower() not in seen:
+                raise ValueError("Last-login attribute must exist in the application schema.")
+            if self.lastLoginDateFormat not in ALLOWED_DORMANCY_DATE_FORMATS:
+                raise ValueError("Unsupported last-login date format.")
+            if self.lastLoginDateFormat == "CUSTOM" and not self.lastLoginCustomFormat:
+                raise ValueError(
+                    "A custom last-login date format is required when CUSTOM is selected."
+                )
+            if self.inactivityThresholdDays is None:
+                raise ValueError(
+                    "Inactivity threshold days are required when last-login tracking is enabled."
+                )
+        else:
+            self.lastLoginDateFormat = "AUTO"
+            self.lastLoginCustomFormat = None
+            self.inactivityThresholdDays = None
 
         total_weight = sum(
             attribute.matchWeight
