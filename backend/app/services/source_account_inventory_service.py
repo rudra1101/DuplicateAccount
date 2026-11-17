@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db_models.application import ApplicationRecord
 from app.db_models.duplicate_finding import DuplicateFindingRecord
+from app.db_models.integration import IntegrationRecord
 from app.db_models.source_account import SourceAccountRecord
+from app.services.account_dormancy_service import (
+    DormancyConfig,
+    dormant_account_filter,
+    dormancy_mappings,
+    extract_last_login,
+    inactive_days,
+    is_dormant,
+)
 from app.services.account_status_service import ACCOUNT_STATES
 
 AGGREGATION_TYPES = {"FULL", "DELTA"}
@@ -56,6 +65,10 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
     mode = normalize_aggregation_type(aggregation_type)
     now = datetime.now(UTC)
     app_meta = _application_metadata(db, integration_id)
+    integration = db.get(IntegrationRecord, integration_id)
+    dormancy_configs = dormancy_mappings(
+        integration.configuration if integration is not None else None
+    )
     seen_keys: set[tuple[str, str]] = set()
     created = updated = unchanged = 0
 
@@ -75,6 +88,8 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
         seen_keys.add(key)
         application_id, schema_id = app_meta.get(application.lower(), (None, None))
         fingerprint = _fingerprint(raw)
+        dormancy_config = dormancy_configs.get(application.strip().casefold())
+        parsed_last_login = extract_last_login(raw, dormancy_config)
         record = existing_by_key.get(key)
 
         if record is None:
@@ -84,6 +99,7 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
                 display_name=_clean(payload.get("displayName") or payload.get("display_name")),
                 username=_clean(payload.get("username")), email=_clean(payload.get("email")),
                 employee_id=_clean(payload.get("employeeId") or payload.get("employee_id")), status=_clean(payload.get("status")),
+                last_login_at=parsed_last_login,
                 raw_attributes=raw, attribute_fingerprint=fingerprint, active=True, deleted=False,
                 first_seen_at=now, last_seen_at=now, last_scan_id=scan_id, created_at=now, updated_at=now,
             )
@@ -100,6 +116,7 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
         record.email = _clean(payload.get("email"))
         record.employee_id = _clean(payload.get("employeeId") or payload.get("employee_id"))
         record.status = _clean(payload.get("status"))
+        record.last_login_at = parsed_last_login
         record.raw_attributes = raw
         record.attribute_fingerprint = fingerprint
         record.active = True
@@ -134,6 +151,7 @@ def list_source_accounts(
     search: str = "",
     active: bool | None = None,
     account_state: str | None = None,
+    dormant: bool = False,
 ) -> tuple[list[SourceAccountRecord], int]:
     filters = [SourceAccountRecord.integration_id == integration_id]
     if active is not None:
