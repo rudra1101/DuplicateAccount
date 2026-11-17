@@ -27,6 +27,10 @@ from app.services.account_dormancy_service import (
     is_dormant,
     parse_last_login,
 )
+from app.services.dormancy_reminder_service import (
+    automatic_reminder_due,
+    send_dormancy_reminder_for_account,
+)
 from app.services.service_desk_service import create_dormant_account_ticket
 from app.services.source_account_inventory_service import (
     list_source_accounts,
@@ -329,7 +333,7 @@ def test_dormancy_reminder_uses_system_email_and_records_timestamp(monkeypatch):
         sent["text_body"] = text_body
         sent["html_body"] = html_body
 
-    monkeypatch.setattr("app.api.source_accounts.send_email", fake_send_email)
+    monkeypatch.setattr("app.services.dormancy_reminder_service.send_email", fake_send_email)
 
     with _session() as db:
         integration = IntegrationRecord(
@@ -482,3 +486,161 @@ def test_dormant_disable_ticket_posts_service_desk_request_and_persists_state(mo
         assert account.dormancy_ticket_id == "INC-DORMANT-001"
         assert account.dormancy_ticket_status == "Open"
         assert account.dormancy_ticket_created_at is not None
+
+
+
+def test_automatic_reminder_due_enforces_interval_and_stops_after_ticket():
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    config = DormancyConfig(
+        attribute="last_login",
+        date_format="ISO_8601",
+        custom_format=None,
+        threshold_days=30,
+        automatic_reminders=True,
+        reminder_interval_days=3,
+    )
+    account = SourceAccountRecord(
+        integration_id=1,
+        application="App",
+        native_identity="alice",
+        email="alice@example.com",
+        status="ACTIVE",
+        last_login_at=now - timedelta(days=45),
+        raw_attributes={},
+        attribute_fingerprint="auto-reminder",
+        active=True,
+        deleted=False,
+    )
+
+    assert automatic_reminder_due(account, config, now=now) is True
+
+    account.last_dormancy_reminder_at = now - timedelta(days=2, hours=23)
+    assert automatic_reminder_due(account, config, now=now) is False
+
+    account.last_dormancy_reminder_at = now - timedelta(days=3)
+    assert automatic_reminder_due(account, config, now=now) is True
+
+    account.dormancy_ticket_id = "INC001"
+    assert automatic_reminder_due(account, config, now=now) is False
+
+
+def test_automatic_reminder_due_requires_policy_email_and_dormancy():
+    now = datetime(2026, 11, 17, 12, 0, tzinfo=UTC)
+    config = DormancyConfig(
+        attribute="last_login",
+        date_format="ISO_8601",
+        custom_format=None,
+        threshold_days=30,
+        automatic_reminders=False,
+        reminder_interval_days=3,
+    )
+    account = SourceAccountRecord(
+        integration_id=1,
+        application="App",
+        native_identity="alice",
+        email="alice@example.com",
+        status="ACTIVE",
+        last_login_at=now - timedelta(days=45),
+        raw_attributes={},
+        attribute_fingerprint="auto-reminder-guard",
+        active=True,
+        deleted=False,
+    )
+
+    assert automatic_reminder_due(account, config, now=now) is False
+
+    config = DormancyConfig(
+        attribute="last_login",
+        date_format="ISO_8601",
+        custom_format=None,
+        threshold_days=30,
+        automatic_reminders=True,
+        reminder_interval_days=3,
+    )
+    account.email = None
+    assert automatic_reminder_due(account, config, now=now) is False
+
+    account.email = "alice@example.com"
+    account.last_login_at = now - timedelta(days=5)
+    assert automatic_reminder_due(account, config, now=now) is False
+
+
+def test_dormancy_mapping_reads_automatic_reminder_policy():
+    from app.services.account_dormancy_service import dormancy_mappings
+
+    mappings = dormancy_mappings(
+        {
+            "accountDormancyMappings": {
+                "App": {
+                    "attribute": "last_login",
+                    "dateFormat": "ISO_8601",
+                    "thresholdDays": 30,
+                    "automaticRemindersEnabled": True,
+                    "reminderIntervalDays": 3,
+                }
+            }
+        }
+    )
+
+    config = mappings["app"]
+    assert config.automatic_reminders is True
+    assert config.reminder_interval_days == 3
+
+
+def test_shared_reminder_service_records_timestamp(monkeypatch):
+    sent: dict[str, object] = {}
+
+    def fake_send_email(*, recipients, subject, text_body, html_body=None):
+        sent["recipients"] = recipients
+        sent["subject"] = subject
+        sent["text_body"] = text_body
+        sent["html_body"] = html_body
+
+    monkeypatch.setattr("app.services.dormancy_reminder_service.send_email", fake_send_email)
+
+    config = DormancyConfig(
+        attribute="last_login",
+        date_format="ISO_8601",
+        custom_format=None,
+        threshold_days=30,
+        automatic_reminders=True,
+        reminder_interval_days=3,
+    )
+
+    with _session() as db:
+        integration = IntegrationRecord(
+            name="Dormancy Source",
+            connector_type="LOCAL",
+            configuration={},
+            enabled=True,
+        )
+        db.add(integration)
+        db.flush()
+        account = SourceAccountRecord(
+            integration_id=integration.id,
+            application="App",
+            native_identity="bob",
+            display_name="Bob",
+            username="bob",
+            email="bob@example.com",
+            status="ACTIVE",
+            last_login_at=datetime.now(UTC) - timedelta(days=40),
+            raw_attributes={},
+            attribute_fingerprint="shared-reminder",
+            active=True,
+            deleted=False,
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+
+        result = send_dormancy_reminder_for_account(
+            db,
+            account=account,
+            config=config,
+            requested_by="SYSTEM",
+        )
+
+        assert sent["recipients"] == ["bob@example.com"]
+        assert result["requestedBy"] == "SYSTEM"
+        assert account.last_dormancy_reminder_at is not None
