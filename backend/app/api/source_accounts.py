@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from html import escape
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -19,7 +16,7 @@ from app.services.account_dormancy_service import (
     inactive_days,
     is_dormant,
 )
-from app.services.email_service import send_email
+from app.services.dormancy_reminder_service import send_dormancy_reminder_for_account
 from app.services.service_desk_service import (
     create_dormant_account_ticket,
     sync_dormant_account_ticket,
@@ -161,56 +158,17 @@ def send_dormancy_reminder(
         integration_id=integration_id,
         account=account,
     )
-    if not account.email:
-        raise HTTPException(
-            status_code=400,
-            detail="The dormant account does not have an email address.",
-        )
-
-    account_name = account.display_name or account.username or account.native_identity
-    subject = f"Action required: inactive {account.application} account"
-    text_body = (
-        f"Hello {account_name},\n\n"
-        f"Your {account.application} account has not recorded a login for {days} days. "
-        f"The configured inactivity threshold is {config.threshold_days} days.\n\n"
-        "If you still require this account, please sign in or contact the support team. "
-        "The account may otherwise be disabled according to the organization's access policy.\n\n"
-        "This is an automated IdentityAI account-governance reminder."
-    )
-    safe_account_name = escape(account_name)
-    safe_application = escape(account.application)
-    html_body = (
-        f"<p>Hello {safe_account_name},</p>"
-        f"<p>Your <strong>{safe_application}</strong> account has not recorded a login "
-        f"for <strong>{days} days</strong>. The configured inactivity threshold is "
-        f"<strong>{config.threshold_days} days</strong>.</p>"
-        "<p>If you still require this account, please sign in or contact the support team. "
-        "The account may otherwise be disabled according to the organization's access policy.</p>"
-        "<p>This is an automated IdentityAI account-governance reminder.</p>"
-    )
-
     try:
-        send_email(
-            recipients=[account.email],
-            subject=subject,
-            text_body=text_body,
-            html_body=html_body,
+        return send_dormancy_reminder_for_account(
+            db,
+            account=account,
+            config=config,
+            requested_by=payload.requestedBy,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    account.last_dormancy_reminder_at = datetime.now(UTC)
-    account.updated_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(account)
-    return {
-        "accountId": account.id,
-        "recipient": account.email,
-        "sentAt": account.last_dormancy_reminder_at.isoformat(),
-        "inactiveDays": days,
-        "thresholdDays": config.threshold_days,
-        "requestedBy": (payload.requestedBy or "").strip() or None,
-    }
 
 
 @router.post("/{integration_id}/accounts/{account_id}/dormancy-disable-ticket")

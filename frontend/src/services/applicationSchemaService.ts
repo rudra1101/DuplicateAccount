@@ -47,6 +47,8 @@ export interface ApplicationInput {
   lastLoginDateFormat?: DormancyDateFormat;
   lastLoginCustomFormat?: string | null;
   inactivityThresholdDays?: number | null;
+  automaticRemindersEnabled?: boolean;
+  reminderIntervalDays?: number;
   attributes: SchemaAttributeInput[];
 }
 
@@ -69,6 +71,8 @@ export interface ApplicationSchemaResponse {
     lastLoginDateFormat: DormancyDateFormat;
     lastLoginCustomFormat: string | null;
     inactivityThresholdDays: number | null;
+    automaticRemindersEnabled: boolean;
+    reminderIntervalDays: number;
     isActive: boolean;
     attributes: Array<SchemaAttributeInput & { id: number }>;
   } | null;

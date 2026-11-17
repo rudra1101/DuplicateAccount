@@ -106,6 +106,8 @@ const emptyApplication = (): ApplicationInput => ({
   lastLoginDateFormat: "AUTO",
   lastLoginCustomFormat: null,
   inactivityThresholdDays: 90,
+  automaticRemindersEnabled: false,
+  reminderIntervalDays: 3,
   attributes: [],
 });
 
@@ -241,6 +243,8 @@ const SourceWizard = () => {
               lastLoginDateFormat: item.schema?.lastLoginDateFormat ?? "AUTO",
               lastLoginCustomFormat: item.schema?.lastLoginCustomFormat ?? null,
               inactivityThresholdDays: item.schema?.inactivityThresholdDays ?? 90,
+              automaticRemindersEnabled: item.schema?.automaticRemindersEnabled ?? false,
+              reminderIntervalDays: item.schema?.reminderIntervalDays ?? 3,
               attributes: item.schema?.attributes.map((attribute, index) => ({
                 name: attribute.name,
                 displayName: attribute.displayName,
@@ -600,6 +604,12 @@ const SourceWizard = () => {
     inactivityThresholdDays: application.lastLoginAttribute
       ? Number(application.inactivityThresholdDays ?? 90)
       : null,
+    automaticRemindersEnabled: Boolean(
+      application.lastLoginAttribute && application.automaticRemindersEnabled,
+    ),
+    reminderIntervalDays: application.lastLoginAttribute
+      ? Math.max(1, Number(application.reminderIntervalDays ?? 3))
+      : 3,
   }));
 
   const goNext = async () => {
@@ -903,6 +913,40 @@ const SourceWizard = () => {
                           <Alert severity="info">
                             Auto detect supports ISO dates and numeric Unix/epoch values. Use the explicit Windows FILETIME option for Active Directory lastLogonTimestamp values.
                           </Alert>
+                          <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                            <Stack spacing={1.5}>
+                              <FormControlLabel
+                                control={
+                                  <Switch
+                                    checked={Boolean(selectedApplication.automaticRemindersEnabled)}
+                                    onChange={(event) => updateApplication(selectedApplicationIndex, {
+                                      automaticRemindersEnabled: event.target.checked,
+                                    })}
+                                  />
+                                }
+                                label="Automatic Dormancy Reminders"
+                              />
+                              <Typography variant="body2" color="text.secondary">
+                                When enabled, IdentityAI automatically emails the account owner while the account remains dormant. The first reminder is sent when the account becomes eligible, then repeats at the configured interval.
+                              </Typography>
+                              {selectedApplication.automaticRemindersEnabled && (
+                                <TextField
+                                  type="number"
+                                  label="Reminder Every (days)"
+                                  value={selectedApplication.reminderIntervalDays ?? 3}
+                                  inputProps={{ min: 1, max: 365 }}
+                                  helperText="Example: 3 means another reminder can be sent only after 3 full days."
+                                  onChange={(event) => updateApplication(selectedApplicationIndex, {
+                                    reminderIntervalDays: Math.max(1, Number(event.target.value || 1)),
+                                  })}
+                                  sx={{ maxWidth: 320 }}
+                                />
+                              )}
+                              <Alert severity="info">
+                                Automatic reminders stop when the account is no longer dormant or when a disable ticket has already been created. Manual reminders remain available from Accounts.
+                              </Alert>
+                            </Stack>
+                          </Paper>
                         </>
                       )}
                     </Stack>
@@ -975,7 +1019,7 @@ const SourceWizard = () => {
             <Stack spacing={3}>
               <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, native identity, account status, and correlation behavior before finishing.</Typography></Box>
               <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{name}</Typography><Typography variant="body2" color="text.secondary">{selectedConnector?.displayName ?? connectorType} · {sourcePurpose === "AUTHORITATIVE" ? "Authoritative Source" : "Account Source"} · {enabled ? "Enabled" : "Disabled"}</Typography></Paper>
-              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography><Typography variant="body2" color="text.secondary">Account Status: {application.statusAttribute ? `${application.statusAttribute} · Active [${(application.activeStatusValues ?? []).join(", ") || "default"}] · Inactive [${(application.inactiveStatusValues ?? []).join(", ") || "default"}]` : "Not configured (UNKNOWN remains duplicate-eligible)"}</Typography><Typography variant="body2" color="text.secondary">Dormancy: {application.lastLoginAttribute ? `${application.lastLoginAttribute} · ${application.lastLoginDateFormat ?? "AUTO"} · ${application.inactivityThresholdDays ?? 90} days` : "Not configured"}</Typography></Paper>)}
+              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography><Typography variant="body2" color="text.secondary">Account Status: {application.statusAttribute ? `${application.statusAttribute} · Active [${(application.activeStatusValues ?? []).join(", ") || "default"}] · Inactive [${(application.inactiveStatusValues ?? []).join(", ") || "default"}]` : "Not configured (UNKNOWN remains duplicate-eligible)"}</Typography><Typography variant="body2" color="text.secondary">Dormancy: {application.lastLoginAttribute ? `${application.lastLoginAttribute} · ${application.lastLoginDateFormat ?? "AUTO"} · ${application.inactivityThresholdDays ?? 90} days` : "Not configured"}</Typography><Typography variant="body2" color="text.secondary">Automatic reminders: {application.lastLoginAttribute && application.automaticRemindersEnabled ? `Every ${application.reminderIntervalDays ?? 3} days` : "Disabled"}</Typography></Paper>)}
               {sourcePurpose === "ACCOUNT" && <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>Account Correlation</Typography><Typography variant="body2" color="text.secondary">Authoritative source: {authoritativeSources.find((item) => item.id === Number(authoritativeIntegrationId))?.name ?? "Not selected"}</Typography><Stack spacing={0.5} sx={{ mt: 1 }}>{rules.map((rule, index) => <Typography key={index} variant="body2">{index + 1}. {rule.accountAttribute} → {rule.identityAttribute} ({rule.matchType})</Typography>)}</Stack></Paper>}
             </Stack>
           )}
