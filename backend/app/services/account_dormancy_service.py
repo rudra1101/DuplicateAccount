@@ -181,7 +181,20 @@ def parse_last_login(
         if normalized_format == DATE_FORMAT_ISO_8601:
             return _as_utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
 
-        # AUTO: infer numeric epoch/filetime first, then ISO/common source formats.
+        # AUTO: recognize compact calendar values before treating a numeric
+        # string as an epoch. This prevents values such as 20240101 from
+        # becoming a date in 1970.
+        compact_formats = {
+            8: "%Y%m%d",
+            14: "%Y%m%d%H%M%S",
+        }
+        if text.isdigit() and len(text) in compact_formats:
+            try:
+                return _as_utc(datetime.strptime(text, compact_formats[len(text)]))
+            except ValueError:
+                pass
+
+        # Infer numeric epoch/filetime, then ISO/common source formats.
         try:
             return _numeric_timestamp(float(text), DATE_FORMAT_AUTO)
         except (TypeError, ValueError, OverflowError, OSError):
