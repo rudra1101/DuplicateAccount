@@ -501,6 +501,11 @@ def sync_open_tickets() -> None:
             except Exception:
                 continue
 
+        completed_statuses = {
+            item.strip().lower()
+            for item in settings.service_desk_completed_statuses.split(",")
+            if item.strip()
+        }
         dormant_accounts = list(
             db.scalars(
                 select(SourceAccountRecord).where(
@@ -510,7 +515,7 @@ def sync_open_tickets() -> None:
         )
         for account in dormant_accounts:
             current_status = (account.dormancy_ticket_status or "").strip().lower()
-            if current_status in config.completed_statuses:
+            if current_status in completed_statuses:
                 continue
             try:
                 sync_dormant_account_ticket(db, account=account)
