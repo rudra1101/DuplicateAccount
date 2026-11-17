@@ -54,6 +54,7 @@ import {
   getIntegrationApplications,
   saveIntegrationApplications,
   type ApplicationInput,
+  type DormancyDateFormat,
   type MatchType,
   type NormalizationType,
   type SchemaAttributeInput,
@@ -101,6 +102,10 @@ const emptyApplication = (): ApplicationInput => ({
   statusAttribute: null,
   activeStatusValues: ["true"],
   inactiveStatusValues: ["false"],
+  lastLoginAttribute: null,
+  lastLoginDateFormat: "AUTO",
+  lastLoginCustomFormat: null,
+  inactivityThresholdDays: 90,
   attributes: [],
 });
 
@@ -232,6 +237,10 @@ const SourceWizard = () => {
               statusAttribute: item.schema?.statusAttribute ?? null,
               activeStatusValues: item.schema?.activeStatusValues ?? [],
               inactiveStatusValues: item.schema?.inactiveStatusValues ?? [],
+              lastLoginAttribute: item.schema?.lastLoginAttribute ?? null,
+              lastLoginDateFormat: item.schema?.lastLoginDateFormat ?? "AUTO",
+              lastLoginCustomFormat: item.schema?.lastLoginCustomFormat ?? null,
+              inactivityThresholdDays: item.schema?.inactivityThresholdDays ?? 90,
               attributes: item.schema?.attributes.map((attribute, index) => ({
                 name: attribute.name,
                 displayName: attribute.displayName,
@@ -484,8 +493,9 @@ const SourceWizard = () => {
         attributes: result.attributes.map((attribute, index) => ({ ...emptyAttribute(index), ...attribute, position: index })),
         nativeIdentityAttribute: null,
         statusAttribute: null,
+        lastLoginAttribute: null,
       });
-      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}. Select the Native Identity and optional Account Status attributes before continuing.`);
+      setSchemaDetectionMessage(`Detected ${result.attributes.length} attributes from ${result.filename}. Select the Native Identity, optional Account Status, and optional Last Login attributes before continuing.`);
     } catch (detectError) {
       setError(detectError instanceof Error ? detectError.message : "Unable to detect source schema.");
     } finally {
@@ -504,8 +514,13 @@ const SourceWizard = () => {
         position: index,
       }));
       if (mapped.some((attribute) => !attribute.name)) throw new Error("Every uploaded schema attribute requires a name.");
-      updateApplication(selectedApplicationIndex, { attributes: mapped, nativeIdentityAttribute: null, statusAttribute: null });
-      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes. Select the Native Identity and optional Account Status attributes before continuing.`);
+      updateApplication(selectedApplicationIndex, {
+        attributes: mapped,
+        nativeIdentityAttribute: null,
+        statusAttribute: null,
+        lastLoginAttribute: null,
+      });
+      setSchemaDetectionMessage(`Loaded ${mapped.length} attributes. Select the Native Identity, optional Account Status, and optional Last Login attributes before continuing.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to read schema file.");
     }
@@ -532,6 +547,21 @@ const SourceWizard = () => {
         const inactive = new Set((application.inactiveStatusValues ?? []).map((value) => value.toLowerCase()));
         if (Array.from(active).some((value) => inactive.has(value))) {
           setError(`Active and inactive status values cannot overlap for ${application.name}.`);
+          return false;
+        }
+      }
+      if (application.lastLoginAttribute) {
+        const names = new Set(application.attributes.map((attribute) => attribute.name.toLowerCase()));
+        if (!names.has(application.lastLoginAttribute.toLowerCase())) {
+          setError(`The Last Login attribute for ${application.name} must exist in its schema.`);
+          return false;
+        }
+        if (!application.inactivityThresholdDays || application.inactivityThresholdDays < 1) {
+          setError(`Set an inactivity threshold of at least 1 day for ${application.name}.`);
+          return false;
+        }
+        if (application.lastLoginDateFormat === "CUSTOM" && !application.lastLoginCustomFormat?.trim()) {
+          setError(`Enter the custom date format for ${application.name}.`);
           return false;
         }
       }
@@ -562,6 +592,14 @@ const SourceWizard = () => {
     statusAttribute: application.statusAttribute?.trim() || null,
     activeStatusValues: (application.activeStatusValues ?? []).map((value) => value.trim()).filter(Boolean),
     inactiveStatusValues: (application.inactiveStatusValues ?? []).map((value) => value.trim()).filter(Boolean),
+    lastLoginAttribute: application.lastLoginAttribute?.trim() || null,
+    lastLoginDateFormat: application.lastLoginAttribute ? (application.lastLoginDateFormat ?? "AUTO") : "AUTO",
+    lastLoginCustomFormat: application.lastLoginDateFormat === "CUSTOM"
+      ? application.lastLoginCustomFormat?.trim() || null
+      : null,
+    inactivityThresholdDays: application.lastLoginAttribute
+      ? Number(application.inactivityThresholdDays ?? 90)
+      : null,
   }));
 
   const goNext = async () => {
@@ -797,6 +835,79 @@ const SourceWizard = () => {
                     </Stack>
                   </Paper>
 
+                  <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+                    <Stack spacing={1.5}>
+                      <Typography fontWeight={700}>Dormant Account Detection</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Choose the source attribute containing the last-login timestamp and the inactivity threshold. IdentityAI normalizes the value during aggregation and shows accounts exceeding the threshold under Dormant Accounts.
+                      </Typography>
+                      <FormControl fullWidth>
+                        <InputLabel>Last Login Attribute</InputLabel>
+                        <Select
+                          label="Last Login Attribute"
+                          value={selectedApplication.lastLoginAttribute ?? ""}
+                          onChange={(event) => updateApplication(selectedApplicationIndex, {
+                            lastLoginAttribute: event.target.value || null,
+                          })}
+                        >
+                          <MenuItem value="">Not configured</MenuItem>
+                          {selectedApplication.attributes.filter((attribute) => attribute.name).map((attribute) => (
+                            <MenuItem key={attribute.name} value={attribute.name}>{attribute.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {selectedApplication.lastLoginAttribute && (
+                        <>
+                          <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+                            <FormControl fullWidth>
+                              <InputLabel>Date Format</InputLabel>
+                              <Select
+                                label="Date Format"
+                                value={selectedApplication.lastLoginDateFormat ?? "AUTO"}
+                                onChange={(event) => updateApplication(selectedApplicationIndex, {
+                                  lastLoginDateFormat: event.target.value as DormancyDateFormat,
+                                })}
+                              >
+                                <MenuItem value="AUTO">Auto detect</MenuItem>
+                                <MenuItem value="ISO_8601">ISO 8601</MenuItem>
+                                <MenuItem value="UNIX_SECONDS">Unix / Epoch seconds</MenuItem>
+                                <MenuItem value="UNIX_MILLISECONDS">Unix milliseconds</MenuItem>
+                                <MenuItem value="UNIX_MICROSECONDS">Unix microseconds</MenuItem>
+                                <MenuItem value="UNIX_NANOSECONDS">Unix nanoseconds</MenuItem>
+                                <MenuItem value="WINDOWS_FILETIME">Windows FILETIME / AD lastLogonTimestamp</MenuItem>
+                                <MenuItem value="CUSTOM">Custom format</MenuItem>
+                              </Select>
+                            </FormControl>
+                            <TextField
+                              fullWidth
+                              type="number"
+                              label="Inactivity Threshold (days)"
+                              value={selectedApplication.inactivityThresholdDays ?? 90}
+                              inputProps={{ min: 1, max: 3650 }}
+                              onChange={(event) => updateApplication(selectedApplicationIndex, {
+                                inactivityThresholdDays: Math.max(1, Number(event.target.value || 1)),
+                              })}
+                            />
+                          </Stack>
+                          {selectedApplication.lastLoginDateFormat === "CUSTOM" && (
+                            <TextField
+                              fullWidth
+                              label="Custom Date Format"
+                              value={selectedApplication.lastLoginCustomFormat ?? ""}
+                              helperText='Examples: yyyy-MM-dd HH:mm:ss or %Y-%m-%d %H:%M:%S. Dates without a timezone are treated as UTC.'
+                              onChange={(event) => updateApplication(selectedApplicationIndex, {
+                                lastLoginCustomFormat: event.target.value,
+                              })}
+                            />
+                          )}
+                          <Alert severity="info">
+                            Auto detect supports ISO dates and numeric Unix/epoch values. Use the explicit Windows FILETIME option for Active Directory lastLogonTimestamp values.
+                          </Alert>
+                        </>
+                      )}
+                    </Stack>
+                  </Paper>
+
                   <TableContainer component={Paper} variant="outlined">
                     <Table size="small">
                       <TableHead><TableRow><TableCell>Attribute</TableCell><TableCell>Display Name</TableCell><TableCell>Type</TableCell><TableCell>Required</TableCell><TableCell /></TableRow></TableHead>
@@ -864,7 +975,7 @@ const SourceWizard = () => {
             <Stack spacing={3}>
               <Box><Typography variant="h6" fontWeight={700}>Review Configuration</Typography><Typography variant="body2" color="text.secondary">Confirm the source purpose, schema, native identity, account status, and correlation behavior before finishing.</Typography></Box>
               <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{name}</Typography><Typography variant="body2" color="text.secondary">{selectedConnector?.displayName ?? connectorType} · {sourcePurpose === "AUTHORITATIVE" ? "Authoritative Source" : "Account Source"} · {enabled ? "Enabled" : "Disabled"}</Typography></Paper>
-              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography><Typography variant="body2" color="text.secondary">Account Status: {application.statusAttribute ? `${application.statusAttribute} · Active [${(application.activeStatusValues ?? []).join(", ") || "default"}] · Inactive [${(application.inactiveStatusValues ?? []).join(", ") || "default"}]` : "Not configured (UNKNOWN remains duplicate-eligible)"}</Typography></Paper>)}
+              {applications.map((application, index) => <Paper key={index} variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>{application.name}</Typography><Typography variant="body2" color="text.secondary">{application.attributes.length} schema attributes · Native Identity: {application.nativeIdentityAttribute || "Not selected"}</Typography><Typography variant="body2" color="text.secondary">Account Status: {application.statusAttribute ? `${application.statusAttribute} · Active [${(application.activeStatusValues ?? []).join(", ") || "default"}] · Inactive [${(application.inactiveStatusValues ?? []).join(", ") || "default"}]` : "Not configured (UNKNOWN remains duplicate-eligible)"}</Typography><Typography variant="body2" color="text.secondary">Dormancy: {application.lastLoginAttribute ? `${application.lastLoginAttribute} · ${application.lastLoginDateFormat ?? "AUTO"} · ${application.inactivityThresholdDays ?? 90} days` : "Not configured"}</Typography></Paper>)}
               {sourcePurpose === "ACCOUNT" && <Paper variant="outlined" sx={{ p: 2.5 }}><Typography fontWeight={700}>Account Correlation</Typography><Typography variant="body2" color="text.secondary">Authoritative source: {authoritativeSources.find((item) => item.id === Number(authoritativeIntegrationId))?.name ?? "Not selected"}</Typography><Stack spacing={0.5} sx={{ mt: 1 }}>{rules.map((rule, index) => <Typography key={index} variant="body2">{index + 1}. {rule.accountAttribute} → {rule.identityAttribute} ({rule.matchType})</Typography>)}</Stack></Paper>}
             </Stack>
           )}

@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db_models.application import ApplicationRecord
 from app.db_models.duplicate_finding import DuplicateFindingRecord
+from app.db_models.integration import IntegrationRecord
 from app.db_models.source_account import SourceAccountRecord
+from app.services.account_dormancy_service import (
+    DormancyConfig,
+    dormant_account_filter,
+    dormancy_mappings,
+    extract_last_login,
+    inactive_days,
+    is_dormant,
+)
 from app.services.account_status_service import ACCOUNT_STATES
 
 AGGREGATION_TYPES = {"FULL", "DELTA"}
@@ -56,6 +65,10 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
     mode = normalize_aggregation_type(aggregation_type)
     now = datetime.now(UTC)
     app_meta = _application_metadata(db, integration_id)
+    integration = db.get(IntegrationRecord, integration_id)
+    dormancy_configs = dormancy_mappings(
+        integration.configuration if integration is not None else None
+    )
     seen_keys: set[tuple[str, str]] = set()
     created = updated = unchanged = 0
 
@@ -75,6 +88,8 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
         seen_keys.add(key)
         application_id, schema_id = app_meta.get(application.lower(), (None, None))
         fingerprint = _fingerprint(raw)
+        dormancy_config = dormancy_configs.get(application.strip().casefold())
+        parsed_last_login = extract_last_login(raw, dormancy_config)
         record = existing_by_key.get(key)
 
         if record is None:
@@ -84,6 +99,7 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
                 display_name=_clean(payload.get("displayName") or payload.get("display_name")),
                 username=_clean(payload.get("username")), email=_clean(payload.get("email")),
                 employee_id=_clean(payload.get("employeeId") or payload.get("employee_id")), status=_clean(payload.get("status")),
+                last_login_at=parsed_last_login,
                 raw_attributes=raw, attribute_fingerprint=fingerprint, active=True, deleted=False,
                 first_seen_at=now, last_seen_at=now, last_scan_id=scan_id, created_at=now, updated_at=now,
             )
@@ -100,6 +116,7 @@ def upsert_source_accounts(db: Session, *, integration_id: int, accounts: list[A
         record.email = _clean(payload.get("email"))
         record.employee_id = _clean(payload.get("employeeId") or payload.get("employee_id"))
         record.status = _clean(payload.get("status"))
+        record.last_login_at = parsed_last_login
         record.raw_attributes = raw
         record.attribute_fingerprint = fingerprint
         record.active = True
@@ -134,6 +151,7 @@ def list_source_accounts(
     search: str = "",
     active: bool | None = None,
     account_state: str | None = None,
+    dormant: bool = False,
 ) -> tuple[list[SourceAccountRecord], int]:
     filters = [SourceAccountRecord.integration_id == integration_id]
     if active is not None:
@@ -143,6 +161,16 @@ def list_source_accounts(
         if normalized_state not in ACCOUNT_STATES:
             raise ValueError("Account state must be ACTIVE, INACTIVE, or UNKNOWN.")
         filters.append(func.upper(func.coalesce(SourceAccountRecord.status, "UNKNOWN")) == normalized_state)
+    if dormant:
+        integration = db.get(IntegrationRecord, integration_id)
+        clause = dormant_account_filter(integration.configuration if integration is not None else None)
+        if clause is None:
+            return [], 0
+        filters.extend([
+            SourceAccountRecord.active.is_(True),
+            SourceAccountRecord.deleted.is_(False),
+            clause,
+        ])
     if search.strip():
         needle = f"%{search.strip()}%"
         filters.append(or_(SourceAccountRecord.native_identity.ilike(needle), SourceAccountRecord.username.ilike(needle), SourceAccountRecord.email.ilike(needle), SourceAccountRecord.employee_id.ilike(needle), SourceAccountRecord.display_name.ilike(needle), SourceAccountRecord.application.ilike(needle)))
@@ -151,13 +179,28 @@ def list_source_accounts(
     return rows, total
 
 
-def source_account_to_dict(account: SourceAccountRecord) -> dict[str, Any]:
+def source_account_to_dict(
+    account: SourceAccountRecord,
+    dormancy_config: DormancyConfig | None = None,
+) -> dict[str, Any]:
+    days_inactive = inactive_days(account.last_login_at)
     return {
         "id": account.id, "integrationId": account.integration_id, "applicationId": account.application_id,
         "schemaId": account.schema_id, "application": account.application, "nativeIdentity": account.native_identity,
         "displayName": account.display_name, "username": account.username, "email": account.email,
         "employeeId": account.employee_id, "status": account.status, "rawAttributes": account.raw_attributes or {},
         "active": account.active, "deleted": account.deleted,
+        "lastLoginAt": account.last_login_at.isoformat() if account.last_login_at else None,
+        "inactiveDays": days_inactive,
+        "dormancyThresholdDays": dormancy_config.threshold_days if dormancy_config else None,
+        "dormant": is_dormant(account, dormancy_config),
+        "lastDormancyReminderAt": account.last_dormancy_reminder_at.isoformat() if account.last_dormancy_reminder_at else None,
+        "dormancyTicketId": account.dormancy_ticket_id,
+        "dormancyTicketStatus": account.dormancy_ticket_status,
+        "dormancyTicketUrl": account.dormancy_ticket_url,
+        "dormancyTicketCreatedAt": account.dormancy_ticket_created_at.isoformat() if account.dormancy_ticket_created_at else None,
+        "dormancyTicketLastSyncedAt": account.dormancy_ticket_last_synced_at.isoformat() if account.dormancy_ticket_last_synced_at else None,
+        "dormancyTicketError": account.dormancy_ticket_error,
         "firstSeenAt": account.first_seen_at.isoformat() if account.first_seen_at else None,
         "lastSeenAt": account.last_seen_at.isoformat() if account.last_seen_at else None,
         "lastScanId": account.last_scan_id,

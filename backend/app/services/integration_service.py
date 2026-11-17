@@ -13,6 +13,7 @@ from app.services.integration_ingestion_service import execute_integration, exec
 
 
 ACCOUNT_STATUS_MAPPINGS_KEY = "accountStatusMappings"
+ACCOUNT_DORMANCY_MAPPINGS_KEY = "accountDormancyMappings"
 
 
 def _schedule_to_dict(schedule) -> dict | None:
@@ -149,6 +150,13 @@ def update_integration(db: Session, integration: IntegrationRecord, payload: Int
         ):
             new_configuration[ACCOUNT_STATUS_MAPPINGS_KEY] = existing_configuration[
                 ACCOUNT_STATUS_MAPPINGS_KEY
+            ]
+        if (
+            ACCOUNT_DORMANCY_MAPPINGS_KEY not in new_configuration
+            and ACCOUNT_DORMANCY_MAPPINGS_KEY in existing_configuration
+        ):
+            new_configuration[ACCOUNT_DORMANCY_MAPPINGS_KEY] = existing_configuration[
+                ACCOUNT_DORMANCY_MAPPINGS_KEY
             ]
         connector = ConnectorFactory.create(connector_type=integration.connector_type, configuration=new_configuration)
         connector.validate_configuration()

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -37,6 +37,22 @@ class SourceAccountRecord(Base):
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     employee_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     status: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_dormancy_reminder_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dormancy_ticket_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dormancy_ticket_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dormancy_ticket_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    dormancy_ticket_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dormancy_ticket_last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dormancy_ticket_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     attribute_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
