@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.database.session import SessionLocal
 from app.db_models.remediation_item import RemediationItemRecord
+from app.db_models.source_account import SourceAccountRecord
 from app.db_models.review_decision_history import ReviewDecisionHistoryRecord
 from app.services.settings_service import decrypt_secret, get_application_settings
 
@@ -205,6 +206,139 @@ def _render_payload(config: ServiceDeskConfig, item: RemediationItemRecord, targ
     return payload
 
 
+def _render_dormant_account_payload(
+    config: ServiceDeskConfig,
+    account: SourceAccountRecord,
+    inactive_days: int,
+    threshold_days: int,
+) -> dict[str, Any]:
+    account_name = account.username or account.email or account.native_identity
+    variables = {
+        "summary": f"IdentityAI dormant account remediation - Disable {account_name}",
+        "description": (
+            f"IdentityAI detected a dormant account in {account.application}. "
+            f"Last login: {account.last_login_at.isoformat() if account.last_login_at else 'Unknown'}. "
+            f"Inactive for {inactive_days} days against a {threshold_days}-day threshold. "
+            f"Requested action: DISABLE. Target account: {account_name}."
+        ),
+        "action": "DISABLE",
+        "account_key": account.native_identity,
+        "application": account.application,
+        "integration_id": str(account.integration_id),
+        "username": account.username or "",
+        "email": account.email or "",
+    }
+    payload = json.loads(config.payload_template)
+    payload = _replace_template_values(payload, variables)
+    if not isinstance(payload, dict):
+        raise ValueError("Rendered ticket payload must be a JSON object.")
+    return payload
+
+
+def create_dormant_account_ticket(
+    db: Session,
+    *,
+    account: SourceAccountRecord,
+    inactive_days: int,
+    threshold_days: int,
+    requested_by: str | None = None,
+) -> dict[str, Any]:
+    config = _config_from_db(db)
+    if not config.enabled:
+        raise ValueError("Service Desk integration is disabled.")
+
+    current_ticket_status = (account.dormancy_ticket_status or "").strip().lower()
+    if account.dormancy_ticket_id and current_ticket_status not in config.completed_statuses:
+        raise ValueError("An open Service Desk disable ticket already exists for this dormant account.")
+
+    payload = _render_dormant_account_payload(config, account, inactive_days, threshold_days)
+    headers, auth = _headers_auth(config)
+    url = urljoin(config.base_url + "/", config.create_path.lstrip("/"))
+
+    try:
+        with httpx.Client(timeout=20, verify=config.verify_tls) as client:
+            response = client.post(url, json=payload, headers=headers, auth=auth)
+            response.raise_for_status()
+            data = response.json()
+        ticket_id = _field(data, config.ticket_id_field)
+        if ticket_id is None:
+            raise RuntimeError(
+                f"Ticket response did not contain configured ticket ID field '{config.ticket_id_field}'."
+            )
+    except Exception as exc:
+        account.dormancy_ticket_error = str(exc)
+        account.dormancy_ticket_last_synced_at = _utc_now()
+        db.commit()
+        raise RuntimeError(f"Service Desk dormant-account ticket creation failed: {exc}") from exc
+
+    ticket_status = _field(data, config.ticket_status_field)
+    ticket_url = _field(data, config.ticket_url_field)
+    now = _utc_now()
+    account.dormancy_ticket_id = str(ticket_id)
+    account.dormancy_ticket_status = str(ticket_status) if ticket_status is not None else "CREATED"
+    account.dormancy_ticket_url = str(ticket_url) if ticket_url else None
+    account.dormancy_ticket_created_at = now
+    account.dormancy_ticket_last_synced_at = now
+    account.dormancy_ticket_error = None
+    account.updated_at = now
+    db.commit()
+    db.refresh(account)
+    return serialize_dormant_account_ticket(account)
+
+
+def serialize_dormant_account_ticket(account: SourceAccountRecord) -> dict[str, Any]:
+    return {
+        "accountId": account.id,
+        "ticketId": account.dormancy_ticket_id,
+        "ticketStatus": account.dormancy_ticket_status,
+        "ticketUrl": account.dormancy_ticket_url,
+        "ticketCreatedAt": account.dormancy_ticket_created_at.isoformat() if account.dormancy_ticket_created_at else None,
+        "ticketLastSyncedAt": account.dormancy_ticket_last_synced_at.isoformat() if account.dormancy_ticket_last_synced_at else None,
+        "ticketError": account.dormancy_ticket_error,
+    }
+
+
+def sync_dormant_account_ticket(
+    db: Session,
+    *,
+    account: SourceAccountRecord,
+) -> dict[str, Any]:
+    if not account.dormancy_ticket_id:
+        raise ValueError("Dormant account has no Service Desk ticket.")
+    config = _config_from_db(db)
+    if not config.enabled:
+        raise ValueError("Service Desk integration is disabled.")
+
+    headers, auth = _headers_auth(config)
+    path = config.status_path.replace("{ticket_id}", account.dormancy_ticket_id)
+    url = urljoin(config.base_url + "/", path.lstrip("/"))
+    try:
+        with httpx.Client(timeout=20, verify=config.verify_tls) as client:
+            response = client.get(url, headers=headers, auth=auth)
+            response.raise_for_status()
+            data = response.json()
+        status_value = _field(data, config.ticket_status_field)
+        if status_value is None:
+            raise RuntimeError(
+                f"Ticket response did not contain configured status field '{config.ticket_status_field}'."
+            )
+        account.dormancy_ticket_status = str(status_value)
+        ticket_url = _field(data, config.ticket_url_field)
+        if ticket_url:
+            account.dormancy_ticket_url = str(ticket_url)
+        account.dormancy_ticket_last_synced_at = _utc_now()
+        account.dormancy_ticket_error = None
+        account.updated_at = _utc_now()
+        db.commit()
+        db.refresh(account)
+        return serialize_dormant_account_ticket(account)
+    except Exception as exc:
+        account.dormancy_ticket_last_synced_at = _utc_now()
+        account.dormancy_ticket_error = str(exc)
+        db.commit()
+        raise RuntimeError(f"Service Desk dormant-account ticket sync failed: {exc}") from exc
+
+
 def create_ticket(db: Session, *, item_id: int, target: str, action: str, requested_by: str | None = None) -> dict[str, Any]:
     config = _config_from_db(db)
     if not config.enabled:
@@ -364,5 +498,21 @@ def sync_open_tickets() -> None:
         for item in items:
             try:
                 sync_ticket(db, item)
+            except Exception:
+                continue
+
+        dormant_accounts = list(
+            db.scalars(
+                select(SourceAccountRecord).where(
+                    SourceAccountRecord.dormancy_ticket_id.is_not(None)
+                )
+            ).all()
+        )
+        for account in dormant_accounts:
+            current_status = (account.dormancy_ticket_status or "").strip().lower()
+            if current_status in config.completed_statuses:
+                continue
+            try:
+                sync_dormant_account_ticket(db, account=account)
             except Exception:
                 continue
