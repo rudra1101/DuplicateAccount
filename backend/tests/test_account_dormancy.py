@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 import app.db_models  # noqa: F401
 from app.database.base import Base
+from app.api.source_accounts import DormancyActionRequest, send_dormancy_reminder
+from app.db_models.application_settings import ApplicationSettingsRecord
 from app.db_models.integration import IntegrationRecord
 from app.db_models.source_account import SourceAccountRecord
 from app.schemas.application_schema import ApplicationInput, SchemaAttributeInput
@@ -25,6 +27,7 @@ from app.services.account_dormancy_service import (
     is_dormant,
     parse_last_login,
 )
+from app.services.service_desk_service import create_dormant_account_ticket
 from app.services.source_account_inventory_service import (
     list_source_accounts,
     source_account_to_dict,
@@ -314,3 +317,168 @@ def test_dormancy_serializer_exposes_policy_and_action_state():
     assert payload["dormancyTicketId"] == "INC001"
     assert is_dormant(account, config) is True
     assert inactive_days(account.last_login_at) >= 45
+
+
+
+def test_dormancy_reminder_uses_system_email_and_records_timestamp(monkeypatch):
+    sent: dict[str, object] = {}
+
+    def fake_send_email(*, recipients, subject, text_body, html_body=None):
+        sent["recipients"] = recipients
+        sent["subject"] = subject
+        sent["text_body"] = text_body
+        sent["html_body"] = html_body
+
+    monkeypatch.setattr("app.api.source_accounts.send_email", fake_send_email)
+
+    with _session() as db:
+        integration = IntegrationRecord(
+            name="Dormancy Source",
+            connector_type="LOCAL",
+            configuration={
+                "accountDormancyMappings": {
+                    "App": {
+                        "attribute": "last_login",
+                        "dateFormat": "ISO_8601",
+                        "thresholdDays": 30,
+                    }
+                }
+            },
+            enabled=True,
+        )
+        db.add(integration)
+        db.flush()
+        account = SourceAccountRecord(
+            integration_id=integration.id,
+            application="App",
+            native_identity="alice",
+            display_name="Alice <Admin>",
+            username="alice",
+            email="alice@example.com",
+            status="ACTIVE",
+            last_login_at=datetime.now(UTC) - timedelta(days=45),
+            raw_attributes={},
+            attribute_fingerprint="reminder",
+            active=True,
+            deleted=False,
+        )
+        db.add(account)
+        db.commit()
+        db.refresh(account)
+
+        response = send_dormancy_reminder(
+            integration.id,
+            account.id,
+            DormancyActionRequest(requestedBy="admin"),
+            db,
+            object(),
+        )
+
+        assert sent["recipients"] == ["alice@example.com"]
+        assert "inactive App account" in str(sent["subject"])
+        assert "45" in str(sent["text_body"])
+        assert "Alice &lt;Admin&gt;" in str(sent["html_body"])
+        assert response["recipient"] == "alice@example.com"
+        assert response["requestedBy"] == "admin"
+        assert account.last_dormancy_reminder_at is not None
+
+
+def test_dormant_disable_ticket_posts_service_desk_request_and_persists_state(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "id": "INC-DORMANT-001",
+                "status": "Open",
+                "url": "https://servicedesk.example/incidents/INC-DORMANT-001",
+            }
+
+    class FakeClient:
+        def __init__(self, *, timeout, verify):
+            captured["timeout"] = timeout
+            captured["verify"] = verify
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, *, json, headers, auth):
+            captured["url"] = url
+            captured["payload"] = json
+            captured["headers"] = headers
+            captured["auth"] = auth
+            return FakeResponse()
+
+    monkeypatch.setattr("app.services.service_desk_service.httpx.Client", FakeClient)
+
+    with _session() as db:
+        integration = IntegrationRecord(
+            name="Dormancy Source",
+            connector_type="LOCAL",
+            configuration={},
+            enabled=True,
+        )
+        db.add(integration)
+        db.flush()
+        account = SourceAccountRecord(
+            integration_id=integration.id,
+            application="App",
+            native_identity="alice",
+            username="alice",
+            email="alice@example.com",
+            status="ACTIVE",
+            last_login_at=datetime.now(UTC) - timedelta(days=60),
+            raw_attributes={},
+            attribute_fingerprint="ticket",
+            active=True,
+            deleted=False,
+        )
+        settings = ApplicationSettingsRecord(
+            id=1,
+            service_desk_enabled=True,
+            service_desk_name="ServiceNow",
+            service_desk_base_url="https://servicedesk.example",
+            service_desk_auth_type="NONE",
+            service_desk_create_path="/api/incidents",
+            service_desk_status_path="/api/incidents/{ticket_id}",
+            service_desk_ticket_id_field="id",
+            service_desk_ticket_status_field="status",
+            service_desk_ticket_url_field="url",
+            service_desk_completed_statuses="resolved,closed",
+            service_desk_payload_template=(
+                '{"summary":"{{summary}}","description":"{{description}}",'
+                '"action":"{{action}}","accountKey":"{{account_key}}",'
+                '"application":"{{application}}","username":"{{username}}"}'
+            ),
+            service_desk_verify_tls=True,
+        )
+        db.add_all([account, settings])
+        db.commit()
+        db.refresh(account)
+
+        response = create_dormant_account_ticket(
+            db,
+            account=account,
+            inactive_days=60,
+            threshold_days=30,
+            requested_by="admin",
+        )
+
+        payload = captured["payload"]
+        assert captured["url"] == "https://servicedesk.example/api/incidents"
+        assert isinstance(payload, dict)
+        assert payload["action"] == "DISABLE"
+        assert payload["accountKey"] == "alice"
+        assert payload["application"] == "App"
+        assert "60 days" in payload["description"]
+        assert response["ticketId"] == "INC-DORMANT-001"
+        assert response["ticketStatus"] == "Open"
+        assert account.dormancy_ticket_id == "INC-DORMANT-001"
+        assert account.dormancy_ticket_status == "Open"
+        assert account.dormancy_ticket_created_at is not None
