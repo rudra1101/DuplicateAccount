@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from html import escape
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -176,9 +177,11 @@ def send_dormancy_reminder(
         "The account may otherwise be disabled according to the organization's access policy.\n\n"
         "This is an automated IdentityAI account-governance reminder."
     )
+    safe_account_name = escape(account_name)
+    safe_application = escape(account.application)
     html_body = (
-        f"<p>Hello {account_name},</p>"
-        f"<p>Your <strong>{account.application}</strong> account has not recorded a login "
+        f"<p>Hello {safe_account_name},</p>"
+        f"<p>Your <strong>{safe_application}</strong> account has not recorded a login "
         f"for <strong>{days} days</strong>. The configured inactivity threshold is "
         f"<strong>{config.threshold_days} days</strong>.</p>"
         "<p>If you still require this account, please sign in or contact the support team. "
