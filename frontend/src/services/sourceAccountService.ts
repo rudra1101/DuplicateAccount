@@ -17,6 +17,17 @@ export interface SourceAccount {
   rawAttributes: Record<string, unknown>;
   active: boolean;
   deleted: boolean;
+  lastLoginAt: string | null;
+  inactiveDays: number | null;
+  dormancyThresholdDays: number | null;
+  dormant: boolean;
+  lastDormancyReminderAt: string | null;
+  dormancyTicketId: string | null;
+  dormancyTicketStatus: string | null;
+  dormancyTicketUrl: string | null;
+  dormancyTicketCreatedAt: string | null;
+  dormancyTicketLastSyncedAt: string | null;
+  dormancyTicketError: string | null;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
   lastScanId: number | null;
@@ -27,6 +38,25 @@ export interface SourceAccountListResponse {
   pageSize: number;
   total: number;
   items: SourceAccount[];
+}
+
+export interface DormancyReminderResponse {
+  accountId: number;
+  recipient: string;
+  sentAt: string;
+  inactiveDays: number;
+  thresholdDays: number;
+  requestedBy: string | null;
+}
+
+export interface DormancyTicketResponse {
+  accountId: number;
+  ticketId: string | null;
+  ticketStatus: string | null;
+  ticketUrl: string | null;
+  ticketCreatedAt: string | null;
+  ticketLastSyncedAt: string | null;
+  ticketError: string | null;
 }
 
 export interface DuplicateFinding {
@@ -86,13 +116,60 @@ export async function getSourceAccounts(
   search = "",
   active?: boolean,
   accountState?: AccountState,
+  dormant = false,
 ): Promise<SourceAccountListResponse> {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search.trim()) params.set("search", search.trim());
   if (active !== undefined) params.set("active", String(active));
   if (accountState) params.set("accountState", accountState);
+  if (dormant) params.set("dormant", "true");
   const response = await fetch(`${API_BASE_URL}/integrations/${integrationId}/accounts?${params.toString()}`);
   return parseResponse<SourceAccountListResponse>(response, "Unable to load source accounts.");
+}
+
+export async function sendDormancyReminder(
+  integrationId: number,
+  accountId: number,
+  requestedBy?: string | null,
+): Promise<DormancyReminderResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/integrations/${integrationId}/accounts/${accountId}/dormancy-reminder`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestedBy: requestedBy ?? null }),
+    },
+  );
+  return parseResponse<DormancyReminderResponse>(response, "Unable to send dormancy reminder.");
+}
+
+export async function createDormancyDisableTicket(
+  integrationId: number,
+  accountId: number,
+  requestedBy?: string | null,
+): Promise<DormancyTicketResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/integrations/${integrationId}/accounts/${accountId}/dormancy-disable-ticket`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestedBy: requestedBy ?? null }),
+    },
+  );
+  return parseResponse<DormancyTicketResponse>(response, "Unable to create dormant-account disable ticket.");
+}
+
+export async function syncDormancyDisableTicket(
+  integrationId: number,
+  accountId: number,
+): Promise<DormancyTicketResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/integrations/${integrationId}/accounts/${accountId}/dormancy-disable-ticket/sync`,
+    { method: "POST", credentials: "include" },
+  );
+  return parseResponse<DormancyTicketResponse>(response, "Unable to synchronize dormant-account disable ticket.");
 }
 
 export async function getDuplicateFindings(
