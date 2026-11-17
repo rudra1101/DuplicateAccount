@@ -13,6 +13,7 @@ from app.services.integration_ingestion_service import execute_integration, exec
 
 
 ACCOUNT_STATUS_MAPPINGS_KEY = "accountStatusMappings"
+ACCOUNT_DORMANCY_MAPPINGS_KEY = "accountDormancyMappings"
 
 
 def _schedule_to_dict(schedule) -> dict | None:
