@@ -1,6 +1,15 @@
 import { API_BASE_URL } from "../config/api";
 
 export type MatchType = "EXACT" | "FUZZY" | "CONTAINS" | "NONE";
+export type DormancyDateFormat =
+  | "AUTO"
+  | "ISO_8601"
+  | "UNIX_SECONDS"
+  | "UNIX_MILLISECONDS"
+  | "UNIX_MICROSECONDS"
+  | "UNIX_NANOSECONDS"
+  | "WINDOWS_FILETIME"
+  | "CUSTOM";
 export type NormalizationType =
   | "NONE"
   | "TRIM"
@@ -34,6 +43,10 @@ export interface ApplicationInput {
   statusAttribute?: string | null;
   activeStatusValues?: string[];
   inactiveStatusValues?: string[];
+  lastLoginAttribute?: string | null;
+  lastLoginDateFormat?: DormancyDateFormat;
+  lastLoginCustomFormat?: string | null;
+  inactivityThresholdDays?: number | null;
   attributes: SchemaAttributeInput[];
 }
 
@@ -52,6 +65,10 @@ export interface ApplicationSchemaResponse {
     statusAttribute: string | null;
     activeStatusValues: string[];
     inactiveStatusValues: string[];
+    lastLoginAttribute: string | null;
+    lastLoginDateFormat: DormancyDateFormat;
+    lastLoginCustomFormat: string | null;
+    inactivityThresholdDays: number | null;
     isActive: boolean;
     attributes: Array<SchemaAttributeInput & { id: number }>;
   } | null;
