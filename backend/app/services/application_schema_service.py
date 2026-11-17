@@ -92,6 +92,8 @@ def _application_to_dict(
                 "lastLoginDateFormat": dormancy_mapping.get("dateFormat") or "AUTO",
                 "lastLoginCustomFormat": dormancy_mapping.get("customFormat"),
                 "inactivityThresholdDays": dormancy_mapping.get("thresholdDays"),
+                "automaticRemindersEnabled": bool(dormancy_mapping.get("automaticRemindersEnabled", False)),
+                "reminderIntervalDays": int(dormancy_mapping.get("reminderIntervalDays") or 3),
                 "isActive": active_schema.is_active,
                 "attributes": [
                     _attribute_to_dict(attribute)
@@ -166,6 +168,8 @@ def _dormancy_mapping_payload(payload: IntegrationApplicationsPayload) -> dict[s
             "dateFormat": application.lastLoginDateFormat,
             "customFormat": application.lastLoginCustomFormat,
             "thresholdDays": application.inactivityThresholdDays,
+            "automaticRemindersEnabled": application.automaticRemindersEnabled,
+            "reminderIntervalDays": application.reminderIntervalDays,
         }
     return mappings
 
