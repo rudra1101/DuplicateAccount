@@ -40,6 +40,8 @@ class DormancyConfig:
     date_format: str
     custom_format: str | None
     threshold_days: int
+    automatic_reminders: bool = False
+    reminder_interval_days: int = 3
 
 
 def _normalize_mapping_name(value: str) -> str:
@@ -68,11 +70,19 @@ def dormancy_mappings(configuration: dict[str, Any] | None) -> dict[str, Dormanc
             threshold_days = 0
         if threshold_days <= 0:
             continue
+        automatic_reminders = bool(mapping.get("automaticRemindersEnabled", False))
+        try:
+            reminder_interval_days = int(mapping.get("reminderIntervalDays") or 3)
+        except (TypeError, ValueError):
+            reminder_interval_days = 3
+        reminder_interval_days = max(1, min(reminder_interval_days, 365))
         result[_normalize_mapping_name(str(application_name))] = DormancyConfig(
             attribute=attribute,
             date_format=date_format,
             custom_format=custom_format,
             threshold_days=threshold_days,
+            automatic_reminders=automatic_reminders,
+            reminder_interval_days=reminder_interval_days,
         )
     return result
 
