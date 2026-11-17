@@ -143,6 +143,16 @@ def list_source_accounts(
         if normalized_state not in ACCOUNT_STATES:
             raise ValueError("Account state must be ACTIVE, INACTIVE, or UNKNOWN.")
         filters.append(func.upper(func.coalesce(SourceAccountRecord.status, "UNKNOWN")) == normalized_state)
+    if dormant:
+        integration = db.get(IntegrationRecord, integration_id)
+        clause = dormant_account_filter(integration.configuration if integration is not None else None)
+        if clause is None:
+            return [], 0
+        filters.extend([
+            SourceAccountRecord.active.is_(True),
+            SourceAccountRecord.deleted.is_(False),
+            clause,
+        ])
     if search.strip():
         needle = f"%{search.strip()}%"
         filters.append(or_(SourceAccountRecord.native_identity.ilike(needle), SourceAccountRecord.username.ilike(needle), SourceAccountRecord.email.ilike(needle), SourceAccountRecord.employee_id.ilike(needle), SourceAccountRecord.display_name.ilike(needle), SourceAccountRecord.application.ilike(needle)))
@@ -151,13 +161,28 @@ def list_source_accounts(
     return rows, total
 
 
-def source_account_to_dict(account: SourceAccountRecord) -> dict[str, Any]:
+def source_account_to_dict(
+    account: SourceAccountRecord,
+    dormancy_config: DormancyConfig | None = None,
+) -> dict[str, Any]:
+    days_inactive = inactive_days(account.last_login_at)
     return {
         "id": account.id, "integrationId": account.integration_id, "applicationId": account.application_id,
         "schemaId": account.schema_id, "application": account.application, "nativeIdentity": account.native_identity,
         "displayName": account.display_name, "username": account.username, "email": account.email,
         "employeeId": account.employee_id, "status": account.status, "rawAttributes": account.raw_attributes or {},
         "active": account.active, "deleted": account.deleted,
+        "lastLoginAt": account.last_login_at.isoformat() if account.last_login_at else None,
+        "inactiveDays": days_inactive,
+        "dormancyThresholdDays": dormancy_config.threshold_days if dormancy_config else None,
+        "dormant": is_dormant(account, dormancy_config),
+        "lastDormancyReminderAt": account.last_dormancy_reminder_at.isoformat() if account.last_dormancy_reminder_at else None,
+        "dormancyTicketId": account.dormancy_ticket_id,
+        "dormancyTicketStatus": account.dormancy_ticket_status,
+        "dormancyTicketUrl": account.dormancy_ticket_url,
+        "dormancyTicketCreatedAt": account.dormancy_ticket_created_at.isoformat() if account.dormancy_ticket_created_at else None,
+        "dormancyTicketLastSyncedAt": account.dormancy_ticket_last_synced_at.isoformat() if account.dormancy_ticket_last_synced_at else None,
+        "dormancyTicketError": account.dormancy_ticket_error,
         "firstSeenAt": account.first_seen_at.isoformat() if account.first_seen_at else None,
         "lastSeenAt": account.last_seen_at.isoformat() if account.last_seen_at else None,
         "lastScanId": account.last_scan_id,
