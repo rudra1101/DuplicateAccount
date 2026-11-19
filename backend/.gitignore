@@ -18,3 +18,7 @@ accounts.faiss
 accounts_metadata.json
 test_accounts.faiss
 test_accounts_metadata.json
+
+# Enterprise TLS certificates staged locally by deploy.ps1
+certs/*
+!certs/.gitkeep
